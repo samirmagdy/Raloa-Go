@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Globe,
   Copy,
@@ -82,6 +82,19 @@ export const SocialPreviewGenerator: React.FC<SocialPreviewGeneratorProps> = ({
   };
 
   const currentUrl = `https://raloa.app/@${username}`;
+
+  // The compact version is the live Studio preview. Keep it synchronized with
+  // profile edits while preserving manual social-card edits in the full view.
+  useEffect(() => {
+    if (!isCompact) return;
+    setOgTitle(`${displayName || 'Creator'} — ${role || 'Portfolio'} | RALOA`);
+    setOgDesc(
+      bio ||
+        (isRtl
+          ? 'استكشف معرض الأعمال، مواعيد الحجز المباشر، والروابط الرسمية عبر صفحتي المصغرة على RALOA.'
+          : 'Explore portfolio work, booking calendar, and curated links on my official RALOA mini-site.')
+    );
+  }, [bio, displayName, isCompact, isRtl, role]);
 
   // Theme styling configurations
   const themeStyles: Record<OgTheme, { bg: string; text: string; subtext: string; pillBg: string; pillBorder: string; accent: string }> = {

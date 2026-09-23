@@ -7,11 +7,26 @@ import {
   Mail,
   Youtube,
   Twitter,
+  Github,
+  Music2,
+  AtSign,
+  Globe
 } from 'lucide-react';
 import { PremiumMark } from './brand/PremiumMark';
 import { TemplateItem, BackgroundStyle } from '../types';
 import { RaloaMark } from './brand/RaloaLogo';
 import { resolveTemplateTheme, getTemplateBackgroundContainerProperties } from '../utils/templateThemes';
+
+const SOCIAL_ICONS: Record<TemplateItem['socials'][number]['platform'], React.ElementType> = {
+  instagram: Instagram,
+  x: Twitter,
+  youtube: Youtube,
+  linkedin: Linkedin,
+  email: Mail,
+  tiktok: Music2,
+  github: Github,
+  spotify: Music2
+};
 
 interface PhoneMockupProps {
   template: TemplateItem;
@@ -182,49 +197,21 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
 
             {/* Social Icons Strip */}
             <div className="flex items-center justify-center gap-2 mt-3.5 mb-4">
-              <a
-                href="https://instagram.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Instagram"
-                className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all shadow-2xs ${themeConfig.socialBg} ${themeConfig.socialBorder} ${themeConfig.socialText} ${themeConfig.socialHoverBg}`}
-              >
-                <Instagram className="w-4 h-4" />
-              </a>
-              <a
-                href="https://x.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Twitter X"
-                className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all shadow-2xs ${themeConfig.socialBg} ${themeConfig.socialBorder} ${themeConfig.socialText} ${themeConfig.socialHoverBg}`}
-              >
-                <Twitter className="w-3.5 h-3.5" />
-              </a>
-              <a
-                href="https://youtube.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="YouTube"
-                className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all shadow-2xs ${themeConfig.socialBg} ${themeConfig.socialBorder} ${themeConfig.socialText} ${themeConfig.socialHoverBg}`}
-              >
-                <Youtube className="w-4 h-4" />
-              </a>
-              <a
-                href="https://linkedin.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="LinkedIn"
-                className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all shadow-2xs ${themeConfig.socialBg} ${themeConfig.socialBorder} ${themeConfig.socialText} ${themeConfig.socialHoverBg}`}
-              >
-                <Linkedin className="w-3.5 h-3.5" />
-              </a>
-              <a
-                href="mailto:contact@raloa.app"
-                aria-label="Email"
-                className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all shadow-2xs ${themeConfig.socialBg} ${themeConfig.socialBorder} ${themeConfig.socialText} ${themeConfig.socialHoverBg}`}
-              >
-                <Mail className="w-3.5 h-3.5" />
-              </a>
+              {template.socials.map((social) => {
+                const SocialIcon = SOCIAL_ICONS[social.platform] || Globe;
+                return (
+                  <a
+                    key={`${social.platform}-${social.url}`}
+                    href={social.url}
+                    target={social.url.startsWith('mailto:') || social.url.startsWith('tel:') ? undefined : '_blank'}
+                    rel={social.url.startsWith('mailto:') || social.url.startsWith('tel:') ? undefined : 'noopener noreferrer'}
+                    aria-label={social.platform}
+                    className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all shadow-2xs ${themeConfig.socialBg} ${themeConfig.socialBorder} ${themeConfig.socialText} ${themeConfig.socialHoverBg}`}
+                  >
+                    <SocialIcon className="w-3.5 h-3.5" />
+                  </a>
+                );
+              })}
             </div>
 
             {/* Mini-site interactive links */}

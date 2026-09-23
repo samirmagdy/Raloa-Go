@@ -170,6 +170,29 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   const [previewMode, setPreviewMode] = useState<'phone' | 'social'>('phone');
   const [copied, setCopied] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const [validationMessage, setValidationMessage] = useState('');
+
+  const isValidMediaUrl = (value: string) => {
+    if (!value.trim()) return true;
+    try {
+      const url = new URL(value.trim());
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+
+  const isValidLinkUrl = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed.startsWith('#')) return trimmed.length > 1;
+    if (trimmed.startsWith('mailto:') || trimmed.startsWith('tel:')) return true;
+    try {
+      const url = new URL(trimmed);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
 
   // Load existing user mini-site from Firestore when authenticated
   useEffect(() => {
@@ -338,6 +361,22 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 
   // Trigger site launch with celebratory confetti explosion and cloud sync
   const handleStartOrPublishSite = async () => {
+    if (!username.trim() || username.trim().length < 3) {
+      setValidationMessage(isRtl ? 'أدخل اسماً مميزاً لا يقل عن ٣ أحرف.' : 'Enter a unique handle with at least 3 characters.');
+      setActiveTab('design');
+      return;
+    }
+    if (!displayName.trim()) {
+      setValidationMessage(isRtl ? 'أدخل الاسم الظاهر قبل النشر.' : 'Add a display name before publishing.');
+      setActiveTab('content');
+      return;
+    }
+    if (!isValidMediaUrl(avatar) || !isValidMediaUrl(coverImage)) {
+      setValidationMessage(isRtl ? 'تحقق من روابط الصور قبل النشر.' : 'Check the avatar and cover image URLs before publishing.');
+      setActiveTab('design');
+      return;
+    }
+    setValidationMessage('');
     updateSiteConfig({ isPublished: true });
     setActiveTab('share');
     fireSiteLaunchConfetti();
@@ -371,7 +410,15 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   // Add component/link and persist to Firestore
   const addLink = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newUrl.trim()) return;
+    if (!newTitle.trim() || !newUrl.trim()) {
+      setValidationMessage(isRtl ? 'أدخل عنوان الرابط والرابط نفسه.' : 'Add both a link title and URL.');
+      return;
+    }
+    if (!isValidLinkUrl(newUrl)) {
+      setValidationMessage(isRtl ? 'أدخل رابطاً صالحاً يبدأ بـ https:// أو رابطاً داخلياً مثل #portfolio.' : 'Enter a valid https:// URL or an internal link such as #portfolio.');
+      return;
+    }
+    setValidationMessage('');
 
     const newLinkItem: StudioBlockItem = {
       id: `link-${Date.now()}`,
@@ -413,6 +460,15 @@ export const StudioModal: React.FC<StudioModalProps> = ({
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const handlePreviewAction = useCallback((_: 'portfolio' | 'booking' | 'shop' | 'gear', data?: { url?: string }) => {
+    const target = data?.url?.trim();
+    if (target && (target.startsWith('https://') || target.startsWith('http://') || target.startsWith('mailto:') || target.startsWith('tel:'))) {
+      window.open(target, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setActiveTab('content');
+  }, []);
 
   // Preview template constructed from user state
   const livePreviewTemplate: TemplateItem = {
@@ -607,10 +663,10 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         </div>
 
         {/* Studio Workspace: Split 2-Column (Left: Editor Panels, Right: Live Phone Screen) */}
-        <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-12 bg-slate-50 print:bg-white print:block">
+        <div className="flex-1 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-12 bg-slate-50 print:bg-white print:block">
           
           {/* Left Column: Editor Controls (lg:col-span-7) */}
-          <div className="lg:col-span-7 h-full overflow-y-auto p-4 sm:p-6 lg:p-8 bg-white border-r border-slate-200 studio-editor-sidebar print:hidden">
+          <div className="lg:col-span-7 h-auto lg:h-full overflow-y-auto p-4 sm:p-6 lg:p-8 bg-white border-r border-slate-200 studio-editor-sidebar print:hidden">
             
             {/* Mobile Tab Switcher */}
             <div className="sm:hidden flex items-center gap-1 p-1 bg-slate-100 rounded-xl mb-6">
@@ -647,6 +703,12 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                 {isRtl ? 'المشاركة' : 'Share'}
               </button>
             </div>
+
+            {validationMessage && (
+              <p className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700" role="alert">
+                {validationMessage}
+              </p>
+            )}
 
             {/* TAB 1: DESIGN & TEMPLATE SELECTION */}
             {activeTab === 'design' && (
@@ -686,6 +748,30 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                         </span>
                       </button>
                     ))}
+                  </div>
+
+                  {/* Profile Avatar */}
+                  <div className="mt-5 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                    <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block mb-2">
+                      {isRtl ? 'الصورة الشخصية' : 'Profile Avatar'}
+                    </label>
+                    <div className="flex flex-col sm:flex-row items-center gap-3">
+                      <img
+                        src={avatar || defaultTemplate.avatar}
+                        alt={displayName || 'Profile avatar'}
+                        onError={(event) => {
+                          event.currentTarget.src = defaultTemplate.avatar;
+                        }}
+                        className="w-16 h-16 rounded-full object-cover border border-slate-300 bg-white shrink-0"
+                      />
+                      <input
+                        type="url"
+                        value={avatar}
+                        onChange={(e) => setAvatar(e.target.value)}
+                        placeholder={isRtl ? 'رابط الصورة https://...' : 'Avatar image URL https://...'}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-slate-700"
+                      />
+                    </div>
                   </div>
 
                   {/* Background Style & Theme Controls */}
@@ -733,6 +819,9 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                           <img
                             src={coverImage}
                             alt="Cover"
+                            onError={(event) => {
+                              event.currentTarget.src = defaultTemplate.coverImage;
+                            }}
                             className="w-full h-full object-cover"
                           />
                         </div>
@@ -802,8 +891,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                     <span className="text-xs font-bold text-slate-400 select-none ltr:mr-1 rtl:ml-1">
                       raloa.app/@
                     </span>
-                    <input
-                      type="text"
+                          <input
+                            type="url"
                       value={username}
                       onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
                       className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none w-full"
@@ -963,7 +1052,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                           {syncStatus === 'saving' ? (
                             <>
                               <Loader2 className="w-3 h-3 animate-spin text-amber-600" />
-                              <span className="text-amber-600 font-semibold">{isRtl ? 'جاري الحفظ في Firestore...' : 'Saving to Firestore...'}</span>
+                              <span className="text-amber-600 font-semibold">{isRtl ? 'جاري الحفظ...' : 'Saving...'}</span>
                             </>
                           ) : syncStatus === 'error' ? (
                             <>
@@ -973,7 +1062,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                           ) : (
                             <>
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              <span className="text-emerald-600 font-semibold">{isRtl ? 'محفوظ تلقائياً في Firestore' : 'Auto-saved to Firestore'}</span>
+                            <span className="text-emerald-600 font-semibold">{isRtl ? 'تم الحفظ تلقائياً' : 'Auto-saved'}</span>
                             </>
                           )}
                         </span>
@@ -1189,6 +1278,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             locale={locale}
             previewMode={previewMode}
             onPreviewModeChange={setPreviewMode}
+            onOpenPhoneAction={handlePreviewAction}
           />
 
         </div>

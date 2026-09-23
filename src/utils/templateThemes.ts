@@ -290,7 +290,12 @@ export function resolveTemplateTheme(
 
   // If mode was changed from default
   if (finalMode !== base.mode) {
-    config = deriveFallbackTheme(template, finalMode === 'dark');
+    const modeFallback = deriveFallbackTheme(template, finalMode === 'dark');
+    config = {
+      ...modeFallback,
+      ...(template.themeConfig || {}),
+      mode: finalMode
+    };
   }
 
   // Adjust for different background styles
@@ -333,7 +338,11 @@ export function getTemplateBackgroundContainerProperties(
   // 1. Stage container properties (outer studio preview stage container)
   const stageContainerStyle: React.CSSProperties = {
     backgroundColor: isDark ? '#080B12' : '#F8FAFC',
-    backgroundImage: isDark
+    backgroundImage: backgroundStyle === 'minimal'
+      ? 'none'
+      : backgroundStyle === 'gradient'
+      ? `linear-gradient(160deg, ${themeColor}24 0%, ${isDark ? '#090D16' : '#F8FAFC'} 70%)`
+      : isDark
       ? `radial-gradient(ellipse at 50% 25%, ${themeColor}28 0%, rgba(11, 15, 25, 0.95) 75%), radial-gradient(circle at 10% 80%, ${themeColor}1A 0%, transparent 60%)`
       : `radial-gradient(ellipse at 50% 25%, ${themeColor}18 0%, #F1F5F9 75%), radial-gradient(circle at 90% 85%, ${themeColor}12 0%, transparent 60%)`,
     color: isDark ? '#F8FAFC' : '#0F172A',
