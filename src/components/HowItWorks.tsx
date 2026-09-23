@@ -117,7 +117,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
     <section
       ref={sectionRef}
       id="how-it-works"
-      className="py-20 md:py-28 bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/80 relative overflow-hidden transition-colors duration-200"
+      className="py-14 sm:py-20 md:py-28 bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/80 relative overflow-hidden transition-colors duration-200"
     >
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
@@ -179,7 +179,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
         {/* Section-Specific Reading Progress Indicator Widget */}
         <div
           id="how-it-works-reading-tracker"
-          className="mb-12 p-3 sm:p-4 rounded-2xl bg-slate-50/90 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/90 shadow-2xs backdrop-blur-xs transition-all duration-200"
+          className="mb-8 sm:mb-12 p-3 sm:p-4 rounded-2xl bg-slate-50/90 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/90 shadow-2xs backdrop-blur-xs transition-all duration-200"
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
             {/* Active Step Badge & Current Step Title */}

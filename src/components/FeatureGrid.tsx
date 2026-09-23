@@ -84,7 +84,7 @@ export const FeatureGrid: React.FC<FeatureGridProps> = ({ locale, onExploreFeatu
   };
 
   return (
-    <section id="features" className="py-20 md:py-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
+    <section id="features" className="py-14 sm:py-20 md:py-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
@@ -115,7 +115,7 @@ export const FeatureGrid: React.FC<FeatureGridProps> = ({ locale, onExploreFeatu
           {featuresList.map((item) => (
             <div
               key={item.id}
-              className="bg-white dark:bg-slate-900 rounded-[20px] p-6 border border-slate-200 dark:border-slate-800 shadow-[0_4px_16px_rgba(15,23,42,0.03)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_28px_rgba(0,0,0,0.5)] transition-all duration-300 group hover:-translate-y-1"
+              className="bg-white dark:bg-slate-900 rounded-[20px] p-6 border border-slate-200 dark:border-slate-800 shadow-[0_4px_16px_rgba(15,23,42,0.03)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_28px_rgba(0,0,0,0.5)] transition-all duration-300 group hover:-translate-y-1 flex flex-col items-center text-center lg:items-start lg:text-start"
             >
               <div
                 className="w-12 h-12 rounded-2xl flex items-center justify-center mb-5 transition-transform group-hover:scale-110 duration-200"

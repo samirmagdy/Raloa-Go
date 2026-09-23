@@ -13,7 +13,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ locale, onSeeMoreSto
   const t = dictionary[locale].testimonialsSection;
 
   return (
-    <section id="testimonials" className="py-20 md:py-28 bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/80 transition-colors duration-200">
+    <section id="testimonials" className="py-14 sm:py-20 md:py-28 bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/80 transition-colors duration-200">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}
@@ -41,7 +41,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ locale, onSeeMoreSto
           {testimonialsData.map((item) => (
             <div
               key={item.id}
-              className="bg-white dark:bg-slate-900 rounded-[22px] p-7 border border-slate-200/90 dark:border-slate-800 shadow-[0_6px_20px_rgba(15,23,42,0.04)] dark:shadow-[0_6px_20px_rgba(0,0,0,0.3)] flex flex-col justify-between hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_32px_rgba(0,0,0,0.5)] transition-all duration-300"
+              className="bg-white dark:bg-slate-900 rounded-[22px] p-7 border border-slate-200/90 dark:border-slate-800 shadow-[0_6px_20px_rgba(15,23,42,0.04)] dark:shadow-[0_6px_20px_rgba(0,0,0,0.3)] flex flex-col items-center text-center lg:items-start lg:text-start justify-between hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_32px_rgba(0,0,0,0.5)] transition-all duration-300"
             >
               <div className="space-y-4">
                 {/* 5 Golden Stars */}
@@ -58,7 +58,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ locale, onSeeMoreSto
               </div>
 
               {/* Author Info */}
-              <div className="flex items-center gap-3 mt-6 pt-5 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex items-center justify-center lg:justify-start gap-3 mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 w-full">
                 <div className="relative">
                   <img
                     src={item.avatar}

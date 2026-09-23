@@ -72,7 +72,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
 
   return (
 
-    <section id="pricing" className="py-20 md:py-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
+    <section id="pricing" className="py-14 sm:py-20 md:py-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
@@ -125,7 +125,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
             return (
               <div
                 key={plan.id}
-                className={`relative bg-white dark:bg-slate-900 rounded-[24px] p-8 border transition-all duration-300 flex flex-col justify-between ${
+                className={`relative bg-white dark:bg-slate-900 rounded-[24px] p-8 border transition-all duration-300 flex flex-col items-center text-center lg:items-start lg:text-start justify-between ${
                   isPopular
                     ? 'border-indigo-500 dark:border-indigo-500 ring-2 ring-indigo-500/20 dark:ring-indigo-500/40 shadow-[0_16px_40px_rgba(91,92,246,0.12)] dark:shadow-[0_16px_40px_rgba(91,92,246,0.25)] lg:-translate-y-2'
                     : 'border-slate-200 dark:border-slate-800 shadow-[0_6px_20px_rgba(15,23,42,0.04)] dark:shadow-[0_6px_20px_rgba(0,0,0,0.3)] hover:shadow-lg dark:hover:shadow-2xl'
@@ -158,9 +158,9 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
                   </div>
 
                   {/* Feature Checklist */}
-                  <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800 mb-8">
+                  <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800 mb-8 w-full">
                     {(isRtl ? plan.featuresAr : plan.features).map((feat, idx) => (
-                      <div key={idx} className="flex items-start gap-3">
+                      <div key={idx} className="flex items-start justify-center lg:justify-start gap-3 text-center lg:text-start">
                         <div className="w-5 h-5 rounded-full bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
                           <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                         </div>

@@ -158,7 +158,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={onOpenCommandPalette}
                 aria-label={isRtl ? 'البحث السريع والتنقل (Cmd+K)' : 'Quick Search & Command Palette (Cmd+K)'}
                 title={isRtl ? `البحث السريع (${isMac ? '⌘K' : 'Ctrl+K'})` : `Quick Search (${isMac ? '⌘K' : 'Ctrl+K'})`}
-                className="inline-flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-full border border-slate-200/90 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all text-[12px] sm:text-[13px] font-medium cursor-pointer shadow-2xs group shrink-0 select-none"
+                className="hidden sm:inline-flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-full border border-slate-200/90 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all text-[12px] sm:text-[13px] font-medium cursor-pointer shadow-2xs group shrink-0 select-none"
               >
                 <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
                 <span className="hidden xl:inline text-slate-600 dark:text-slate-300">
@@ -173,6 +173,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Voice-over Tour Toggle */}
             {onToggleVoiceTour && (
+              <div className="hidden sm:block">
               <VoiceTourToggle
                 enabled={voiceTourEnabled}
                 isSpeaking={voiceTourSpeaking}
@@ -182,15 +183,18 @@ export const Header: React.FC<HeaderProps> = ({
                 variant="header"
                 locale={locale}
               />
+              </div>
             )}
 
             {/* Ambient Sound Toggle */}
-            <SoundToggle
-              enabled={soundEnabled}
-              onToggle={onToggleSound}
-              variant="header"
-              locale={locale}
-            />
+            <div className="hidden sm:block">
+              <SoundToggle
+                enabled={soundEnabled}
+                onToggle={onToggleSound}
+                variant="header"
+                locale={locale}
+              />
+            </div>
 
             {/* Global Theme Toggle */}
             <ThemeToggle
@@ -305,7 +309,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Mobile / Tablet Menu Trigger */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="xl:hidden p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
+              className="xl:hidden min-w-11 min-h-11 p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
               aria-label="Open navigation menu"
               aria-expanded={mobileMenuOpen}
             >
@@ -324,7 +328,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div
             className={`fixed top-0 bottom-0 ${
               isRtl ? 'left-0' : 'right-0'
-            } w-[310px] bg-white dark:bg-slate-900 shadow-2xl p-6 flex flex-col justify-between transition-transform duration-300 ease-out border-s border-slate-200 dark:border-slate-800`}
+            } w-[310px] max-w-[calc(100vw-1rem)] bg-white dark:bg-slate-900 shadow-2xl p-5 sm:p-6 flex flex-col justify-between transition-transform duration-300 ease-out border-s border-slate-200 dark:border-slate-800`}
             onClick={(e) => e.stopPropagation()}
             dir={isRtl ? 'rtl' : 'ltr'}
           >

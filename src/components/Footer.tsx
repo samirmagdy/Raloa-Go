@@ -132,7 +132,7 @@ export const Footer: React.FC<FooterProps> = ({
   };
 
   return (
-    <footer className="bg-white dark:bg-slate-950 border-t border-slate-200/90 dark:border-slate-850 pt-20 pb-16 text-slate-600 dark:text-slate-400 transition-colors duration-200">
+    <footer className="bg-white dark:bg-slate-950 border-t border-slate-200/90 dark:border-slate-850 pt-14 sm:pt-20 pb-12 sm:pb-16 text-slate-600 dark:text-slate-400 transition-colors duration-200">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Main Footer Row */}

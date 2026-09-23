@@ -133,7 +133,7 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
   };
 
   return (
-    <section id="templates" className="py-20 md:py-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
+    <section id="templates" className="py-14 sm:py-20 md:py-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}
@@ -197,7 +197,7 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
               }}
               onMouseEnter={(e) => handleMouseEnter(template, e)}
               onMouseLeave={handleMouseLeave}
-              className="w-[180px] sm:w-[200px] shrink-0 snap-start bg-white dark:bg-slate-900 rounded-[22px] p-3 border border-slate-200 dark:border-slate-800 shadow-[0_4px_16px_rgba(15,23,42,0.04)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_16px_36px_rgba(15,23,42,0.12)] dark:hover:shadow-[0_16px_36px_rgba(0,0,0,0.6)] hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group flex flex-col"
+              className="w-[180px] sm:w-[200px] shrink-0 snap-start bg-white dark:bg-slate-900 rounded-[22px] p-3 border border-slate-200 dark:border-slate-800 shadow-[0_4px_16px_rgba(15,23,42,0.04)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_16px_36px_rgba(15,23,42,0.12)] dark:hover:shadow-[0_16px_36px_rgba(0,0,0,0.6)] hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group flex flex-col text-center"
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {

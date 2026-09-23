@@ -106,7 +106,7 @@ export const Hero: React.FC<HeroProps> = ({
     <section
       ref={heroRef}
       id="hero"
-      className="relative pt-[100px] md:pt-[124px] pb-16 md:pb-24 overflow-hidden bg-gradient-to-br from-[#EEF2FF] via-[#F8FAFC] to-[#F5F3FF] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 transition-colors duration-200"
+      className="relative pt-[92px] sm:pt-[100px] md:pt-[124px] pb-12 sm:pb-16 md:pb-24 overflow-hidden bg-gradient-to-br from-[#EEF2FF] via-[#F8FAFC] to-[#F5F3FF] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 transition-colors duration-200"
     >
       {/* Decorative ambient subtle glow with scroll parallax */}
       <motion.div
@@ -115,7 +115,7 @@ export const Hero: React.FC<HeroProps> = ({
       />
 
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center min-h-[600px] lg:min-h-[660px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 sm:gap-12 lg:gap-8 items-center lg:min-h-[660px]">
           
           {/* Left Column: 55% split (lg:col-span-7) */}
           <div className="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-left rtl:lg:text-right">
@@ -136,7 +136,7 @@ export const Hero: React.FC<HeroProps> = ({
               initial={{ opacity: 0, y: 22 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-              className="text-[40px] sm:text-[54px] md:text-[62px] lg:text-[70px] font-extrabold text-[#0F172A] dark:text-white tracking-[-0.03em] leading-[1.04] mb-6"
+              className="text-[36px] sm:text-[54px] md:text-[62px] lg:text-[70px] font-extrabold text-[#0F172A] dark:text-white tracking-[-0.03em] leading-[1.04] mb-5 sm:mb-6"
             >
               <span>{t.headlineStart}</span>
               <br />
@@ -367,4 +367,3 @@ export const Hero: React.FC<HeroProps> = ({
     </section>
   );
 };
-
