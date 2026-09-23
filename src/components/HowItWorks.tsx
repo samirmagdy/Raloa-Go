@@ -14,7 +14,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
   const t = dictionary[locale].howItWorksSection;
 
   const sectionRef = useRef<HTMLElement>(null);
-  const stepCardRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const stepCardRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [activeStep, setActiveStep] = useState<number>(1);
   const [readingProgress, setReadingProgress] = useState<number>(33);
 
@@ -117,75 +117,43 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
     <section
       ref={sectionRef}
       id="how-it-works"
-      className="py-14 sm:py-20 md:py-28 bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/80 relative overflow-hidden transition-colors duration-200"
+      className="scroll-mt-20 py-14 sm:py-20 md:py-24 bg-slate-50/70 dark:bg-slate-950 border-b border-slate-200/70 dark:border-slate-800/80 relative overflow-hidden transition-colors duration-200"
     >
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Section Header with Doodle & Estimated Read Time */}
-        <div className="relative mb-10 md:mb-14">
-          <div className="max-w-[640px]">
-            <div className="flex items-center gap-2.5 mb-2.5 flex-wrap">
+        {/* Section Header */}
+        <div className="max-w-3xl mb-9 sm:mb-11">
+          <div>
+            <div className="flex items-center gap-2.5 mb-3 flex-wrap">
               <span className="text-[12px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
                 {t.eyebrow}
               </span>
-              <span className="text-slate-300 dark:text-slate-700 select-none">•</span>
+              <span aria-hidden="true" className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
               <ReadTimeBadge
                 formatted={readTime.formatted}
                 wordCount={readTime.wordCount}
                 locale={locale}
               />
             </div>
-            <h2 className="text-[34px] sm:text-[42px] md:text-[46px] font-extrabold text-[#0F172A] dark:text-white tracking-tight leading-tight">
+            <h2 className="text-[34px] sm:text-[42px] md:text-[48px] font-extrabold text-[#0F172A] dark:text-white tracking-tight leading-[1.08]">
               {t.headline}
             </h2>
-            <p className="text-[16px] sm:text-[18px] text-slate-600 dark:text-slate-300 mt-2 font-normal">
+            <p className="text-[16px] sm:text-[18px] text-slate-600 dark:text-slate-300 mt-3 font-normal leading-relaxed max-w-2xl">
               {t.subheadline}
             </p>
           </div>
-
-          {/* Right Floating Doodle ("From idea to impact in minutes") */}
-          <div className="hidden lg:flex items-center gap-3 absolute top-2 end-4 text-indigo-600 dark:text-indigo-400 select-none pointer-events-none">
-            <div className="relative">
-              <span className="text-[15px] font-bold italic tracking-tight font-serif text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/80 px-3.5 py-1.5 rounded-full border border-indigo-100 dark:border-indigo-800 shadow-2xs rotate-2 block">
-                {t.doodleText}
-              </span>
-              <svg
-                width="70"
-                height="45"
-                viewBox="0 0 70 45"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="text-indigo-500 dark:text-indigo-400 absolute -bottom-6 right-2 rtl:left-2 rtl:right-auto rtl:scale-x-[-1]"
-              >
-                <path
-                  d="M10 5C25 15 45 35 60 22"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeDasharray="4 2"
-                />
-                <path
-                  d="M50 16L62 21L58 32"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-          </div>
         </div>
 
-        {/* Section-Specific Reading Progress Indicator Widget */}
+        {/* Single step progress control */}
         <div
           id="how-it-works-reading-tracker"
-          className="mb-8 sm:mb-12 p-3 sm:p-4 rounded-2xl bg-slate-50/90 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/90 shadow-2xs backdrop-blur-xs transition-all duration-200"
+          className="mb-8 sm:mb-10 p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm transition-all duration-200"
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-4">
             {/* Active Step Badge & Current Step Title */}
             <div className="flex items-center gap-2.5 min-w-0">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] sm:text-xs font-extrabold bg-indigo-600 text-white shadow-xs shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-white" />
                 <span>
                   {isRtl
                     ? `الخطوة ${activeStep} من 3`
@@ -207,7 +175,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
           </div>
 
           {/* 3-Segment Interactive Step Progress Bar */}
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
             {steps.map((s) => {
               const isPast = activeStep > s.num;
               const isCurrent = activeStep === s.num;
@@ -218,7 +186,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
                   type="button"
                   onClick={() => scrollToStep(s.num)}
                   aria-label={`${s.title} - ${isCurrent ? (isRtl ? 'الخطوة النشطة' : 'Active step') : isPast ? (isRtl ? 'مكتمل' : 'Completed') : (isRtl ? 'قادم' : 'Upcoming')}`}
-                  className={`flex items-center gap-2 sm:gap-2.5 p-2 sm:p-2.5 rounded-xl text-left rtl:text-right transition-all cursor-pointer group ${
+                    className={`min-h-11 flex items-center gap-2 sm:gap-2.5 p-2.5 rounded-xl text-left rtl:text-right transition-all cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 ${
                     isCurrent
                       ? 'bg-white dark:bg-slate-800 shadow-xs border border-indigo-300 dark:border-indigo-600 ring-2 ring-indigo-500/20'
                       : isPast
@@ -259,7 +227,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
           </div>
 
           {/* Continuous Progress Track */}
-          <div className="mt-3 w-full h-1.5 bg-slate-200/80 dark:bg-slate-800 rounded-full overflow-hidden">
+          <div className="mt-4 w-full h-1.5 bg-slate-200/80 dark:bg-slate-800 rounded-full overflow-hidden" aria-hidden="true">
             <div
               className="h-full bg-gradient-to-r from-indigo-500 via-blue-500 to-violet-500 rounded-full transition-all duration-300 ease-out"
               style={{ width: `${readingProgress}%` }}
@@ -268,10 +236,10 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
         </div>
 
         {/* 3 Steps Row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6 relative">
           
           {/* Connecting line (Desktop) */}
-          <div className="hidden md:block absolute top-[52px] left-[15%] right-[15%] h-[3px] bg-slate-200 dark:bg-slate-800 -z-0 rounded-full overflow-hidden">
+          <div className="hidden md:block absolute top-[49px] left-[14%] right-[14%] h-px bg-slate-200 dark:bg-slate-800 z-0 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-indigo-500 via-blue-500 to-violet-500 transition-all duration-500"
               style={{
@@ -285,14 +253,15 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
             const isPast = activeStep > step.num;
 
             return (
-              <div
+              <button
                 key={step.num}
+                type="button"
                 ref={(el) => { stepCardRefs.current[idx] = el; }}
                 id={`how-it-works-step-${step.num}`}
                 onClick={() => scrollToStep(step.num)}
-                className={`relative z-10 flex flex-col items-center md:items-start text-center md:text-left rtl:md:text-right p-6 sm:p-7 rounded-3xl transition-all duration-300 cursor-pointer ${
+                className={`relative z-10 w-full min-h-[250px] flex flex-col items-center md:items-start text-center md:text-left rtl:md:text-right p-5 sm:p-6 rounded-3xl transition-all duration-300 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${
                   isCurrent
-                    ? 'bg-white dark:bg-slate-900 border-2 border-indigo-500/80 dark:border-indigo-400/80 shadow-xl shadow-indigo-500/10 ring-4 ring-indigo-500/10 scale-[1.02]'
+                    ? 'bg-white dark:bg-slate-900 border-2 border-indigo-500/80 dark:border-indigo-400/80 shadow-lg shadow-indigo-500/10 ring-4 ring-indigo-500/10'
                     : isPast
                     ? 'bg-white/80 dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-800 shadow-sm hover:border-slate-300'
                     : 'bg-white/50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-850 opacity-80 hover:opacity-100 hover:border-slate-200'
@@ -302,7 +271,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
                 <div className="mb-4">
                   {isCurrent ? (
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800 shadow-2xs">
-                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-ping" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />
                       <span>{isRtl ? 'الخطوة النشطة الآن' : 'Currently Reading'}</span>
                     </span>
                   ) : isPast ? (
@@ -334,7 +303,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
                 <p className="text-[14px] sm:text-[15px] text-slate-600 dark:text-slate-300 leading-relaxed font-normal max-w-sm">
                   {step.body}
                 </p>
-              </div>
+              </button>
             );
           })}
 

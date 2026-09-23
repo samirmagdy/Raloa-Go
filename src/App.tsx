@@ -5,6 +5,7 @@ import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { TrustAndBenefits } from './components/TrustAndBenefits';
 import { TemplateGallery } from './components/TemplateGallery';
+import { TemplatesPage } from './components/TemplatesPage';
 import { HowItWorks } from './components/HowItWorks';
 import { FeatureGrid } from './components/FeatureGrid';
 import { Testimonials } from './components/Testimonials';
@@ -51,11 +52,12 @@ function MainApp() {
   const [isLoading, setIsLoading] = useState(true);
 
   // Client Routing State for Handling 404 and Broken Links Gracefully
-  const [currentRoute, setCurrentRoute] = useState<'home' | '404' | 'studio'>(() => {
+  const [currentRoute, setCurrentRoute] = useState<'home' | '404' | 'studio' | 'templates'>(() => {
     if (typeof window === 'undefined') return 'home';
     const path = window.location.pathname;
     const hash = window.location.hash;
     if (path === '/studio') return 'studio';
+    if (path === '/templates') return 'templates';
     if (hash === '#404') return '404';
     if (path !== '/' && path !== '' && path !== '/index.html') return '404';
     return 'home';
@@ -77,13 +79,21 @@ function MainApp() {
         ? locale === 'ar'
           ? '٤٠٤: الصفحة غير موجودة — RALOA'
           : '404: Page Not Found — RALOA'
-        : undefined,
+        : currentRoute === 'templates'
+          ? locale === 'ar'
+            ? 'معرض قوالب رالوا — جميع التصاميم'
+            : 'All Templates — RALOA Design Gallery'
+          : undefined,
     customDescription:
       currentRoute === '404'
         ? locale === 'ar'
           ? 'عذراً، الصفحة المطلوبة غير متوفرة. عد إلى الصفحة الرئيسية لرالوا.'
           : 'The link you followed may be broken. Return to RALOA home.'
-        : undefined
+        : currentRoute === 'templates'
+          ? locale === 'ar'
+            ? 'استعرض جميع قوالب رالوا واختر التصميم المناسب لموقعك المصغر.'
+            : 'Browse every RALOA template and choose the right design for your mini-site.'
+          : undefined
   });
 
   // Web Speech API Voice-over Tour Hook
@@ -216,6 +226,9 @@ function MainApp() {
       if (path === '/studio') {
         setStudioOpen(true);
         setCurrentRoute('studio');
+      } else if (path === '/templates') {
+        setStudioOpen(false);
+        setCurrentRoute('templates');
       } else if (hash === '#404' || (path !== '/' && path !== '' && path !== '/index.html')) {
         setStudioOpen(false);
         setCurrentRoute('404');
@@ -239,6 +252,16 @@ function MainApp() {
     setAttemptedPath('');
     if (window.location.pathname !== '/' || window.location.hash !== '') {
       window.history.pushState(null, '', '/');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleOpenTemplates = () => {
+    setCurrentRoute('templates');
+    setAttemptedPath('');
+    setStudioOpen(false);
+    if (window.location.pathname !== '/templates') {
+      window.history.pushState(null, '', '/templates');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -499,6 +522,12 @@ function MainApp() {
             onClose={handleCloseStudio}
           />
         </Suspense>
+      ) : currentRoute === 'templates' ? (
+        <TemplatesPage
+          locale={locale}
+          onReturnHome={handleReturnHome}
+          onSelectTemplate={handleSelectTemplate}
+        />
       ) : currentRoute === '404' ? (
         <NotFound
           locale={locale}
@@ -561,7 +590,7 @@ function MainApp() {
           <TemplateGallery
             locale={locale}
             onSelectTemplate={handleSelectTemplate}
-            onBrowseAll={() => handleSelectTemplate(templatesData[0])}
+            onBrowseAll={handleOpenTemplates}
           />
         </FadeInSection>
 
