@@ -252,6 +252,17 @@ body,
     height: auto !important;
   }
 
+  /* Dedicated Studio page print layout */
+  .raloa-studio-page {
+    background: #ffffff !important;
+  }
+
+  .raloa-studio-page-card {
+    min-height: auto !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
+
   /* 6. Phone Mockup Clean Print Styling */
   .raloa-phone-mockup {
     background: #ffffff !important;

@@ -51,10 +51,11 @@ function MainApp() {
   const [isLoading, setIsLoading] = useState(true);
 
   // Client Routing State for Handling 404 and Broken Links Gracefully
-  const [currentRoute, setCurrentRoute] = useState<'home' | '404'>(() => {
+  const [currentRoute, setCurrentRoute] = useState<'home' | '404' | 'studio'>(() => {
     if (typeof window === 'undefined') return 'home';
     const path = window.location.pathname;
     const hash = window.location.hash;
+    if (path === '/studio') return 'studio';
     if (hash === '#404') return '404';
     if (path !== '/' && path !== '' && path !== '/index.html') return '404';
     return 'home';
@@ -95,7 +96,7 @@ function MainApp() {
   } = useVoiceTour({ locale });
 
   // Modal States
-  const [studioOpen, setStudioOpen] = useState(false);
+  const [studioOpen, setStudioOpen] = useState(() => typeof window !== 'undefined' && window.location.pathname === '/studio');
   const [studioUsername, setStudioUsername] = useState('creator');
   const [studioTemplate, setStudioTemplate] = useState<TemplateItem>(templatesData[0]);
 
@@ -212,10 +213,15 @@ function MainApp() {
     const handleLocationChange = () => {
       const path = window.location.pathname;
       const hash = window.location.hash;
-      if (hash === '#404' || (path !== '/' && path !== '' && path !== '/index.html')) {
+      if (path === '/studio') {
+        setStudioOpen(true);
+        setCurrentRoute('studio');
+      } else if (hash === '#404' || (path !== '/' && path !== '' && path !== '/index.html')) {
+        setStudioOpen(false);
         setCurrentRoute('404');
         setAttemptedPath(path !== '/' && path !== '' ? path : hash);
       } else {
+        setStudioOpen(false);
         setCurrentRoute('home');
       }
     };
@@ -283,6 +289,20 @@ function MainApp() {
     if (username) setStudioUsername(username);
     if (template) setStudioTemplate(template);
     setStudioOpen(true);
+    setCurrentRoute('studio');
+    if (window.location.pathname !== '/studio') {
+      window.history.pushState(null, '', '/studio');
+    }
+  };
+
+  const handleCloseStudio = () => {
+    setStudioOpen(false);
+    setCurrentRoute('home');
+    setAttemptedPath('');
+    if (window.location.pathname === '/studio') {
+      window.history.pushState(null, '', '/');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSelectTemplate = (template: TemplateItem) => {
@@ -327,12 +347,15 @@ function MainApp() {
     authModal.open ||
     selectedPlanState ||
     contactOpen ||
-    previewTemplate ||
-    studioOpen
+    previewTemplate
   );
 
   // Close the active modal in priority order (topmost first)
   const closeTopModal = () => {
+    if (studioOpen) {
+      handleCloseStudio();
+      return;
+    }
     if (commandPaletteOpen) {
       setCommandPaletteOpen(false);
       return;
@@ -371,7 +394,7 @@ function MainApp() {
       return;
     }
     if (studioOpen) {
-      setStudioOpen(false);
+      handleCloseStudio();
       return;
     }
   };
@@ -384,7 +407,7 @@ function MainApp() {
       ignoreInInputs: false,
       preventDefault: true,
       handler: () => {
-        if (isAnyModalOpen) {
+        if (studioOpen || isAnyModalOpen) {
           closeTopModal();
         } else if (currentRoute === '404') {
           handleReturnHome();
@@ -460,14 +483,23 @@ function MainApp() {
   return (
     <div className={`min-h-screen bg-white dark:bg-slate-950 text-[#0F172A] dark:text-slate-100 transition-colors duration-200 ${locale === 'ar' ? 'font-sans' : 'font-sans'}`}>
       
-      {/* Custom Spring-Based Trailing Cursor */}
-      <CustomCursor theme={theme} />
+      {/* Keep the editor canvas clean: the system cursor remains available in Studio. */}
+      {!studioOpen && <CustomCursor theme={theme} />}
 
       {/* Global Branded Loading Overlay */}
       <LoadingOverlay isLoading={isLoading} locale={locale} theme={theme} />
 
-      {/* 404 Page Not Found or Standard Landing Page */}
-      {currentRoute === '404' ? (
+      {/* Dedicated Studio page, 404 page, or standard landing page */}
+      {currentRoute === 'studio' ? (
+        <Suspense fallback={<LoadingOverlay isLoading locale={locale} theme={theme} />}>
+          <StudioModal
+            initialUsername={studioUsername}
+            initialTemplate={studioTemplate}
+            locale={locale}
+            onClose={handleCloseStudio}
+          />
+        </Suspense>
+      ) : currentRoute === '404' ? (
         <NotFound
           locale={locale}
           theme={theme}
@@ -635,16 +667,6 @@ function MainApp() {
         onClose={() => setShortcutsModalOpen(false)}
         onTriggerEasterEgg={() => triggerEasterEgg('RALOA')}
       />
-
-      {/* Live Studio Mini-Site Builder */}
-      {studioOpen && (
-        <StudioModal
-          initialUsername={studioUsername}
-          initialTemplate={studioTemplate}
-          locale={locale}
-          onClose={() => setStudioOpen(false)}
-        />
-      )}
 
       {/* Template Preview Details Modal */}
       {previewTemplate && (

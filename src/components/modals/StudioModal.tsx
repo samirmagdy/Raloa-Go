@@ -33,7 +33,6 @@ import { SocialPreviewGenerator } from '../studio/SocialPreviewGenerator';
 import { SortableBlockList, StudioBlockItem } from '../studio/SortableBlockList';
 import { StudioTemplatePreview } from '../studio/StudioTemplatePreview';
 import { useAuth } from '../../hooks/useAuth';
-import { useModalA11y } from '../../hooks/useModalA11y';
 import { useHistoryState } from '../../hooks/useHistoryState';
 
 export interface StudioSiteConfig {
@@ -65,7 +64,6 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 }) => {
   const { user, saveMiniSite, loadMiniSite } = useAuth();
   const isRtl = locale === 'ar';
-  const dialogRef = useModalA11y<HTMLDivElement>();
   const defaultTemplate = initialTemplate || templatesData[0];
 
   const [isCloudSynced, setIsCloudSynced] = useState(false);
@@ -492,20 +490,11 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200 raloa-studio-modal-container"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="studio-dialog-title"
-      ref={dialogRef}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="relative w-full max-w-5xl h-[92vh] max-h-[860px] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col raloa-studio-modal-card">
+    <main className="min-h-screen w-full bg-slate-100 text-slate-900 raloa-studio-page">
+      <div className="relative min-h-screen w-full bg-white overflow-hidden flex flex-col raloa-studio-page-card">
         
         {/* Studio Top Navigation Bar */}
-        <div className="h-16 px-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-white shrink-0 print:border-b-2 print:border-slate-800">
+        <div className="sticky top-0 z-30 min-h-16 px-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-white/95 backdrop-blur-md shrink-0 print:border-b-2 print:border-slate-800">
           <div className="flex items-center gap-3">
             <RaloaMark size={34} />
             <div>
@@ -663,10 +652,10 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         </div>
 
         {/* Studio Workspace: Split 2-Column (Left: Editor Panels, Right: Live Phone Screen) */}
-        <div className="flex-1 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-12 bg-slate-50 print:bg-white print:block">
+        <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-12 bg-slate-50 print:bg-white print:block">
           
           {/* Left Column: Editor Controls (lg:col-span-7) */}
-          <div className="lg:col-span-7 h-auto lg:h-full overflow-y-auto p-4 sm:p-6 lg:p-8 bg-white border-r border-slate-200 studio-editor-sidebar print:hidden">
+          <div className="lg:col-span-7 h-auto lg:h-full min-h-0 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-white border-r border-slate-200 studio-editor-sidebar print:hidden">
             
             {/* Mobile Tab Switcher */}
             <div className="sm:hidden flex items-center gap-1 p-1 bg-slate-100 rounded-xl mb-6">
@@ -1377,6 +1366,6 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         </footer>
 
       </div>
-    </div>
+    </main>
   );
 };
