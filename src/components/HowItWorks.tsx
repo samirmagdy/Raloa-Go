@@ -16,7 +16,6 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
   const sectionRef = useRef<HTMLElement>(null);
   const stepCardRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [activeStep, setActiveStep] = useState<number>(1);
-  const [readingProgress, setReadingProgress] = useState<number>(33);
 
   // Calculate estimated reading time for all guide content
   const sectionContent = [
@@ -83,7 +82,6 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
       });
 
       setActiveStep(closestStep);
-      setReadingProgress(closestStep === 1 ? 33 : closestStep === 2 ? 66 : 100);
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -110,7 +108,6 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
       behavior: 'smooth'
     });
     setActiveStep(stepNum);
-    setReadingProgress(stepNum === 1 ? 33 : stepNum === 2 ? 66 : 100);
   }, []);
 
   return (
@@ -141,97 +138,6 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
             <p className="text-[16px] sm:text-[18px] text-slate-600 dark:text-slate-300 mt-3 font-normal leading-relaxed max-w-2xl">
               {t.subheadline}
             </p>
-          </div>
-        </div>
-
-        {/* Single step progress control */}
-        <div
-          id="how-it-works-reading-tracker"
-          className="mb-8 sm:mb-10 p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm transition-all duration-200"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-4">
-            {/* Active Step Badge & Current Step Title */}
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] sm:text-xs font-extrabold bg-indigo-600 text-white shadow-xs shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-white" />
-                <span>
-                  {isRtl
-                    ? `الخطوة ${activeStep} من 3`
-                    : `Step ${activeStep} of 3`}
-                </span>
-              </span>
-              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                {steps[activeStep - 1]?.title}
-              </span>
-            </div>
-
-            {/* Reading Progress Percentage */}
-            <div className="flex items-center gap-2 self-start sm:self-auto text-xs text-slate-500 dark:text-slate-400 font-semibold">
-              <span>{isRtl ? 'نسبة إنجاز الدليل:' : 'Guide Progress:'}</span>
-              <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold bg-white dark:bg-slate-800 px-2.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 shadow-2xs">
-                {readingProgress}%
-              </span>
-            </div>
-          </div>
-
-          {/* 3-Segment Interactive Step Progress Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-            {steps.map((s) => {
-              const isPast = activeStep > s.num;
-              const isCurrent = activeStep === s.num;
-
-              return (
-                <button
-                  key={s.num}
-                  type="button"
-                  onClick={() => scrollToStep(s.num)}
-                  aria-label={`${s.title} - ${isCurrent ? (isRtl ? 'الخطوة النشطة' : 'Active step') : isPast ? (isRtl ? 'مكتمل' : 'Completed') : (isRtl ? 'قادم' : 'Upcoming')}`}
-                    className={`min-h-11 flex items-center gap-2 sm:gap-2.5 p-2.5 rounded-xl text-left rtl:text-right transition-all cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 ${
-                    isCurrent
-                      ? 'bg-white dark:bg-slate-800 shadow-xs border border-indigo-300 dark:border-indigo-600 ring-2 ring-indigo-500/20'
-                      : isPast
-                      ? 'bg-white/60 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70'
-                      : 'bg-slate-100/70 dark:bg-slate-850 hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700'
-                  }`}
-                >
-                  {/* Step Number or Check */}
-                  <div
-                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 transition-transform group-hover:scale-105 ${
-                      isCurrent
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : isPast
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                    }`}
-                  >
-                    {isPast ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : s.num}
-                  </div>
-
-                  {/* Step Quick Label */}
-                  <div className="min-w-0 flex-1">
-                    <p
-                      className={`text-[11px] sm:text-xs font-bold truncate ${
-                        isCurrent
-                          ? 'text-indigo-600 dark:text-indigo-400'
-                          : isPast
-                          ? 'text-slate-700 dark:text-slate-300'
-                          : 'text-slate-400 dark:text-slate-500'
-                      }`}
-                    >
-                      {s.shortLabel}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Continuous Progress Track */}
-          <div className="mt-4 w-full h-1.5 bg-slate-200/80 dark:bg-slate-800 rounded-full overflow-hidden" aria-hidden="true">
-            <div
-              className="h-full bg-gradient-to-r from-indigo-500 via-blue-500 to-violet-500 rounded-full transition-all duration-300 ease-out"
-              style={{ width: `${readingProgress}%` }}
-            />
           </div>
         </div>
 
