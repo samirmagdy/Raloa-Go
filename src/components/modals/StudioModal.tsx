@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import QRCode from 'qrcode';
 import {
   X,
   Check,
@@ -168,6 +169,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   const [previewMode, setPreviewMode] = useState<'phone' | 'social'>('phone');
   const [copied, setCopied] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
   const [validationMessage, setValidationMessage] = useState('');
 
   const isValidMediaUrl = (value: string) => {
@@ -452,11 +454,43 @@ export const StudioModal: React.FC<StudioModalProps> = ({
     await persistSiteConfig({ ...siteConfig, links: newItems });
   };
 
-  const handleCopyLink = () => {
-    const url = `https://raloa.app/@${username}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const publicUrl = `https://raloa.app/@${username}`;
+
+  useEffect(() => {
+    if (!showQr || !username.trim()) {
+      setQrCodeDataUrl('');
+      return;
+    }
+
+    let cancelled = false;
+    QRCode.toDataURL(publicUrl, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 240,
+      color: { dark: '#0f172a', light: '#ffffff' }
+    }).then((dataUrl) => {
+      if (!cancelled) setQrCodeDataUrl(dataUrl);
+    }).catch(() => {
+      if (!cancelled) setQrCodeDataUrl('');
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [publicUrl, showQr]);
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setValidationMessage(isRtl ? 'تعذر نسخ الرابط.' : 'Could not copy the link.');
+    }
+  };
+
+  const handleOpenPublicSite = () => {
+    window.open(publicUrl, '_blank', 'noopener,noreferrer');
   };
 
   const handlePreviewAction = useCallback((_: 'portfolio' | 'booking' | 'shop' | 'gear', data?: { url?: string }) => {
@@ -1209,38 +1243,25 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                     <span>{showQr ? (isRtl ? 'إخفاء رمز QR' : 'Hide QR') : (isRtl ? 'عرض رمز QR' : 'View QR Code')}</span>
                   </button>
 
-                  <a
-                    href={`#live-demo`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleCopyLink();
-                      alert(isRtl ? `تم نسخ الرابط raloa.app/@${username}` : `Link raloa.app/@${username} copied to clipboard!`);
-                    }}
+                  <button
+                    type="button"
+                    onClick={handleOpenPublicSite}
                     className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-colors flex items-center gap-2"
                   >
                     <ExternalLink className="w-4 h-4 text-slate-600" />
                     <span>{isRtl ? 'فتح في علامة تبويب جديدة' : 'Open in New Tab'}</span>
-                  </a>
+                  </button>
                 </div>
 
                 {showQr && (
                   <div className="p-6 bg-white border border-slate-200 rounded-2xl inline-flex flex-col items-center justify-center shadow-md animate-in fade-in">
-                    {/* SVG Clean Vector QR Mockup */}
-                    <div className="w-40 h-40 bg-slate-900 rounded-xl p-3 flex flex-col justify-between">
-                      <div className="flex justify-between">
-                        <div className="w-10 h-10 bg-white rounded-md p-1.5"><div className="w-full h-full bg-slate-900 rounded-xs" /></div>
-                        <div className="w-10 h-10 bg-white rounded-md p-1.5"><div className="w-full h-full bg-slate-900 rounded-xs" /></div>
+                    {qrCodeDataUrl ? (
+                      <img src={qrCodeDataUrl} alt={isRtl ? 'رمز QR لموقعك' : 'QR code for your site'} className="w-40 h-40" />
+                    ) : (
+                      <div className="w-40 h-40 flex items-center justify-center text-center text-xs text-slate-500">
+                        {isRtl ? 'جارٍ إنشاء رمز QR...' : 'Generating QR code...'}
                       </div>
-                      <div className="flex justify-center gap-1">
-                        <div className="w-4 h-4 bg-white rounded-xs" />
-                        <div className="w-4 h-4 bg-white rounded-xs" />
-                        <div className="w-4 h-4 bg-white rounded-xs" />
-                      </div>
-                      <div className="flex justify-between">
-                        <div className="w-10 h-10 bg-white rounded-md p-1.5"><div className="w-full h-full bg-slate-900 rounded-xs" /></div>
-                        <div className="w-6 h-6 bg-white rounded-xs ml-auto" />
-                      </div>
-                    </div>
+                    )}
                     <span className="text-[11px] font-mono text-slate-500 mt-2">
                       Scan to visit raloa.app/@{username}
                     </span>

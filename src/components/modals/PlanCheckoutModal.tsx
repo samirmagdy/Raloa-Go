@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, ShieldCheck, CreditCard, ArrowRight, Loader2 } from 'lucide-react';
+import { X, Check, ShieldCheck, ArrowRight } from 'lucide-react';
 import { PremiumMark } from '../brand/PremiumMark';
 import { Locale, PricingPlan } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
@@ -24,7 +24,6 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
   const { user, updatePlan } = useAuth();
   const isRtl = locale === 'ar';
   const price = plan.priceMonthly === 0 ? 0 : isYearly ? plan.priceYearly : plan.priceMonthly;
-  const annualTotal = (price * 12).toFixed(2);
   const [email, setEmail] = useState(user?.email || '');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -163,26 +162,27 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
               </div>
 
               {plan.priceMonthly > 0 && (
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-500 flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-800 flex items-start gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <span>
                     {isRtl
-                      ? 'ضمان استرداد كامل خلال ١٤ يوماً دون أي قيود.'
-                      : '14-day no-questions-asked money-back guarantee.'}
+                      ? 'الدفع عبر Stripe قيد التجهيز. لن يتم تحصيل أي رسوم في هذه النسخة.'
+                      : 'Stripe payments are being integrated. This preview will not charge you.'}
                   </span>
                 </div>
               )}
 
               <button
                 type="submit"
-                className="w-full py-3.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                disabled={plan.priceMonthly > 0 || loading}
+                className="w-full py-3.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span>
                   {plan.priceMonthly === 0
                     ? isRtl ? 'ابدأ مجاناً الآن' : 'Start Free Now'
-                    : isRtl ? `تأكيد الاشتراك ($${price}/${isYearly ? 'سنة' : 'شهر'})` : `Activate ${plan.name} ($${price}/${isYearly ? 'yr' : 'mo'})`}
+                    : isRtl ? 'Stripe قيد التجهيز' : 'Stripe Checkout Coming Soon'}
                 </span>
-                <ArrowRight className="w-4 h-4 rtl:rotate-180" />
+                {plan.priceMonthly === 0 && <ArrowRight className="w-4 h-4 rtl:rotate-180" />}
               </button>
               {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
             </form>
