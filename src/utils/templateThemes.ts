@@ -334,10 +334,13 @@ export function getTemplateBackgroundContainerProperties(
   const isDark = themeConfig.mode === 'dark';
   const themeColor = template.themeColor || '#6366F1';
   const coverImg = customCoverImage || template.coverImage;
+  const cssCoverImg = coverImg?.replace(/["\\]/g, '\\$&');
 
   // 1. Stage container properties (outer studio preview stage container)
   const stageContainerStyle: React.CSSProperties = {
     backgroundColor: isDark ? '#080B12' : '#F8FAFC',
+    // The Wallpaper style belongs to the phone screen only. Keep the Studio
+    // workspace neutral so the editor stage never looks like published content.
     backgroundImage: backgroundStyle === 'minimal'
       ? 'none'
       : backgroundStyle === 'gradient'
@@ -360,8 +363,8 @@ export function getTemplateBackgroundContainerProperties(
 
   if (backgroundStyle === 'immersive' && coverImg) {
     screenBgImage = isDark
-      ? `linear-gradient(to bottom, rgba(0,0,0,0.5), rgba(9,13,22,0.85) 60%, rgba(9,13,22,0.98)), url("${coverImg}")`
-      : `linear-gradient(to bottom, rgba(255,255,255,0.5), rgba(248,250,252,0.85) 60%, rgba(248,250,252,0.98)), url("${coverImg}")`;
+      ? `linear-gradient(to bottom, rgba(0,0,0,0.38), rgba(9,13,22,0.82) 60%, rgba(9,13,22,0.98)), url("${cssCoverImg}")`
+      : `linear-gradient(to bottom, rgba(255,255,255,0.38), rgba(248,250,252,0.82) 60%, rgba(248,250,252,0.98)), url("${cssCoverImg}")`;
   } else if (backgroundStyle === 'gradient') {
     screenBgImage = `linear-gradient(160deg, ${themeColor}38 0%, ${isDark ? '#090D16' : '#FFFFFF'} 65%)`;
   } else if (backgroundStyle === 'signature') {

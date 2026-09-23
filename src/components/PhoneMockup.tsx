@@ -2,31 +2,13 @@ import React, { useState } from 'react';
 import {
   CheckCircle2,
   ChevronRight,
-  Instagram,
-  Linkedin,
-  Mail,
-  Youtube,
-  Twitter,
-  Github,
-  Music2,
-  AtSign,
-  Globe
+  Mail
 } from 'lucide-react';
 import { PremiumMark } from './brand/PremiumMark';
+import { PlatformIcon, PlatformIconName } from './brand/PlatformIcon';
 import { TemplateItem, BackgroundStyle } from '../types';
 import { RaloaMark } from './brand/RaloaLogo';
 import { resolveTemplateTheme, getTemplateBackgroundContainerProperties } from '../utils/templateThemes';
-
-const SOCIAL_ICONS: Record<TemplateItem['socials'][number]['platform'], React.ElementType> = {
-  instagram: Instagram,
-  x: Twitter,
-  youtube: Youtube,
-  linkedin: Linkedin,
-  email: Mail,
-  tiktok: Music2,
-  github: Github,
-  spotify: Music2
-};
 
 interface PhoneMockupProps {
   template: TemplateItem;
@@ -87,25 +69,6 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
         className="relative rounded-[38px] overflow-hidden flex flex-col min-h-[580px] max-h-[640px] shadow-inner raloa-phone-screen transition-all duration-300"
         style={bgContainerProps.screenContainerStyle}
       >
-        {/* Immersive Wallpaper Backdrop (if 'immersive' mode is selected) */}
-        {currentBgStyle === 'immersive' && coverImg && (
-          <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-            <img
-              src={coverImg}
-              alt=""
-              className="w-full h-full object-cover scale-110 blur-xl opacity-35"
-              loading="eager"
-            />
-            <div
-              className={`absolute inset-0 ${
-                themeConfig.mode === 'dark'
-                  ? 'bg-gradient-to-b from-black/60 via-slate-950/85 to-slate-950/95'
-                  : 'bg-gradient-to-b from-white/60 via-slate-50/85 to-slate-50/95'
-              }`}
-            />
-          </div>
-        )}
-
         {/* Ambient Glow for Template (Signature / Gradient mode) */}
         {themeConfig.ambientGlow && currentBgStyle !== 'minimal' && (
           <div
@@ -198,7 +161,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
             {/* Social Icons Strip */}
             <div className="flex items-center justify-center gap-2 mt-3.5 mb-4">
               {template.socials.map((social) => {
-                const SocialIcon = SOCIAL_ICONS[social.platform] || Globe;
+                const isPlatformIcon = social.platform !== 'email';
                 return (
                   <a
                     key={`${social.platform}-${social.url}`}
@@ -208,7 +171,11 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                     aria-label={social.platform}
                     className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all shadow-2xs ${themeConfig.socialBg} ${themeConfig.socialBorder} ${themeConfig.socialText} ${themeConfig.socialHoverBg}`}
                   >
-                    <SocialIcon className="w-3.5 h-3.5" />
+                    {isPlatformIcon ? (
+                      <PlatformIcon name={social.platform as PlatformIconName} className="w-3.5 h-3.5" />
+                    ) : (
+                      <Mail className="w-3.5 h-3.5" />
+                    )}
                   </a>
                 );
               })}

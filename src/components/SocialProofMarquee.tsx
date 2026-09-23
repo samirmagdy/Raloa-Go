@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ExternalLink, CheckCircle2, ArrowUpRight, Globe, Layers, Users } from 'lucide-react';
 import { Locale } from '../types';
+import { PlatformIcon } from './brand/PlatformIcon';
 
 interface SocialProofMarqueeProps {
   locale: Locale;
@@ -233,7 +234,7 @@ const PARTNER_COMPANIES: PartnerCompany[] = [
     category: 'Finance',
     categoryAr: 'مدفوعات مالية',
     logoSvg: (
-      <span className="font-extrabold text-base tracking-tighter font-sans">stripe</span>
+      <PlatformIcon name="stripe" className="w-5 h-5" title="Stripe" />
     )
   },
   {

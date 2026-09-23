@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Instagram, Youtube, Linkedin, Twitter, Keyboard, BarChart3, Link2, Check, Share2, Gift } from 'lucide-react';
+import { Keyboard, BarChart3, Link2, Check, Share2, Gift } from 'lucide-react';
+import { PlatformIcon } from './brand/PlatformIcon';
 import { RaloaLogo } from './brand/RaloaLogo';
 import { Locale } from '../types';
 import { dictionary } from '../data/content';
@@ -155,7 +156,7 @@ export const Footer: React.FC<FooterProps> = ({
                 aria-label="RALOA on X"
                 className="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center transition-colors border border-slate-200 dark:border-slate-800 shadow-2xs"
               >
-                <Twitter className="w-4 h-4" />
+                <PlatformIcon name="x" className="w-4 h-4" />
               </a>
               <a
                 href="https://instagram.com"
@@ -164,7 +165,7 @@ export const Footer: React.FC<FooterProps> = ({
                 aria-label="RALOA on Instagram"
                 className="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center transition-colors border border-slate-200 dark:border-slate-800 shadow-2xs"
               >
-                <Instagram className="w-4 h-4" />
+                <PlatformIcon name="instagram" className="w-4 h-4" />
               </a>
               <a
                 href="https://youtube.com"
@@ -173,7 +174,7 @@ export const Footer: React.FC<FooterProps> = ({
                 aria-label="RALOA on YouTube"
                 className="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center transition-colors border border-slate-200 dark:border-slate-800 shadow-2xs"
               >
-                <Youtube className="w-4 h-4" />
+                <PlatformIcon name="youtube" className="w-4 h-4" />
               </a>
               <a
                 href="https://linkedin.com"
@@ -182,7 +183,7 @@ export const Footer: React.FC<FooterProps> = ({
                 aria-label="RALOA on LinkedIn"
                 className="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center transition-colors border border-slate-200 dark:border-slate-800 shadow-2xs"
               >
-                <Linkedin className="w-4 h-4" />
+                <PlatformIcon name="linkedin" className="w-4 h-4" />
               </a>
             </div>
 
