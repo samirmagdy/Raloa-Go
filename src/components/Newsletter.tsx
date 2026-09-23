@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Mail, CheckCircle2, AlertCircle, Loader2, Sparkles, ShieldCheck, BellRing, ArrowRight } from 'lucide-react';
+import { Mail, CheckCircle2, AlertCircle, Loader2, ShieldCheck, BellRing, ArrowRight } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Locale } from '../types';
 import { saveNewsletterSubscription } from '../lib/firebase';
+import { PremiumMark } from './brand/PremiumMark';
 
 interface NewsletterProps {
   locale: Locale;
@@ -76,7 +77,7 @@ export const Newsletter: React.FC<NewsletterProps> = ({ locale }) => {
             
             {/* Pill Header Badge */}
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-400/20 text-indigo-300 text-xs font-bold tracking-wide uppercase mb-6 shadow-xs">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+              <PremiumMark className="w-3.5 h-3.5 text-indigo-400" />
               <span>{isRtl ? 'النشرة الأسبوعية للمبدعين' : 'Weekly Creator Digest'}</span>
             </div>
 
@@ -175,7 +176,7 @@ export const Newsletter: React.FC<NewsletterProps> = ({ locale }) => {
                 <span>{isRtl ? 'إشعار فوري بالتحديثات' : 'Instant product release alerts'}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-cyan-400" />
+                <PremiumMark className="w-4 h-4 text-cyan-400" />
                 <span>{isRtl ? 'إلغاء الاشتراك بنقرة واحدة' : 'Unsubscribe at any time'}</span>
               </div>
             </div>

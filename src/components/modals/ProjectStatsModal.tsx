@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { PremiumMark } from '../brand/PremiumMark';
 import {
   X,
   BarChart3,
@@ -6,7 +7,6 @@ import {
   MousePointerClick,
   Eye,
   RefreshCw,
-  Sparkles,
   ArrowUpRight,
   Calendar,
   Layers
@@ -420,7 +420,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
                 }}
                 className="flex-1 sm:flex-initial px-4.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <PremiumMark className="w-3.5 h-3.5" />
                 <span>{isRtl ? 'ابدأ موقعك مجاناً' : 'Start Your Site'}</span>
               </button>
             )}

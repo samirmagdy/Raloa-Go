@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Check, ArrowRight, Sparkles, AlertCircle } from 'lucide-react';
+import { Check, ArrowRight, AlertCircle } from 'lucide-react';
+import { PremiumMark } from './brand/PremiumMark';
 import { Locale } from '../types';
 import { dictionary } from '../data/content';
 
@@ -49,10 +50,10 @@ export const FinalCTA: React.FC<FinalCTAProps> = ({ locale, onOpenStudio }) => {
           
           {/* Decorative spark elements */}
           <div className="absolute top-4 left-6 opacity-30 select-none pointer-events-none">
-            <Sparkles className="w-8 h-8 text-white animate-pulse" />
+            <PremiumMark className="w-8 h-8 text-white animate-pulse" />
           </div>
           <div className="absolute bottom-4 right-8 opacity-25 select-none pointer-events-none">
-            <Sparkles className="w-10 h-10 text-white animate-pulse" />
+            <PremiumMark className="w-10 h-10 text-white animate-pulse" />
           </div>
 
           <div className="max-w-3xl mx-auto text-center flex flex-col items-center">

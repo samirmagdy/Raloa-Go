@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { ArrowRight, ChevronLeft, ChevronRight, Plus, Sparkles } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Locale, TemplateItem } from '../types';
 import { templatesData, dictionary } from '../data/content';
 import { TemplateSnapshotPopover } from './TemplateSnapshotPopover';

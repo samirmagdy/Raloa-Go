@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Sparkles,
   Trophy,
   PartyPopper,
   X,
@@ -11,11 +10,11 @@ import {
   Check,
   Flame,
   ArrowRight,
-  Sparkle
 } from 'lucide-react';
 import { Locale } from '../types';
 import { fireSiteLaunchConfetti } from '../utils/confetti';
 import { playCelebratoryFanfare } from '../utils/audio';
+import { PremiumMark } from './brand/PremiumMark';
 
 interface EasterEggOverlayProps {
   isOpen: boolean;
@@ -112,12 +111,12 @@ export const EasterEggOverlay: React.FC<EasterEggOverlayProps> = ({
           {/* Floating celebratory ambient particles */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
             {[
-              { top: '15%', left: '12%', delay: 0, text: '✨' },
-              { top: '22%', right: '15%', delay: 0.4, text: '👑' },
-              { bottom: '20%', left: '18%', delay: 0.8, text: '🚀' },
-              { bottom: '25%', right: '12%', delay: 0.2, text: '💎' },
-              { top: '45%', left: '8%', delay: 1.1, text: '🎉' },
-              { top: '50%', right: '9%', delay: 0.6, text: '⚡️' }
+              { top: '15%', left: '12%', delay: 0, variant: 'spark' as const },
+              { top: '22%', right: '15%', delay: 0.4, variant: 'voucher' as const },
+              { bottom: '20%', left: '18%', delay: 0.8, variant: 'launch' as const },
+              { bottom: '25%', right: '12%', delay: 0.2, variant: 'links' as const },
+              { top: '45%', left: '8%', delay: 1.1, variant: 'spark' as const },
+              { top: '50%', right: '9%', delay: 0.6, variant: 'launch' as const }
             ].map((glyph, idx) => (
               <motion.div
                 key={idx}
@@ -134,9 +133,9 @@ export const EasterEggOverlay: React.FC<EasterEggOverlayProps> = ({
                   delay: glyph.delay
                 }}
                 style={{ position: 'absolute', top: glyph.top, left: glyph.left, right: glyph.right }}
-                className="text-2xl sm:text-3xl select-none"
+                className="w-7 h-7 sm:w-8 sm:h-8 text-white/60 select-none"
               >
-                {glyph.text}
+                <PremiumMark variant={glyph.variant} />
               </motion.div>
             ))}
           </div>
@@ -177,7 +176,7 @@ export const EasterEggOverlay: React.FC<EasterEggOverlayProps> = ({
             {/* Secret Unlocked Badge */}
             <div className="flex justify-center mb-3">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                <Sparkles className="w-3.5 h-3.5" />
+                <PremiumMark className="w-3.5 h-3.5" />
                 {isRtl ? 'مفاجأة سرية مكتشفة' : 'Secret Easter Egg Unlocked'}
               </span>
             </div>
@@ -265,7 +264,7 @@ export const EasterEggOverlay: React.FC<EasterEggOverlayProps> = ({
                 className="w-full sm:flex-1 py-3 px-4 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-pink-500 hover:from-amber-400 hover:via-orange-400 hover:to-pink-400 text-slate-950 font-extrabold text-xs sm:text-sm shadow-lg shadow-amber-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
               >
                 <PartyPopper className="w-4 h-4" />
-                <span>{isRtl ? 'إطلاق المزيد من الألعاب النارية 🎊' : 'Launch More Confetti 🎊'}</span>
+                <span>{isRtl ? 'إطلاق المزيد من الألعاب النارية' : 'Launch More Confetti'}</span>
               </button>
 
               {/* Share / Copy Code Trigger */}

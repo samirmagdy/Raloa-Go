@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { X, ArrowRight, CheckCircle2, Sparkles, Copy, Check, Share2, Link2 } from 'lucide-react';
+import { X, ArrowRight, CheckCircle2, Copy, Check, Share2, Link2 } from 'lucide-react';
+import { PremiumMark } from '../brand/PremiumMark';
 import { Locale, TemplateItem, BackgroundStyle } from '../../types';
 import { PhoneMockup } from '../PhoneMockup';
 import { Tooltip } from '../Tooltip';
@@ -277,7 +278,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
               onClick={() => onUseTemplate(template)}
               className="w-full sm:flex-1 py-3.5 px-6 rounded-full bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
-              <Sparkles className="w-4 h-4 text-indigo-400 dark:text-indigo-600" />
+              <PremiumMark className="w-4 h-4 text-indigo-400 dark:text-indigo-600" />
               <span>{isRtl ? 'استخدم هذا القالب الآن' : 'Use this template'}</span>
               <ArrowRight className="w-4 h-4 rtl:rotate-180" />
             </button>

@@ -6,7 +6,6 @@ import {
   Check,
   Share2,
   Users,
-  Sparkles,
   ArrowRight,
   ShieldCheck,
   CheckCircle2,
@@ -18,6 +17,7 @@ import {
 import confetti from 'canvas-confetti';
 import { Locale } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
+import { PremiumMark } from '../brand/PremiumMark';
 
 interface ReferralModalProps {
   isOpen: boolean;
@@ -214,7 +214,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({
           </div>
           <div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 mb-1">
-              <Sparkles className="w-3 h-3" />
+              <PremiumMark className="w-3 h-3" />
               <span>{isRtl ? 'برنامج مكافآت رالوا' : 'RALOA Rewards Program'}</span>
             </div>
             <h2 id="referral-modal-title" className="text-xl sm:text-2xl font-extrabold tracking-tight">
@@ -416,7 +416,10 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({
         {isGoalReached && (
           <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-center mb-6">
             <h4 className="text-sm font-bold text-emerald-900 dark:text-emerald-200 mb-1">
-              🎉 {isRtl ? 'كود قسيمة شهر Pro المجاني' : 'Your Free Pro Month Voucher Code'}
+              <span className="inline-flex items-center gap-1.5">
+                <PremiumMark variant="voucher" className="w-4 h-4 text-emerald-600 dark:text-emerald-300" />
+                {isRtl ? 'كود قسيمة شهر Pro المجاني' : 'Your Free Pro Month Voucher Code'}
+              </span>
             </h4>
             <div className="inline-block px-4 py-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/80 border border-emerald-300 dark:border-emerald-700 font-mono text-xs font-bold text-emerald-800 dark:text-emerald-200 my-2">
               PRO-30DAYS-FREE-BONUS

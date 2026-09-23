@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X,
-  Sparkles,
   Check,
   Plus,
   Trash2,
@@ -24,6 +23,7 @@ import {
   Undo2,
   Redo2
 } from 'lucide-react';
+import { PremiumMark } from '../brand/PremiumMark';
 import { Locale, TemplateItem, MiniSiteUserConfig, BackgroundStyle } from '../../types';
 import { templatesData } from '../../data/content';
 import { PhoneMockup } from '../PhoneMockup';
@@ -592,7 +592,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
               onClick={handleStartOrPublishSite}
               className="px-4 py-2 rounded-full bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+              <PremiumMark className="w-3.5 h-3.5 text-indigo-400" />
               <span>{isPublished ? (isRtl ? 'تم النشر بنجاح' : 'Live & Published') : (isRtl ? 'نشر وتفعيل الموقع' : 'Launch Site')}</span>
             </button>
 
@@ -824,7 +824,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                       onClick={handleStartOrPublishSite}
                       className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <Sparkles className="w-3.5 h-3.5" />
+                      <PremiumMark className="w-3.5 h-3.5" />
                       <span>{isRtl ? 'بدء ونشر الموقع الآن' : 'Start & Launch Site'}</span>
                     </button>
                   </div>
@@ -1011,7 +1011,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                         onClick={handleStartOrPublishSite}
                         className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
                       >
-                        <Sparkles className="w-3.5 h-3.5" />
+                        <PremiumMark className="w-3.5 h-3.5" />
                         <span>{isRtl ? 'بدء ونشر الموقع الآن' : 'Start & Launch Site'}</span>
                       </button>
                     </div>
@@ -1119,8 +1119,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                     onClick={fireSiteLaunchConfetti}
                     className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:to-pink-600 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer"
                   >
-                    <Sparkles className="w-4 h-4 text-amber-300" />
-                    <span>{isRtl ? 'احتفل بالنشر 🎉' : 'Celebrate Launch 🎉'}</span>
+                    <PremiumMark variant="launch" className="w-4 h-4 text-amber-300" />
+                    <span>{isRtl ? 'احتفل بالنشر' : 'Celebrate Launch'}</span>
                   </button>
 
                   <button

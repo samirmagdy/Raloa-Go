@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowRight, Menu, X, Search, User as UserIcon, LogOut, Sparkles, ChevronDown, Check } from 'lucide-react';
+import { ArrowRight, Menu, X, Search, User as UserIcon, LogOut, ChevronDown, Check } from 'lucide-react';
+import { PremiumMark } from './brand/PremiumMark';
 import { RaloaLogo } from './brand/RaloaLogo';
 import { LanguageDropdown } from './LanguageDropdown';
 import { ThemeToggle } from './ThemeToggle';
@@ -253,7 +254,7 @@ export const Header: React.FC<HeaderProps> = ({
                       </p>
                       <p className="text-[11px] text-slate-500 truncate">{user.email}</p>
                       <div className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                        <Sparkles className="w-3 h-3" />
+                        <PremiumMark className="w-3 h-3" />
                         <span className="capitalize">{profile?.plan || 'Free'} Plan</span>
                       </div>
                     </div>

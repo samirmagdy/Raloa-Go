@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Home, ArrowLeft, ArrowRight, Compass, Sparkles, AlertCircle, HelpCircle } from 'lucide-react';
+import { Home, ArrowLeft, ArrowRight, Compass, AlertCircle, HelpCircle } from 'lucide-react';
 import { Locale } from '../types';
 import { Theme } from '../utils/theme';
 import { RaloaLogo } from './brand/RaloaLogo';
@@ -246,12 +246,12 @@ export const NotFound: React.FC<NotFoundProps> = ({
               </text>
             </g>
 
-            {/* Floating Sparkle / Star 1 */}
+            {/* Floating vector accent 1 */}
             <path
               d="M110 35L112 42L119 44L112 46L110 53L108 46L101 44L108 42L110 35Z"
               className="fill-amber-400"
             />
-            {/* Floating Sparkle / Star 2 */}
+            {/* Floating vector accent 2 */}
             <path
               d="M210 30L211.5 35L216.5 36.5L211.5 38L210 43L208.5 38L203.5 36.5L208.5 35L210 30Z"
               className="fill-indigo-400"

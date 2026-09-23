@@ -1,9 +1,10 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { Check, ArrowRight, Sparkles, AlertCircle, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Check, ArrowRight, AlertCircle, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { motion, useTransform } from 'motion/react';
 import { Locale, TemplateItem } from '../types';
 import { dictionary } from '../data/content';
 import { PhoneMockup } from './PhoneMockup';
+import { PremiumMark } from './brand/PremiumMark';
 import { useScrollProgress } from '../hooks/useScrollProgress';
 import {
   AnnotationCard,
@@ -127,7 +128,7 @@ export const Hero: React.FC<HeroProps> = ({
               transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-50/90 dark:bg-indigo-950/80 border border-indigo-100/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] sm:text-[12px] tracking-wider uppercase mb-6 shadow-2xs"
             >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <PremiumMark className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
               <span>{t.eyebrow}</span>
             </motion.div>
 

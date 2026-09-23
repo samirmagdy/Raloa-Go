@@ -1,5 +1,6 @@
 import React from 'react';
-import { X, Keyboard, Sparkles } from 'lucide-react';
+import { X, Keyboard } from 'lucide-react';
+import { PremiumMark } from '../brand/PremiumMark';
 import { Locale } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
 
@@ -127,7 +128,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
         {/* Secret Easter Egg Hint */}
         <div className="px-6 py-3 bg-amber-500/10 dark:bg-amber-950/30 border-t border-amber-500/20 flex items-center justify-between text-[11px] text-amber-700 dark:text-amber-300">
           <div className="flex items-center gap-1.5 min-w-0">
-            <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <PremiumMark className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span className="truncate">
               {isRtl ? 'سر خفي: اكتب "RALOA" أو كود كونامي' : 'Secret: Type "RALOA" or Konami Code'}
             </span>

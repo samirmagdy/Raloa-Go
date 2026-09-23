@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ExternalLink, CheckCircle2, Sparkles, ArrowUpRight, Globe, Layers, Users } from 'lucide-react';
+import { ExternalLink, CheckCircle2, ArrowUpRight, Globe, Layers, Users } from 'lucide-react';
 import { Locale } from '../types';
 
 interface SocialProofMarqueeProps {
@@ -88,8 +88,8 @@ const PUBLISHED_USER_SITES: PublishedSite[] = [
     categoryAr: 'موسيقى وصوتيات',
     avatar: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=120&q=80',
     accent: '#7C3AED',
-    stats: '4.8★ rated',
-    statsAr: 'تقييم ٤.٨★'
+    stats: '4.8 rated',
+    statsAr: 'تقييم ٤.٨'
   },
   {
     id: 'site-layla',

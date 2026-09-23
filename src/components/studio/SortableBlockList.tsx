@@ -29,10 +29,10 @@ import {
   Calendar,
   Image as ImageIcon,
   ExternalLink,
-  Sparkles,
   Link2
 } from 'lucide-react';
 import { Locale } from '../../types';
+import { PremiumMark } from '../brand/PremiumMark';
 
 export interface StudioBlockItem {
   id: string;
@@ -343,7 +343,7 @@ export const SortableBlockList: React.FC<SortableBlockListProps> = ({
   if (items.length === 0) {
     return (
       <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
-        <Sparkles className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+        <PremiumMark className="w-8 h-8 text-slate-300 mx-auto mb-2" />
         <p className="text-xs font-bold text-slate-600">
           {isRtl ? 'لا توجد عناصر مضافة بعد' : 'No components or links added yet'}
         </p>

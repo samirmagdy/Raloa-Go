@@ -7,8 +7,8 @@ import {
   Mail,
   Youtube,
   Twitter,
-  Sparkles
 } from 'lucide-react';
+import { PremiumMark } from './brand/PremiumMark';
 import { TemplateItem, BackgroundStyle } from '../types';
 import { RaloaMark } from './brand/RaloaLogo';
 import { resolveTemplateTheme, getTemplateBackgroundContainerProperties } from '../utils/templateThemes';
@@ -252,7 +252,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                       <div
                         className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${themeConfig.cardIconBg} ${themeConfig.cardIconColor}`}
                       >
-                        <Sparkles className="w-5 h-5" />
+                        <PremiumMark className="w-5 h-5" />
                       </div>
                     )}
 

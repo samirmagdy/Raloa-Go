@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { PremiumMark } from '../brand/PremiumMark';
 import {
   Search,
   X,
   LayoutGrid,
-  Sparkles,
   CreditCard,
   HelpCircle,
   Users,
@@ -159,7 +159,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         titleAr: 'المميزات والأدوات المتطورة',
         subtitle: 'Custom domains, instant shop, calendar bookings, analytics',
         subtitleAr: 'نطاقات مخصصة، متجر رقمي، حجز مواعيد، تحليلات',
-        icon: <Sparkles className="w-4 h-4 text-amber-500" />,
+        icon: <PremiumMark className="w-4 h-4 text-amber-500" />,
         keywords: ['features', 'tools', 'domain', 'store', 'shop', 'calendar', 'booking', 'analytics', 'مميزات', 'أدوات', 'نطاق', 'متجر']
       },
       {
@@ -555,7 +555,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5" />
+            <PremiumMark className="w-3.5 h-3.5" />
             <span>{isRtl ? 'الإجراءات السريعة' : 'Actions'}</span>
           </button>
         </div>

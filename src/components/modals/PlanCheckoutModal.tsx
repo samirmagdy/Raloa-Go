@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, ShieldCheck, Sparkles, CreditCard, ArrowRight, Loader2 } from 'lucide-react';
+import { X, Check, ShieldCheck, CreditCard, ArrowRight, Loader2 } from 'lucide-react';
+import { PremiumMark } from '../brand/PremiumMark';
 import { Locale, PricingPlan } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { useModalA11y } from '../../hooks/useModalA11y';
@@ -80,7 +81,7 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-indigo-600" />
+            <PremiumMark className="w-4 h-4 text-indigo-600" />
             <span id="plan-dialog-title" className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
               {isRtl ? 'اختيار باقة الاشتراك' : 'Plan Selection & Activation'}
             </span>

@@ -3,7 +3,6 @@ import {
   Globe,
   Copy,
   Check,
-  Sparkles,
   RefreshCw,
   Code,
   ExternalLink,
@@ -22,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Locale } from '../../types';
 import { RaloaMark } from '../brand/RaloaLogo';
+import { PremiumMark } from '../brand/PremiumMark';
 
 export type SocialPlatform = 'twitter' | 'linkedin' | 'imessage';
 export type OgTheme = 'gradient' | 'slate' | 'sunset' | 'emerald';
@@ -231,11 +231,17 @@ export const SocialPreviewGenerator: React.FC<SocialPreviewGeneratorProps> = ({
         <div className="flex items-center gap-2">
           {showStats && (
             <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/90 font-medium">
-              ⚡ {linksCount} {isRtl ? 'خدمات وروابط' : 'Links & Services'}
+              <span className="inline-flex items-center gap-1">
+                <PremiumMark variant="links" className="w-3 h-3" />
+                {linksCount} {isRtl ? 'خدمات وروابط' : 'Links & Services'}
+              </span>
             </span>
           )}
           <span className="hidden sm:inline-block">
-            📅 {isRtl ? 'حجز فوري' : 'Live Booking'}
+            <span className="inline-flex items-center gap-1">
+              <PremiumMark variant="booking" className="w-3 h-3" />
+              {isRtl ? 'حجز فوري' : 'Live Booking'}
+            </span>
           </span>
         </div>
         <div className="font-mono text-white/80 font-semibold tracking-wide">
@@ -421,8 +427,8 @@ export const SocialPreviewGenerator: React.FC<SocialPreviewGeneratorProps> = ({
             {/* Tweet Text */}
             <p className="text-xs sm:text-[13px] text-slate-800 mb-3 leading-relaxed">
               {isRtl
-                ? `أطلقت للتو صفحتي المصغرة الجديدة على RALOA! يمكنك حجز الجلسات مباشرة، الاطلاع على معرض أعمالي، والوصول لكافة الروابط هنا 👇`
-                : `Just refreshed my personal mini-site & digital hub! You can now book sessions, explore my portfolio, and find my curated links in one place 👇`}
+                ? `أطلقت للتو صفحتي المصغرة الجديدة على RALOA! يمكنك حجز الجلسات مباشرة، الاطلاع على معرض أعمالي، والوصول لكافة الروابط هنا.`
+                : `Just refreshed my personal mini-site & digital hub! You can now book sessions, explore my portfolio, and find my curated links in one place.`}
             </p>
 
             {/* THE CLICKABLE TWITTER CARD (SUMMARY LARGE IMAGE) */}
