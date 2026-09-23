@@ -1,0 +1,372 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --ink: #0F172A;
+  --slate-700: #334155;
+  --slate-500: #64748B;
+  --slate-300: #CBD5E1;
+  --surface: #FFFFFF;
+  --surface-alt: #F8FAFC;
+  --border: #E2E8F0;
+  --indigo: #5B5CF6;
+  --blue: #2563EB;
+  --violet: #7C3AED;
+  --pink: #EC4899;
+  --green: #10B981;
+  --amber: #F59E0B;
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 6px 18px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 16px 40px rgba(15, 23, 42, 0.10);
+  --shadow-phone: 0 28px 70px rgba(15, 23, 42, 0.18);
+  --container: 1200px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+[dir="rtl"] {
+  font-family: 'Cairo', 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+[dir="ltr"] {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Custom scrollbar for horizontal gallery */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Auto-scrolling horizontal marquee */
+@keyframes marquee-scroll {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes marquee-scroll-reverse {
+  0% {
+    transform: translate3d(-50%, 0, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.animate-marquee-track {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: marquee-scroll 38s linear infinite;
+}
+
+.animate-marquee-track-reverse {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: marquee-scroll-reverse 42s linear infinite;
+}
+
+.animate-marquee-track:hover,
+.animate-marquee-track-reverse:hover {
+  animation-play-state: paused;
+}
+
+[dir="rtl"] .animate-marquee-track {
+  animation: marquee-scroll-reverse 38s linear infinite;
+}
+
+[dir="rtl"] .animate-marquee-track-reverse {
+  animation: marquee-scroll 42s linear infinite;
+}
+
+/* ==========================================================================
+   PRINT MEDIA STYLES (@media print)
+   Optimizes printing for:
+   1) Mini-site previews & interactive portfolio / booking / shop profile cards
+   2) RALOA marketing page & documentation
+   Hides unnecessary UI artifacts (modals, fixed overlays, buttons, audio tour)
+   ========================================================================== */
+
+@media print {
+  /* 1. Page Margin & Paper Rendering Setup */
+  @page {
+    margin: 1.2cm;
+    size: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+
+  html,
+  body {
+    background-color: #ffffff !important;
+    background-image: none !important;
+    color: #0f172a !important;
+    font-size: 11pt !important;
+    line-height: 1.5 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* 2. Color & Typography Normalization */
+  /* Prevent transparent gradient text from vanishing in print */
+  .text-transparent,
+  [class*="bg-clip-text"] {
+    -webkit-text-fill-color: #0f172a !important;
+    color: #0f172a !important;
+    background: none !important;
+  }
+
+  /* Reset Dark Mode styling to ink-saving clean white */
+  .dark,
+  .dark body,
+  .dark #root {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .dark * {
+    color: #0f172a !important;
+    border-color: #e2e8f0 !important;
+    background-color: transparent !important;
+  }
+
+  .dark .bg-slate-900,
+  .dark .bg-slate-950,
+  .dark .bg-slate-800,
+  .dark .bg-slate-900\/50,
+  .dark .bg-slate-900\/90 {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  /* 3. Hide Unnecessary UI Artifacts & Interactive Controls */
+  /* Buttons & clickable interactive controls */
+  button:not(.print-preserve),
+  input,
+  select,
+  textarea,
+  [role="button"]:not(.print-preserve),
+  .cursor-pointer:not(a),
+  #back-to-top-button,
+  #custom-interactive-cursor,
+  #scroll-progress-bar,
+  #voice-tour-controller,
+  [id*="voice-tour"],
+  nav[aria-label*="Navigation"],
+  [role="tooltip"],
+  .custom-cursor,
+  canvas {
+    display: none !important;
+  }
+
+  /* 4. Modals and Overlays Handling */
+  /* Hide all general dialog modals (Auth, Contact, Legal, Shortcuts, Stats, Referral, Checkout) */
+  [role="dialog"]:not(.raloa-minisite-modal-container):not(.raloa-studio-modal-container),
+  [aria-modal="true"]:not(.raloa-minisite-modal-container):not(.raloa-studio-modal-container),
+  .backdrop-blur-sm,
+  .backdrop-blur-md {
+    display: none !important;
+  }
+
+  /* When printing from within an open mini-site demo modal, isolate the mini-site content */
+  body:has(.raloa-minisite-modal-container) > #root > div > *:not(.raloa-minisite-modal-container),
+  body:has(.raloa-studio-modal-container) > #root > div > *:not(.raloa-studio-modal-container) {
+    display: none !important;
+  }
+
+  /* 5. Mini-Site Modal Dedicated Print Layout */
+  .raloa-minisite-modal-container,
+  .raloa-studio-modal-container {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+
+  .raloa-minisite-modal-card,
+  .raloa-studio-modal-card {
+    position: static !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 16px !important;
+    width: 100% !important;
+    max-width: 580px !important;
+    margin: 0 auto !important;
+    background: #ffffff !important;
+  }
+
+  .raloa-minisite-modal-card .overflow-y-auto,
+  .raloa-studio-modal-card .overflow-y-auto {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  /* 6. Phone Mockup Clean Print Styling */
+  .raloa-phone-mockup {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+    padding: 12px !important;
+    border-radius: 24px !important;
+    width: 100% !important;
+    max-width: 380px !important;
+    margin: 16px auto !important;
+    transform: none !important;
+  }
+
+  .raloa-phone-screen {
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 18px !important;
+    max-height: none !important;
+    min-height: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .raloa-phone-screen .overflow-y-auto {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  /* Hide mobile dynamic island and battery/wifi status bar */
+  .phone-status-bar {
+    display: none !important;
+  }
+
+  /* 7. Header Navigation Clean-Up */
+  header {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    background: #ffffff !important;
+    border-bottom: 2px solid #0f172a !important;
+    box-shadow: none !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+    margin-bottom: 16px !important;
+  }
+
+  header nav,
+  header .hidden.md\:flex,
+  header button,
+  header a:not(:first-child) {
+    display: none !important;
+  }
+
+  /* 8. Page Break Optimization & Orphan Avoidance */
+  section,
+  article,
+  [id$="-reveal"],
+  .pricing-card,
+  .rounded-3xl,
+  .rounded-2xl,
+  table,
+  tr,
+  figure {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+    color: #0f172a !important;
+  }
+
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* 9. Layout Adjustments for Paper Output */
+  .grid {
+    gap: 16px !important;
+  }
+
+  /* Unfold marquee horizontal track into clean wrapped rows */
+  .animate-marquee-track,
+  .animate-marquee-track-reverse {
+    animation: none !important;
+    transform: none !important;
+    width: 100% !important;
+    flex-wrap: wrap !important;
+    gap: 12px !important;
+    justify-content: center !important;
+  }
+
+  /* 10. Footer Clean-up */
+  footer {
+    border-top: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    color: #475569 !important;
+    padding: 16px 0 !important;
+  }
+
+  footer a {
+    text-decoration: none !important;
+    color: #334155 !important;
+  }
+
+  footer button {
+    display: none !important;
+  }
+
+  /* 11. Generic Print Utility Classes */
+  .print-hidden,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-break-before {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+}

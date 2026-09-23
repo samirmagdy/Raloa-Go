@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "1.0",
+  "entities": {
+    "users": {
+      "collectionName": "users",
+      "path": "users/{userId}",
+      "description": "User account profile with plan status, settings and metadata",
+      "fields": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "description": "User email address" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "photoURL": { "type": "string", "description": "Avatar image URL" },
+        "plan": { "type": "string", "description": "Subscription tier: free, pro, or studio" },
+        "isYearly": { "type": "boolean", "description": "Whether the plan is billed yearly" },
+        "createdAt": { "type": "timestamp", "description": "Account registration timestamp" },
+        "updatedAt": { "type": "timestamp", "description": "Last profile update timestamp" }
+      },
+      "subcollections": {
+        "sites": {
+          "collectionName": "sites",
+          "path": "users/{userId}/sites/{siteId}",
+          "description": "User's customized mini-sites and bio links",
+          "fields": {
+            "id": { "type": "string", "description": "Site ID" },
+            "userId": { "type": "string", "description": "Owner user UID" },
+            "username": { "type": "string", "description": "Handle/slug (e.g. alex)" },
+            "title": { "type": "string", "description": "Display title or name" },
+            "bio": { "type": "string", "description": "Bio description" },
+            "templateId": { "type": "string", "description": "Selected template design ID" },
+            "avatarUrl": { "type": "string", "description": "Profile picture URL" },
+            "links": { "type": "array", "description": "Array of custom link buttons" },
+            "socialLinks": { "type": "array", "description": "Array of social icons" },
+            "products": { "type": "array", "description": "Store items or digital downloads" },
+            "isPublished": { "type": "boolean", "description": "Whether site is live" },
+            "updatedAt": { "type": "timestamp", "description": "Last edit timestamp" }
+          }
+        }
+      }
+    },
+    "contacts": {
+      "collectionName": "contacts",
+      "path": "contacts/{contactId}",
+      "description": "Contact inquiries submitted by visitors or users",
+      "fields": {
+        "name": { "type": "string", "description": "Sender name" },
+        "email": { "type": "string", "description": "Sender email" },
+        "subject": { "type": "string", "description": "Inquiry subject" },
+        "message": { "type": "string", "description": "Inquiry message body" },
+        "createdAt": { "type": "timestamp", "description": "Submission timestamp" }
+      }
+    }
+  }
+}
