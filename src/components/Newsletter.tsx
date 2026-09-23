@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Mail, CheckCircle2, AlertCircle, Loader2, Sparkles, ShieldCheck, BellRing, ArrowRight } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Locale } from '../types';
+import { saveNewsletterSubscription } from '../lib/firebase';
 
 interface NewsletterProps {
   locale: Locale;
@@ -18,7 +19,7 @@ export const Newsletter: React.FC<NewsletterProps> = ({ locale }) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim());
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -40,35 +41,16 @@ export const Newsletter: React.FC<NewsletterProps> = ({ locale }) => {
 
     setStatus('loading');
 
-    // Simulate mock API submission
-    setTimeout(() => {
-      // Save to mock storage
-      try {
-        const existing = JSON.parse(localStorage.getItem('raloa_subscribers') || '[]');
-        if (!existing.includes(email.trim().toLowerCase())) {
-          existing.push(email.trim().toLowerCase());
-          localStorage.setItem('raloa_subscribers', JSON.stringify(existing));
-        }
-      } catch {
-        // Fallback for private browsing
-      }
-
+    try {
+      await saveNewsletterSubscription(email);
       setSubscribedEmail(email.trim());
       setStatus('success');
       setEmail('');
-
-      // Celebration confetti
-      try {
-        confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.8 },
-          colors: ['#4F46E5', '#06B6D4', '#10B981']
-        });
-      } catch {
-        // Non-blocking
-      }
-    }, 700);
+      confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 }, colors: ['#4F46E5', '#06B6D4', '#10B981'] });
+    } catch {
+      setStatus('error');
+      setErrorMessage(isRtl ? 'تعذر إتمام الاشتراك. حاول مرة أخرى.' : 'We could not complete your subscription. Please try again.');
+    }
   };
 
   const handleReset = () => {
@@ -121,8 +103,8 @@ export const Newsletter: React.FC<NewsletterProps> = ({ locale }) => {
                 </h3>
                 <p className="text-xs text-slate-300 mb-4">
                   {isRtl
-                    ? `أرسلنا رسالة ترحيبية إلى ${subscribedEmail}. تأكد من تفقد صندوق الوارد.`
-                    : `We've registered ${subscribedEmail}. Keep an eye on your inbox for our next dispatch.`}
+                    ? `تم حفظ ${subscribedEmail} لتحديثات رالوا.`
+                    : `${subscribedEmail} is saved for RALOA product updates.`}
                 </p>
                 <button
                   type="button"

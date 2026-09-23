@@ -212,3 +212,11 @@ export async function saveContactMessage(inquiry: ContactInquiry): Promise<strin
   });
   return docRef.id;
 }
+
+export async function saveNewsletterSubscription(email: string): Promise<string> {
+  const docRef = await addDoc(collection(db, 'newsletter_subscribers'), {
+    email: email.trim().toLowerCase(),
+    createdAt: new Date().toISOString()
+  });
+  return docRef.id;
+}

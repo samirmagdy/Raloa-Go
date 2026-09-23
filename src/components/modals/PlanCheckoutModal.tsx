@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Check, ShieldCheck, Sparkles, CreditCard, ArrowRight, Loader2 } from 'lucide-react';
 import { Locale, PricingPlan } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 interface PlanCheckoutModalProps {
   plan: PricingPlan | null;
@@ -26,6 +27,8 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
   const [email, setEmail] = useState(user?.email || '');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+  const dialogRef = useModalA11y<HTMLDivElement>();
 
   useEffect(() => {
     if (user?.email && !email) {
@@ -36,6 +39,13 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
+
+    if (plan.priceMonthly > 0) {
+      setError(isRtl ? 'الدفع الآمن لهذه الباقة غير متاح بعد.' : 'Secure payment checkout is not available yet.');
+      setLoading(false);
+      return;
+    }
 
     try {
       const planTier = (plan.id.toLowerCase() as 'free' | 'pro' | 'studio') || 'free';
@@ -46,11 +56,9 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
       }, 1000);
     } catch (err) {
       console.error('Error updating plan:', err);
-      // Still proceed
-      setSuccess(true);
-      setTimeout(() => {
-        onConfirmPlan(plan);
-      }, 1000);
+      setError(err instanceof Error && err.message === 'AUTH_REQUIRED'
+        ? (isRtl ? 'يرجى تسجيل الدخول أولاً.' : 'Please sign in before activating a plan.')
+        : (isRtl ? 'تعذر تفعيل الباقة. حاول مرة أخرى.' : 'We could not activate this plan. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -61,6 +69,8 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
+      aria-labelledby="plan-dialog-title"
+      ref={dialogRef}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -71,12 +81,14 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-indigo-600" />
-            <span className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+            <span id="plan-dialog-title" className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
               {isRtl ? 'اختيار باقة الاشتراك' : 'Plan Selection & Activation'}
             </span>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label={isRtl ? 'إغلاق' : 'Close'}
             className="w-8 h-8 rounded-full bg-slate-200/80 hover:bg-slate-300 text-slate-600 flex items-center justify-center transition-colors"
           >
             <X className="w-4 h-4" />
@@ -115,7 +127,7 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
                     {plan.priceMonthly === 0 ? '$0' : `$${price.toFixed(price % 1 === 0 ? 0 : 2)}`}
                   </span>
                   <span className="text-xs text-slate-500 font-medium">
-                    / {isRtl ? plan.periodAr : plan.period}
+                    / {isYearly ? (isRtl ? 'سنوياً' : 'year') : (isRtl ? plan.periodAr : plan.period)}
                   </span>
                 </div>
               </div>
@@ -135,10 +147,11 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
 
               {/* Email field */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                <label htmlFor="plan-email" className="block text-xs font-bold text-slate-700 mb-1.5">
                   {isRtl ? 'بريدك الإلكتروني للحساب' : 'Account Email'}
                 </label>
                 <input
+                  id="plan-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -166,10 +179,11 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
                 <span>
                   {plan.priceMonthly === 0
                     ? isRtl ? 'ابدأ مجاناً الآن' : 'Start Free Now'
-                    : isRtl ? `تأكيد الاشتراك ($${price}/شهر)` : `Activate ${plan.name} ($${price}/mo)`}
+                    : isRtl ? `تأكيد الاشتراك ($${price}/${isYearly ? 'سنة' : 'شهر'})` : `Activate ${plan.name} ($${price}/${isYearly ? 'yr' : 'mo'})`}
                 </span>
                 <ArrowRight className="w-4 h-4 rtl:rotate-180" />
               </button>
+              {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
             </form>
           )}
         </div>

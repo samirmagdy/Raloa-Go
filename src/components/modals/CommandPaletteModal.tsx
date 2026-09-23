@@ -25,6 +25,7 @@ import {
   Compass
 } from 'lucide-react';
 import { Locale, TemplateItem } from '../../types';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { templatesData } from '../../data/content';
 import { Theme } from '../../utils/theme';
 
@@ -89,6 +90,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   const listRef = useRef<HTMLDivElement>(null);
 
   const isRtl = locale === 'ar';
+  const dialogRef = useModalA11y<HTMLDivElement>(isOpen);
   const isDark = theme === 'dark';
 
   // Detect platform modifier symbol (⌘ vs Ctrl)
@@ -457,6 +459,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label={isRtl ? 'لوحة الأوامر والبحث السريع' : 'Command Palette & Quick Navigation'}
+      ref={dialogRef}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

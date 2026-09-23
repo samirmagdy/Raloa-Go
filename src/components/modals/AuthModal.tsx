@@ -3,6 +3,7 @@ import { X, ArrowRight, Check, Sparkles, Mail, Lock, AlertCircle, Loader2 } from
 import { Locale } from '../../types';
 import { RaloaMark } from '../brand/RaloaLogo';
 import { useAuth } from '../../hooks/useAuth';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 interface AuthModalProps {
   initialMode?: 'signin' | 'signup';
@@ -25,6 +26,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const dialogRef = useModalA11y<HTMLDivElement>();
   const isRtl = locale === 'ar';
 
   const formatAuthError = (err: any): string => {
@@ -108,6 +110,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
+      aria-labelledby="auth-dialog-title"
+      ref={dialogRef}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -118,7 +122,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-2.5">
             <RaloaMark size={24} />
-            <span className="text-xs font-bold text-slate-800">
+              <span id="auth-dialog-title" className="text-xs font-bold text-slate-800">
               {mode === 'signin'
                 ? isRtl ? 'تسجيل الدخول إلى رالوا' : 'Sign in to RALOA'
                 : mode === 'signup'
@@ -127,7 +131,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </span>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label={isRtl ? 'إغلاق' : 'Close'}
             className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors"
           >
             <X className="w-4 h-4" />
@@ -333,4 +339,3 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   );
 };
 export default AuthModal;
-

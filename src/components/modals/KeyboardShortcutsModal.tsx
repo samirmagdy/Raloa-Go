@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Keyboard, Sparkles } from 'lucide-react';
 import { Locale } from '../../types';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 interface KeyboardShortcutsModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
   if (!isOpen) return null;
 
   const isRtl = locale === 'ar';
+  const dialogRef = useModalA11y<HTMLDivElement>(isOpen);
   const isMac = typeof navigator !== 'undefined' && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || navigator.platform);
 
   const shortcuts = [
@@ -61,6 +63,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="shortcuts-dialog-title"
+      ref={dialogRef}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

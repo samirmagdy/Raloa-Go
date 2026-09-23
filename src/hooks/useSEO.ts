@@ -373,8 +373,7 @@ export function useSEO({
       baseUrl = `${window.location.origin}${window.location.pathname}`;
     }
 
-    const hash = currentSection === 'hero' ? '' : `#${currentSection}`;
-    const finalCanonicalUrl = dynamicData.canonicalUrl || `${baseUrl}${hash}`;
+    const finalCanonicalUrl = dynamicData.canonicalUrl || baseUrl;
 
     const finalMetaTags: MetaTagItem[] = [...(dynamicData.metaTags || [])];
     if (dynamicData.keywords && dynamicData.keywords.length > 0) {
@@ -500,4 +499,3 @@ export function useSEO({
     metaTags: resolvedMetadata.metaTags
   };
 }
-

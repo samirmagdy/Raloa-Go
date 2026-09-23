@@ -13,7 +13,7 @@ service cloud.firestore {
 
     // User profile documents
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if isOwner(userId);
       allow create, update: if isOwner(userId);
       allow delete: if false;
 
@@ -28,6 +28,12 @@ service cloud.firestore {
     match /contacts/{contactId} {
       allow create: if request.resource.data.email is string
                     && request.resource.data.message is string;
+      allow read, update, delete: if false;
+    }
+
+    match /newsletter_subscribers/{subscriberId} {
+      allow create: if request.resource.data.email is string
+                    && request.resource.data.email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
       allow read, update, delete: if false;
     }
   }

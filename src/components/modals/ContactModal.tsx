@@ -3,6 +3,7 @@ import { X, Send, Check, MessageSquare, Loader2 } from 'lucide-react';
 import { Locale } from '../../types';
 import { saveContactMessage } from '../../lib/firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 interface ContactModalProps {
   locale: Locale;
@@ -16,12 +17,15 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState('');
+  const dialogRef = useModalA11y<HTMLDivElement>();
   const isRtl = locale === 'ar';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !message) return;
     setLoading(true);
+    setError('');
 
     try {
       await saveContactMessage({
@@ -35,11 +39,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
       }, 2000);
     } catch (err) {
       console.error('Error saving contact message:', err);
-      // Still show success to user
-      setSent(true);
-      setTimeout(() => {
-        onClose();
-      }, 2000);
+      setError(isRtl ? 'تعذر إرسال الرسالة. حاول مرة أخرى.' : 'We could not send your message. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -50,6 +50,8 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
+      aria-labelledby="contact-dialog-title"
+      ref={dialogRef}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -59,12 +61,14 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-2">
             <MessageSquare className="w-4 h-4 text-indigo-600" />
-            <span className="text-xs font-bold text-slate-800">
+            <span id="contact-dialog-title" className="text-xs font-bold text-slate-800">
               {isRtl ? 'تواصل مع فريق دعم رالوا' : 'Contact RALOA Support'}
             </span>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label={isRtl ? 'إغلاق' : 'Close'}
             className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors"
           >
             <X className="w-4 h-4" />
@@ -89,10 +93,11 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label htmlFor="contact-name" className="block text-xs font-bold text-slate-700 mb-1">
                   {isRtl ? 'الاسم' : 'Your Name'}
                 </label>
                 <input
+                  id="contact-name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -103,10 +108,11 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label htmlFor="contact-email" className="block text-xs font-bold text-slate-700 mb-1">
                   {isRtl ? 'البريد الإلكتروني' : 'Email Address'}
                 </label>
                 <input
+                  id="contact-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -117,10 +123,11 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label htmlFor="contact-message" className="block text-xs font-bold text-slate-700 mb-1">
                   {isRtl ? 'كيف يمكننا مساعدتك؟' : 'How can we help?'}
                 </label>
                 <textarea
+                  id="contact-message"
                   rows={3}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
@@ -129,6 +136,8 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
                   required
                 />
               </div>
+
+              {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
 
               <button
                 type="submit"

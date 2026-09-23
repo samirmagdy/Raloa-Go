@@ -22,6 +22,7 @@ import {
   Legend
 } from 'recharts';
 import { Locale } from '../../types';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 interface ProjectStatsModalProps {
   isOpen: boolean;
@@ -80,6 +81,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
   const [period, setPeriod] = useState<7 | 14 | 30>(7);
   const [seed, setSeed] = useState<number>(1);
   const isRtl = locale === 'ar';
+  const dialogRef = useModalA11y<HTMLDivElement>(isOpen);
 
   const chartData = useMemo(() => {
     return generateStatsData(period, seed);
@@ -132,6 +134,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="project-stats-title"
+      ref={dialogRef}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

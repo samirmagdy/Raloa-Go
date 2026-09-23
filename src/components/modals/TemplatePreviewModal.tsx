@@ -4,6 +4,7 @@ import { Locale, TemplateItem, BackgroundStyle } from '../../types';
 import { PhoneMockup } from '../PhoneMockup';
 import { Tooltip } from '../Tooltip';
 import { getTemplateBackgroundContainerProperties } from '../../utils/templateThemes';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 interface TemplatePreviewModalProps {
   template: TemplateItem | null;
@@ -20,6 +21,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
 }) => {
   if (!template) return null;
   const isRtl = locale === 'ar';
+  const dialogRef = useModalA11y<HTMLDivElement>();
 
   const [copied, setCopied] = useState(false);
   const [activeBgStyle, setActiveBgStyle] = useState<BackgroundStyle>('signature');
@@ -88,6 +90,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="template-preview-title"
+      ref={dialogRef}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

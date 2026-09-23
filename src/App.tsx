@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { Locale, TemplateItem, PricingPlan } from './types';
 import { templatesData, pricingPlans } from './data/content';
 import { Header } from './components/Header';
@@ -20,17 +20,17 @@ import { FadeInSection } from './components/FadeInSection';
 import { NotFound } from './components/NotFound';
 
 // Interactive Modals
-import { CommandPaletteModal } from './components/modals/CommandPaletteModal';
-import { StudioModal } from './components/modals/StudioModal';
-import { TemplatePreviewModal } from './components/modals/TemplatePreviewModal';
-import { PlanCheckoutModal } from './components/modals/PlanCheckoutModal';
-import { MiniSiteDemoModal } from './components/modals/MiniSiteDemoModal';
-import { AuthModal } from './components/modals/AuthModal';
-import { ContactModal } from './components/modals/ContactModal';
-import { LegalModal } from './components/modals/LegalModal';
-import { KeyboardShortcutsModal } from './components/modals/KeyboardShortcutsModal';
-import { ProjectStatsModal } from './components/modals/ProjectStatsModal';
-import { ReferralModal } from './components/modals/ReferralModal';
+const CommandPaletteModal = lazy(() => import('./components/modals/CommandPaletteModal').then((m) => ({ default: m.CommandPaletteModal })));
+const StudioModal = lazy(() => import('./components/modals/StudioModal').then((m) => ({ default: m.StudioModal })));
+const TemplatePreviewModal = lazy(() => import('./components/modals/TemplatePreviewModal').then((m) => ({ default: m.TemplatePreviewModal })));
+const PlanCheckoutModal = lazy(() => import('./components/modals/PlanCheckoutModal').then((m) => ({ default: m.PlanCheckoutModal })));
+const MiniSiteDemoModal = lazy(() => import('./components/modals/MiniSiteDemoModal').then((m) => ({ default: m.MiniSiteDemoModal })));
+const AuthModal = lazy(() => import('./components/modals/AuthModal').then((m) => ({ default: m.AuthModal })));
+const ContactModal = lazy(() => import('./components/modals/ContactModal').then((m) => ({ default: m.ContactModal })));
+const LegalModal = lazy(() => import('./components/modals/LegalModal').then((m) => ({ default: m.LegalModal })));
+const KeyboardShortcutsModal = lazy(() => import('./components/modals/KeyboardShortcutsModal').then((m) => ({ default: m.KeyboardShortcutsModal })));
+const ProjectStatsModal = lazy(() => import('./components/modals/ProjectStatsModal').then((m) => ({ default: m.ProjectStatsModal })));
+const ReferralModal = lazy(() => import('./components/modals/ReferralModal').then((m) => ({ default: m.ReferralModal })));
 import { EasterEggOverlay } from './components/EasterEggOverlay';
 import { LoadingOverlay } from './components/LoadingOverlay';
 import { CustomCursor } from './components/CustomCursor';
@@ -619,6 +619,7 @@ function MainApp() {
 
       {/* --- REAL INTERACTIVE MODALS (0% FAKE IMPLEMENTATION) --- */}
 
+      <Suspense fallback={null}>
       {/* Project Analytics & Stats Modal (Recharts) */}
       <ProjectStatsModal
         isOpen={projectStatsOpen}
@@ -747,6 +748,7 @@ function MainApp() {
         onToggleLocale={toggleLocale}
         onOpenShortcuts={() => setShortcutsModalOpen(true)}
       />
+      </Suspense>
 
     </div>
   );

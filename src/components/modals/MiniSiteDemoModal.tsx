@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Calendar as CalendarIcon, Check, ShoppingBag, Eye, Camera, Star, ArrowRight, Printer } from 'lucide-react';
 import { Locale } from '../../types';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 interface MiniSiteDemoModalProps {
   type: 'portfolio' | 'booking' | 'shop' | 'gear' | null;
@@ -16,8 +17,9 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
   onStartOwnPage
 }) => {
   const isRtl = locale === 'ar';
-  const [selectedDate, setSelectedDate] = useState('2024-10-15');
-  const [selectedTime, setSelectedTime] = useState('14:00');
+  const dialogRef = useModalA11y<HTMLDivElement>(Boolean(type));
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [selectedTime, setSelectedTime] = useState('02:00 PM');
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [cartSuccess, setCartSuccess] = useState(false);
 
@@ -28,6 +30,8 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 raloa-minisite-modal-container"
       role="dialog"
       aria-modal="true"
+      aria-labelledby="mini-site-dialog-title"
+      ref={dialogRef}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -40,7 +44,7 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
               ER
             </div>
             <div>
-              <h3 className="font-bold text-[15px] text-slate-900 leading-tight">
+              <h3 id="mini-site-dialog-title" className="font-bold text-[15px] text-slate-900 leading-tight">
                 {type === 'portfolio' && (isRtl ? 'معرض الأعمال — إيلينا روستوفا' : 'Portfolio — Elena Rostova')}
                 {type === 'booking' && (isRtl ? 'حجز جلسة استشارية أو تصوير' : 'Book a Session — Elena Rostova')}
                 {type === 'shop' && (isRtl ? 'متجر المطبوعات الفنية' : 'Shop Limited Edition Prints')}
@@ -147,10 +151,11 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    <label htmlFor="booking-date" className="block text-xs font-semibold text-slate-700 mb-1.5">
                       {isRtl ? 'اختر اليوم' : 'Select Date'}
                     </label>
                     <input
+                      id="booking-date"
                       type="date"
                       value={selectedDate}
                       onChange={(e) => setSelectedDate(e.target.value)}
@@ -160,7 +165,7 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    <label htmlFor="booking-email" className="block text-xs font-semibold text-slate-700 mb-1.5">
                       {isRtl ? 'اختر الوقت' : 'Select Time Slot'}
                     </label>
                     <div className="grid grid-cols-3 gap-2">
@@ -186,6 +191,7 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
                       {isRtl ? 'بريدك الإلكتروني' : 'Your Email'}
                     </label>
                     <input
+                      id="booking-email"
                       type="email"
                       placeholder="you@domain.com"
                       defaultValue="creator@raloa.app"

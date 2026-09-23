@@ -100,7 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const updatePlan = useCallback(async (plan: 'free' | 'pro' | 'studio', isYearly: boolean = false) => {
-    if (!user) return;
+    if (!user) throw new Error('AUTH_REQUIRED');
     await updateUserPlan(user.uid, plan, isYearly);
     setProfile((prev) => (prev ? { ...prev, plan, isYearly, updatedAt: new Date().toISOString() } : null));
   }, [user]);

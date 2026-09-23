@@ -33,6 +33,7 @@ import { SocialPreviewGenerator } from '../studio/SocialPreviewGenerator';
 import { SortableBlockList, StudioBlockItem } from '../studio/SortableBlockList';
 import { StudioTemplatePreview } from '../studio/StudioTemplatePreview';
 import { useAuth } from '../../hooks/useAuth';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { useHistoryState } from '../../hooks/useHistoryState';
 
 export interface StudioSiteConfig {
@@ -64,6 +65,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 }) => {
   const { user, saveMiniSite, loadMiniSite } = useAuth();
   const isRtl = locale === 'ar';
+  const dialogRef = useModalA11y<HTMLDivElement>();
   const defaultTemplate = initialTemplate || templatesData[0];
 
   const [isCloudSynced, setIsCloudSynced] = useState(false);
@@ -438,6 +440,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200 raloa-studio-modal-container"
       role="dialog"
       aria-modal="true"
+      aria-labelledby="studio-dialog-title"
+      ref={dialogRef}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -449,7 +453,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
           <div className="flex items-center gap-3">
             <RaloaMark size={34} />
             <div>
-              <h2 className="text-sm font-extrabold text-[#0F172A] leading-tight flex items-center gap-1.5">
+              <h2 id="studio-dialog-title" className="text-sm font-extrabold text-[#0F172A] leading-tight flex items-center gap-1.5">
                 <span>RALOA Studio</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-bold border border-indigo-100 print:hidden">
                   {isRtl ? 'مباشر' : 'Live Editor'}

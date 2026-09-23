@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Locale } from '../../types';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 interface ReferralModalProps {
   isOpen: boolean;
@@ -65,6 +66,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({
   onClose
 }) => {
   const isRtl = locale === 'ar';
+  const dialogRef = useModalA11y<HTMLDivElement>(isOpen);
 
   const [invites, setInvites] = useState<MockInvite[]>(() => {
     try {
@@ -189,6 +191,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="referral-modal-title"
+      ref={dialogRef}
     >
       <div
         className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl text-slate-900 dark:text-white p-6 sm:p-8"

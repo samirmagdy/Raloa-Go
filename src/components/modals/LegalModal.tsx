@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Shield } from 'lucide-react';
 import { Locale } from '../../types';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 interface LegalModalProps {
   title: string;
@@ -10,12 +11,15 @@ interface LegalModalProps {
 
 export const LegalModal: React.FC<LegalModalProps> = ({ title, locale, onClose }) => {
   const isRtl = locale === 'ar';
+  const dialogRef = useModalA11y<HTMLDivElement>();
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
+      aria-labelledby="legal-dialog-title"
+      ref={dialogRef}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -24,10 +28,12 @@ export const LegalModal: React.FC<LegalModalProps> = ({ title, locale, onClose }
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-indigo-600" />
-            <span className="text-xs font-bold text-slate-800">{title}</span>
+            <span id="legal-dialog-title" className="text-xs font-bold text-slate-800">{title}</span>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label={isRtl ? 'إغلاق' : 'Close'}
             className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors"
           >
             <X className="w-4 h-4" />
