@@ -62,7 +62,7 @@ export const Newsletter: React.FC<NewsletterProps> = ({ locale }) => {
   return (
     <section
       id="newsletter"
-      className="py-16 md:py-20 relative overflow-hidden transition-colors duration-200"
+      className="py-20 md:py-28 relative overflow-hidden transition-colors duration-200"
       aria-label={isRtl ? 'النشرة البريدية' : 'Product Updates Newsletter'}
     >
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">

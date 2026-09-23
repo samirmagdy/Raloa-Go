@@ -38,7 +38,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-indigo-500/15 via-purple-500/10 to-blue-500/10 blur-[100px] rounded-full pointer-events-none" />
 
           {/* Skeleton Top Header Bar */}
-          <div className="w-full max-w-[1200px] mx-auto px-6 h-[72px] flex items-center justify-between opacity-60">
+          <div className="w-full max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 h-[72px] flex items-center justify-between opacity-60">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
               <div className="w-24 h-4 rounded-md bg-slate-200 dark:bg-slate-800 animate-pulse" />

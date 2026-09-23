@@ -437,7 +437,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200 raloa-studio-modal-container"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200 raloa-studio-modal-container"
       role="dialog"
       aria-modal="true"
       aria-labelledby="studio-dialog-title"
@@ -449,7 +449,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       <div className="relative w-full max-w-5xl h-[92vh] max-h-[860px] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col raloa-studio-modal-card">
         
         {/* Studio Top Navigation Bar */}
-        <div className="h-16 px-6 border-b border-slate-200 flex items-center justify-between bg-white shrink-0 print:border-b-2 print:border-slate-800">
+        <div className="h-16 px-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-white shrink-0 print:border-b-2 print:border-slate-800">
           <div className="flex items-center gap-3">
             <RaloaMark size={34} />
             <div>

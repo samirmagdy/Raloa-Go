@@ -27,7 +27,7 @@ export const TrustAndBenefits: React.FC<TrustAndBenefitsProps> = ({ locale, onOp
   };
 
   return (
-    <section id="benefits" className="pt-4 pb-14 sm:pb-18 bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/80 overflow-hidden transition-colors duration-200">
+    <section id="benefits" className="py-20 md:py-28 bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/80 overflow-hidden transition-colors duration-200">
       {/* 01 Auto-Scrolling Horizontal Marquee: Published User Sites & Companies */}
       <SocialProofMarquee
         locale={locale}
@@ -35,7 +35,7 @@ export const TrustAndBenefits: React.FC<TrustAndBenefitsProps> = ({ locale, onOp
       />
 
       {/* 02 Core Platform Value Pillars */}
-      <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 mt-10 sm:mt-14">
+      <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 mt-10 md:mt-12">
         {/* 4 Benefit Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {benefitsList.map((benefit) => (

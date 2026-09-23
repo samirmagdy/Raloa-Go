@@ -119,7 +119,7 @@ export const Header: React.FC<HeaderProps> = ({
             : 'bg-white/80 dark:bg-slate-950/80 backdrop-blur-xs border-b border-transparent'
         }`}
       >
-        <div className="max-w-7xl mx-auto h-full px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
+        <div className="max-w-[1200px] mx-auto h-full px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
           {/* Left Section: Brand Logo & Desktop Nav */}
           <div className="flex items-center gap-7 lg:gap-8 xl:gap-10 shrink-0">
             <a
@@ -135,7 +135,7 @@ export const Header: React.FC<HeaderProps> = ({
             </a>
 
             {/* Desktop Navigation Links (Cleanly separated from logo, non-wrapping) */}
-            <nav className="hidden lg:flex items-center gap-5 xl:gap-7" aria-label="Main Navigation">
+            <nav className="hidden xl:flex items-center gap-5 xl:gap-7" aria-label="Main Navigation">
               {navLinks.map((link) => (
                 <a
                   key={link.href}
@@ -305,7 +305,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Mobile / Tablet Menu Trigger */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
+              className="xl:hidden p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
               aria-label="Open navigation menu"
               aria-expanded={mobileMenuOpen}
             >
@@ -318,7 +318,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Mobile & Tablet Drawer */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-50 lg:hidden bg-slate-950/60 backdrop-blur-xs transition-opacity"
+          className="fixed inset-0 z-50 xl:hidden bg-slate-950/60 backdrop-blur-xs transition-opacity"
           onClick={() => setMobileMenuOpen(false)}
         >
           <div
@@ -475,4 +475,3 @@ export const Header: React.FC<HeaderProps> = ({
     </>
   );
 };
-

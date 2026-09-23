@@ -114,7 +114,7 @@ export const VoiceTourToggle: React.FC<VoiceTourToggleProps> = ({
       <aside
         id="voice-tour-controller"
         aria-label={isRtl ? 'عناصر التحكم في الجولة الصوتية' : 'Voice-over tour player'}
-        className="fixed bottom-20 left-4 sm:left-6 z-40 flex items-center gap-3 px-4 py-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-indigo-100 dark:border-indigo-900/50 text-xs text-slate-800 dark:text-slate-200 transition-all duration-300 animate-in slide-in-from-bottom-3 print:hidden"
+        className="fixed bottom-24 sm:bottom-20 left-4 sm:left-6 z-40 flex items-center gap-3 px-4 py-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-indigo-100 dark:border-indigo-900/50 text-xs text-slate-800 dark:text-slate-200 transition-all duration-300 animate-in slide-in-from-bottom-3 print:hidden"
       >
         <div className="flex items-center gap-2">
           <div className="relative flex items-center justify-center w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400">

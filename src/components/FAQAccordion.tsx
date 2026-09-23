@@ -95,7 +95,7 @@ export const FAQAccordion: React.FC<FAQAccordionProps> = ({ locale, onContactSup
   return (
     <section id="faq" className="py-20 md:py-28 bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/80 transition-colors duration-200">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-8 items-start">
           
           {/* Left Column: Heading & Contact info */}
           <div className="lg:col-span-5">

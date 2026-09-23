@@ -144,7 +144,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
           </div>
 
           {/* Right Floating Doodle ("From idea to impact in minutes") */}
-          <div className="hidden lg:flex items-center gap-3 absolute top-2 right-4 text-indigo-600 dark:text-indigo-400 select-none pointer-events-none">
+          <div className="hidden lg:flex items-center gap-3 absolute top-2 end-4 text-indigo-600 dark:text-indigo-400 select-none pointer-events-none">
             <div className="relative">
               <span className="text-[15px] font-bold italic tracking-tight font-serif text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/80 px-3.5 py-1.5 rounded-full border border-indigo-100 dark:border-indigo-800 shadow-2xs rotate-2 block">
                 {t.doodleText}
@@ -344,4 +344,3 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
     </section>
   );
 };
-

@@ -132,7 +132,7 @@ export const Footer: React.FC<FooterProps> = ({
   };
 
   return (
-    <footer className="bg-white dark:bg-slate-950 border-t border-slate-200/90 dark:border-slate-850 pt-16 pb-12 text-slate-600 dark:text-slate-400 transition-colors duration-200">
+    <footer className="bg-white dark:bg-slate-950 border-t border-slate-200/90 dark:border-slate-850 pt-20 pb-16 text-slate-600 dark:text-slate-400 transition-colors duration-200">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Main Footer Row */}
@@ -342,7 +342,7 @@ export const Footer: React.FC<FooterProps> = ({
             id="share-raloa-toast"
             role="status"
             aria-live="polite"
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2 bg-slate-900/95 dark:bg-white/95 text-white dark:text-slate-900 rounded-full shadow-2xl backdrop-blur-md border border-slate-700/60 dark:border-slate-300 text-xs font-semibold animate-in fade-in slide-in-from-bottom-3 duration-200 select-none print:hidden pointer-events-none"
+            className="fixed bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2 bg-slate-900/95 dark:bg-white/95 text-white dark:text-slate-900 rounded-full shadow-2xl backdrop-blur-md border border-slate-700/60 dark:border-slate-300 text-xs font-semibold animate-in fade-in slide-in-from-bottom-3 duration-200 select-none print:hidden pointer-events-none"
           >
             <span className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 dark:text-emerald-600 flex items-center justify-center shrink-0">
               <Check className="w-3 h-3 stroke-[3]" />

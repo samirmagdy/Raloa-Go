@@ -140,7 +140,7 @@ export const ScrollSpyDots: React.FC<ScrollSpyDotsProps> = ({ locale }) => {
       onKeyDown={handleKeyDown}
       onMouseEnter={() => setIsHoveredNav(true)}
       onMouseLeave={() => setIsHoveredNav(false)}
-      className="fixed right-3 sm:right-5 rtl:right-auto rtl:left-3 rtl:sm:left-5 top-1/2 -translate-y-1/2 z-30 hidden md:flex flex-col items-center gap-1.5 p-2 bg-white/85 dark:bg-slate-900/85 backdrop-blur-md rounded-full border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-950/10 transition-all duration-300 print:hidden select-none"
+      className="fixed right-3 sm:right-5 rtl:right-auto rtl:left-3 rtl:sm:left-5 top-1/2 -translate-y-1/2 z-30 hidden lg:flex flex-col items-center gap-1.5 p-2 bg-white/85 dark:bg-slate-900/85 backdrop-blur-md rounded-full border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-950/10 transition-all duration-300 print:hidden select-none"
     >
       {/* Background connecting rail with reactive animated glow indicator */}
       <div className="absolute top-4 bottom-4 w-[2px] bg-slate-200/70 dark:bg-slate-800/80 rounded-full pointer-events-none -z-0" />
@@ -196,4 +196,3 @@ export const ScrollSpyDots: React.FC<ScrollSpyDotsProps> = ({ locale }) => {
     </nav>
   );
 };
-

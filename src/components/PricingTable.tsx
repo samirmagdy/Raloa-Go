@@ -116,7 +116,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
         </div>
 
         {/* 3 Pricing Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch pt-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 items-stretch pt-4">
           {pricingPlans.map((plan) => {
             const isPopular = plan.popular;
             const price = plan.priceMonthly === 0 ? 0 : isYearly ? plan.priceYearly : plan.priceMonthly;
