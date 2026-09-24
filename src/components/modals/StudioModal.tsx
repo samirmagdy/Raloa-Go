@@ -60,6 +60,34 @@ interface SavedUserTemplate {
   config: StudioSiteConfig;
 }
 
+const imageFileToDataUrl = (file: File, maxDimension = 1600): Promise<string> => new Promise((resolve, reject) => {
+  if (!file.type.startsWith('image/')) {
+    reject(new Error('Only image files are supported.'));
+    return;
+  }
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error('Could not read the image.'));
+  reader.onload = () => {
+    const image = new Image();
+    image.onerror = () => reject(new Error('Could not decode the image.'));
+    image.onload = () => {
+      const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      const context = canvas.getContext('2d');
+      if (!context) {
+        reject(new Error('Image processing is unavailable.'));
+        return;
+      }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/webp', 0.84));
+    };
+    image.src = String(reader.result);
+  };
+  reader.readAsDataURL(file);
+});
+
 interface StudioModalProps {
   initialUsername?: string;
   initialTemplate?: TemplateItem;
@@ -170,9 +198,28 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   const setIsPublished = useCallback((val: boolean) => updateSiteConfig({ isPublished: val }), [updateSiteConfig]);
   const setLinks = useCallback((newLinks: StudioBlockItem[]) => updateSiteConfig({ links: newLinks }), [updateSiteConfig]);
 
+  const handleAssetUpload = async (
+    file: File | undefined,
+    onSuccess: (dataUrl: string) => void,
+    maxDimension = 1600
+  ) => {
+    if (!file) return;
+    try {
+      if (file.size > 8 * 1024 * 1024) {
+        throw new Error(isRtl ? 'حجم الصورة يجب أن يكون أقل من 8 ميجابايت.' : 'Images must be smaller than 8 MB.');
+      }
+      const dataUrl = await imageFileToDataUrl(file, maxDimension);
+      onSuccess(dataUrl);
+      setValidationMessage('');
+    } catch (error) {
+      setValidationMessage(error instanceof Error ? error.message : (isRtl ? 'تعذر رفع الصورة.' : 'Could not upload the image.'));
+    }
+  };
+
   const [newTitle, setNewTitle] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [newSubtitle, setNewSubtitle] = useState('');
+  const [newThumbnail, setNewThumbnail] = useState('');
   const [newType, setNewType] = useState<'link' | 'gallery' | 'booking' | 'shop'>('link');
 
   const [activeTab, setActiveTab] = useState<'design' | 'content' | 'social' | 'share'>('design');
@@ -245,6 +292,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 
   const isValidMediaUrl = (value: string) => {
     if (!value.trim()) return true;
+    if (value.startsWith('data:image/')) return true;
     try {
       const url = new URL(value.trim());
       return url.protocol === 'http:' || url.protocol === 'https:';
@@ -496,13 +544,15 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       title: newTitle.trim(),
       url: newUrl.trim(),
       subtitle: newSubtitle.trim(),
-      type: newType
+      type: newType,
+      thumbnail: newThumbnail || undefined
     };
     const updatedLinks = [...links, newLinkItem];
     updateSiteConfig({ links: updatedLinks });
     setNewTitle('');
     setNewUrl('');
     setNewSubtitle('');
+    setNewThumbnail('');
 
     // Instant save to Firestore
     await persistSiteConfig({ ...siteConfig, links: updatedLinks });
@@ -939,6 +989,16 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                         placeholder={isRtl ? 'رابط الصورة https://...' : 'Avatar image URL https://...'}
                         className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-slate-700"
                       />
+                      <label className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100 cursor-pointer">
+                        <Upload className="h-3.5 w-3.5" />
+                        {isRtl ? 'رفع' : 'Upload'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={(e) => handleAssetUpload(e.target.files?.[0], setAvatar, 800)}
+                        />
+                      </label>
                     </div>
                   </div>
 
@@ -1001,6 +1061,16 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                             placeholder={isRtl ? 'رابط صورة الغلاف https://...' : 'Cover image URL https://...'}
                             className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-slate-700"
                           />
+                          <label className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-[11px] font-bold text-indigo-700 hover:bg-indigo-50 cursor-pointer">
+                            <Upload className="h-3.5 w-3.5" />
+                            {isRtl ? 'رفع صورة الغلاف' : 'Upload cover image'}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="sr-only"
+                              onChange={(e) => handleAssetUpload(e.target.files?.[0], setCoverImage, 1600)}
+                            />
+                          </label>
                           {/* Quick presets */}
                           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 text-[10px]">
                             <span className="text-slate-400 font-medium shrink-0">
@@ -1197,6 +1267,27 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                           <option value="shop">Product / Checkout</option>
                           <option value="gallery">Photo Gallery</option>
                         </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                        {isRtl ? 'صورة البطاقة (اختياري)' : 'Card image (Optional)'}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        {newThumbnail && (
+                          <img src={newThumbnail} alt="" className="h-9 w-9 rounded-lg object-cover border border-slate-200" />
+                        )}
+                        <label className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100 cursor-pointer">
+                          <Upload className="h-3.5 w-3.5" />
+                          {newThumbnail ? (isRtl ? 'تغيير الصورة' : 'Change image') : (isRtl ? 'رفع صورة' : 'Upload image')}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="sr-only"
+                            onChange={(e) => handleAssetUpload(e.target.files?.[0], setNewThumbnail, 800)}
+                          />
+                        </label>
                       </div>
                     </div>
 
