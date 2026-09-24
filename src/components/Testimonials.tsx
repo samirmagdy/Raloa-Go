@@ -17,7 +17,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ locale, onSeeMoreSto
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 sm:mb-14 gap-5 sm:gap-6">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-7 sm:mb-14 gap-4 sm:gap-6">
           <div className="max-w-[600px]">
             <span className="text-[12px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block mb-2">
               {t.eyebrow}
@@ -29,7 +29,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ locale, onSeeMoreSto
 
           <button
             onClick={onSeeMoreStories}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 text-slate-800 dark:text-slate-200 text-[14px] font-bold shadow-2xs hover:shadow-sm transition-all whitespace-nowrap self-start md:self-auto cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 text-slate-800 dark:text-slate-200 text-[14px] font-bold shadow-2xs hover:shadow-sm transition-all whitespace-nowrap self-start md:self-auto cursor-pointer"
           >
             <span>{t.seeMore}</span>
             <ArrowRight className="w-4 h-4 rtl:rotate-180" />
@@ -41,9 +41,9 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ locale, onSeeMoreSto
           {testimonialsData.map((item) => (
             <div
               key={item.id}
-              className="bg-white dark:bg-slate-900 rounded-[22px] p-5 sm:p-7 border border-slate-200/90 dark:border-slate-800 shadow-[0_6px_20px_rgba(15,23,42,0.04)] dark:shadow-[0_6px_20px_rgba(0,0,0,0.3)] flex flex-col items-center text-center lg:items-start lg:text-start justify-between hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_32px_rgba(0,0,0,0.5)] transition-all duration-300"
+              className="bg-white dark:bg-slate-900 rounded-[22px] p-4 sm:p-7 border border-slate-200/90 dark:border-slate-800 shadow-[0_6px_20px_rgba(15,23,42,0.04)] dark:shadow-[0_6px_20px_rgba(0,0,0,0.3)] flex flex-col items-center text-center lg:items-start lg:text-start justify-start lg:justify-between hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_32px_rgba(0,0,0,0.5)] transition-all duration-300"
             >
-              <div className="space-y-4">
+              <div className="w-full space-y-3 sm:space-y-4">
                 {/* 5 Golden Stars */}
                 <div className="flex items-center gap-1 text-amber-400">
                   {[...Array(item.rating)].map((_, i) => (
@@ -52,13 +52,13 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ locale, onSeeMoreSto
                 </div>
 
                 {/* Quote Text */}
-                <p className="text-[15px] sm:text-[16px] text-slate-700 dark:text-slate-300 leading-relaxed font-normal">
+                <p className="mx-auto max-w-[44ch] text-[14px] sm:text-[16px] text-slate-700 dark:text-slate-300 leading-[1.55] font-normal">
                   "{isRtl ? item.quoteAr : item.quote}"
                 </p>
               </div>
 
               {/* Author Info */}
-              <div className="flex items-center justify-center lg:justify-start gap-3 mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 w-full">
+              <div className="flex items-center justify-center lg:justify-start gap-3 mt-4 sm:mt-6 pt-4 sm:pt-5 border-t border-slate-100 dark:border-slate-800 w-full">
                 <div className="relative">
                   <img
                     src={item.avatar}
