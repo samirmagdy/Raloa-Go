@@ -21,6 +21,8 @@ import { FadeInSection } from './components/FadeInSection';
 import { NotFound } from './components/NotFound';
 import { PublicCreatorProfile } from './components/PublicCreatorProfile';
 import { InvalidSslFallback } from './components/InvalidSslFallback';
+import { AuthenticatedHome } from './components/AuthenticatedHome';
+import { useAuth } from './hooks/useAuth';
 
 // Interactive Modals
 const CommandPaletteModal = lazy(() => import('./components/modals/CommandPaletteModal').then((m) => ({ default: m.CommandPaletteModal })));
@@ -118,6 +120,8 @@ function resolveInitialRoute(): {
 }
 
 function MainApp() {
+  const { user } = useAuth();
+  const [homeView, setHomeView] = useState<'dashboard' | 'marketing'>('dashboard');
   const [locale, setLocale] = useState<Locale>(() => getInitialLocale());
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => getInitialSoundEnabled());
@@ -636,9 +640,80 @@ function MainApp() {
             setAuthModal({ open: true, mode: 'signup' });
           }}
         />
+      ) : user && homeView === 'dashboard' ? (
+        <>
+          {/* 01 Sticky Navigation Header */}
+          <Header
+            locale={locale}
+            onSelectLocale={handleSelectLocale}
+            onToggleLocale={toggleLocale}
+            onOpenStudio={(user) => handleOpenStudio(user)}
+            onOpenAuth={(mode) => setAuthModal({ open: true, mode: mode || 'signin' })}
+            onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+            theme={theme}
+            onToggleTheme={handleToggleTheme}
+            soundEnabled={soundEnabled}
+            onToggleSound={handleToggleSound}
+            voiceTourEnabled={voiceTourEnabled}
+            voiceTourSpeaking={voiceTourSpeaking}
+            onToggleVoiceTour={toggleTour}
+            currentSection={tourSection}
+            onReplayVoiceTour={replayCurrent}
+          />
+
+          <main>
+            <AuthenticatedHome
+              locale={locale}
+              theme={theme}
+              onOpenStudio={handleOpenStudio}
+              onOpenTemplates={handleOpenTemplates}
+              onOpenPricing={() => {
+                const el = document.getElementById('pricing');
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                  handleSelectPlan(pricingPlans[1], false);
+                }
+              }}
+              onSwitchToMarketing={() => setHomeView('marketing')}
+            />
+          </main>
+
+          {/* Footer */}
+          <FadeInSection id="footer-reveal">
+            <Footer
+              locale={locale}
+              onOpenPrivacyTerms={(title) => setLegalTitle(title)}
+              onOpenShortcuts={() => setShortcutsModalOpen(true)}
+              onOpenStats={() => setProjectStatsOpen(true)}
+              onOpenReferral={() => setReferralModalOpen(true)}
+              onTriggerNotFound={handleTriggerNotFound}
+            />
+          </FadeInSection>
+        </>
       ) : (
 
         <>
+          {/* Floating banner when logged in and browsing public marketing page */}
+          {user && (
+            <div className="sticky top-20 z-30 bg-gradient-to-r from-indigo-950/95 via-slate-900/95 to-indigo-950/95 backdrop-blur-md text-white text-xs py-2 px-4 flex items-center justify-between border-b border-indigo-500/20 shadow-md">
+              <span className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>
+                  {locale === 'ar'
+                    ? 'أنت تستعرض الصفحة الترويجية العامة الآن.'
+                    : 'You are currently browsing the public marketing page.'}
+                </span>
+              </span>
+              <button
+                onClick={() => setHomeView('dashboard')}
+                className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-sm transition-all hover:scale-105 active:scale-95"
+              >
+                {locale === 'ar' ? 'العودة إلى لوحة التحكم ←' : 'Return to Dashboard →'}
+              </button>
+            </div>
+          )}
+
           {/* 00 Fixed Viewport Scroll Progress Bar */}
           <ScrollProgressBar isRtl={locale === 'ar'} />
 

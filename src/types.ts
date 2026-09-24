@@ -138,6 +138,7 @@ export interface UserProfile {
   photoURL: string | null;
   plan: 'free' | 'pro' | 'studio';
   isYearly?: boolean;
+  handle?: string;
   createdAt?: string;
   updatedAt?: string;
 }
