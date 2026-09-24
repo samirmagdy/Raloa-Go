@@ -116,13 +116,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+      <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden transition-colors duration-200">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+        <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-850/50">
           <div className="flex items-center gap-2.5">
             <RaloaMark size={24} />
-              <span id="auth-dialog-title" className="text-xs font-bold text-slate-800">
+            <span id="auth-dialog-title" className="text-xs font-bold text-slate-800 dark:text-slate-200">
               {mode === 'signin'
                 ? isRtl ? 'تسجيل الدخول إلى رالوا' : 'Sign in to RALOA'
                 : mode === 'signup'
@@ -134,7 +134,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label={isRtl ? 'إغلاق' : 'Close'}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors"
+            className="w-9 h-9 sm:w-8 sm:h-8 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -144,25 +144,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="p-6">
           {submitted ? (
             <div className="text-center py-8 space-y-3">
-              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full mx-auto flex items-center justify-center">
+              <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 rounded-full mx-auto flex items-center justify-center">
                 <Check className="w-6 h-6 stroke-[3]" />
               </div>
-              <h3 className="text-lg font-black text-slate-900">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white">
                 {isRtl ? 'مرحباً بك مجدداً!' : 'Welcome back!'}
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 {isRtl ? 'تم تسجيل الدخول بنجاح عبر Firebase' : 'Authenticated securely with Firebase'}
               </p>
             </div>
           ) : resetSent ? (
             <div className="text-center py-8 space-y-4">
-              <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full mx-auto flex items-center justify-center">
+              <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 rounded-full mx-auto flex items-center justify-center">
                 <Mail className="w-6 h-6 stroke-[2.5]" />
               </div>
-              <h3 className="text-lg font-black text-slate-900">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white">
                 {isRtl ? 'تم إرسال رابط الاستعادة' : 'Check your inbox'}
               </h3>
-              <p className="text-xs text-slate-600 leading-relaxed max-w-xs mx-auto">
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed max-w-xs mx-auto">
                 {isRtl
                   ? `أرسلنا تعليمات إعادة تعيين كلمة المرور إلى ${email}. يرجى التحقق من صندوق الوارد.`
                   : `We sent password reset instructions to ${email}. Check your spam folder if it doesn't arrive within 2 minutes.`}
@@ -173,7 +173,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   setResetSent(false);
                   setMode('signin');
                 }}
-                className="w-full py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 transition-colors"
+                className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs transition-colors cursor-pointer"
               >
                 {isRtl ? 'العودة لتسجيل الدخول' : 'Back to Sign In'}
               </button>
@@ -182,7 +182,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <form onSubmit={handleSubmit} className="space-y-4">
               
               {error && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-start gap-2">
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs rounded-xl flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>{error}</span>
                 </div>
@@ -196,7 +196,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       type="button"
                       onClick={handleGoogleSignIn}
                       disabled={loading}
-                      className="w-full py-2.5 px-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center justify-center gap-2.5 transition-all shadow-xs hover:shadow-sm cursor-pointer disabled:opacity-50"
+                      className="w-full py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-850 text-xs font-bold flex items-center justify-center gap-2.5 transition-all shadow-2xs hover:shadow-xs cursor-pointer disabled:opacity-50"
                     >
                       {loading ? (
                         <Loader2 className="w-4 h-4 animate-spin text-slate-500" />
@@ -217,8 +217,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </div>
 
                   <div className="relative flex items-center justify-center">
-                    <div className="border-t border-slate-200 w-full" />
-                    <span className="bg-white px-3 text-[11px] text-slate-400 font-medium uppercase absolute">
+                    <div className="border-t border-slate-200 dark:border-slate-800 w-full" />
+                    <span className="bg-white dark:bg-slate-900 px-3 text-[11px] text-slate-400 dark:text-slate-500 font-medium uppercase absolute">
                       {isRtl ? 'أو عبر البريد' : 'or email'}
                     </span>
                   </div>
@@ -226,7 +226,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
 
               {mode === 'forgot' && (
-                <p className="text-xs text-slate-600 mb-2 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-300 mb-2 leading-relaxed">
                   {isRtl
                     ? 'أدخل عنوان بريدك الإلكتروني المسجل وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.'
                     : 'Enter your registered email address and we will send you a secure link to reset your password.'}
@@ -234,7 +234,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   {isRtl ? 'البريد الإلكتروني' : 'Email Address'}
                 </label>
                 <div className="relative">
@@ -244,7 +244,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@domain.com"
-                    className="w-full pl-9 pr-3 rtl:pl-3 rtl:pr-9 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    className="w-full pl-9 pr-3 rtl:pl-3 rtl:pr-9 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-colors"
                     required
                   />
                 </div>
@@ -253,14 +253,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {mode !== 'forgot' && (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-slate-700">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
                       {isRtl ? 'كلمة المرور' : 'Password'}
                     </label>
                     {mode === 'signin' && (
                       <button
                         type="button"
                         onClick={() => setMode('forgot')}
-                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                        className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors cursor-pointer"
                       >
                         {isRtl ? 'نسيت كلمة المرور؟' : 'Forgot password?'}
                       </button>
@@ -273,7 +273,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full pl-9 pr-3 rtl:pl-3 rtl:pr-9 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      className="w-full pl-9 pr-3 rtl:pl-3 rtl:pr-9 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-colors"
                       required
                       minLength={6}
                     />
@@ -284,7 +284,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {loading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -310,7 +310,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       setError(null);
                       setMode('signin');
                     }}
-                    className="text-xs text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-bold cursor-pointer"
                   >
                     {isRtl ? 'تذكرت كلمة المرور؟ تسجيل الدخول' : 'Remember your password? Sign in'}
                   </button>
@@ -321,7 +321,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       setError(null);
                       setMode(mode === 'signin' ? 'signup' : 'signin');
                     }}
-                    className="text-xs text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-bold cursor-pointer"
                   >
                     {mode === 'signin'
                       ? isRtl ? 'ليس لديك حساب؟ سجل مجاناً الآن' : "Don't have an account? Sign up free"

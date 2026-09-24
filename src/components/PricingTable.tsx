@@ -125,7 +125,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
             return (
               <div
                 key={plan.id}
-                className={`relative bg-white dark:bg-slate-900 rounded-[24px] p-8 border transition-all duration-300 flex flex-col items-center text-center lg:items-start lg:text-start justify-between ${
+                className={`relative bg-white dark:bg-slate-900 rounded-[24px] p-8 border transition-all duration-300 flex flex-col items-start text-start justify-between ${
                   isPopular
                     ? 'border-indigo-500 dark:border-indigo-500 ring-2 ring-indigo-500/20 dark:ring-indigo-500/40 shadow-[0_16px_40px_rgba(91,92,246,0.12)] dark:shadow-[0_16px_40px_rgba(91,92,246,0.25)] lg:-translate-y-2'
                     : 'border-slate-200 dark:border-slate-800 shadow-[0_6px_20px_rgba(15,23,42,0.04)] dark:shadow-[0_6px_20px_rgba(0,0,0,0.3)] hover:shadow-lg dark:hover:shadow-2xl'
@@ -138,7 +138,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
                   </div>
                 )}
 
-                <div>
+                <div className="w-full">
                   {/* Plan Name & Desc */}
                   <h3 className="font-extrabold text-[22px] text-[#0F172A] dark:text-white tracking-tight mb-1">
                     {isRtl ? plan.nameAr : plan.name}
@@ -160,7 +160,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
                   {/* Feature Checklist */}
                   <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800 mb-8 w-full">
                     {(isRtl ? plan.featuresAr : plan.features).map((feat, idx) => (
-                      <div key={idx} className="flex items-start justify-center lg:justify-start gap-3 text-center lg:text-start">
+                      <div key={idx} className="flex items-start justify-start gap-3 text-start w-full">
                         <div className="w-5 h-5 rounded-full bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
                           <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                         </div>

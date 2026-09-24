@@ -56,12 +56,12 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+      <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden transition-colors duration-200">
         
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+        <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-850/50">
           <div className="flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-indigo-600" />
-            <span id="contact-dialog-title" className="text-xs font-bold text-slate-800">
+            <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            <span id="contact-dialog-title" className="text-xs font-bold text-slate-800 dark:text-slate-200">
               {isRtl ? 'تواصل مع فريق دعم رالوا' : 'Contact RALOA Support'}
             </span>
           </div>
@@ -69,7 +69,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
             type="button"
             onClick={onClose}
             aria-label={isRtl ? 'إغلاق' : 'Close'}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors"
+            className="w-9 h-9 sm:w-8 sm:h-8 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -78,13 +78,13 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
         <div className="p-6">
           {sent ? (
             <div className="text-center py-8 space-y-3">
-              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full mx-auto flex items-center justify-center">
+              <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 rounded-full mx-auto flex items-center justify-center">
                 <Check className="w-6 h-6 stroke-[3]" />
               </div>
-              <h3 className="text-lg font-black text-slate-900">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white">
                 {isRtl ? 'تم إرسال رسالتك بنجاح!' : 'Message Received!'}
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 {isRtl
                   ? 'سيقوم أحد أعضاء فريقنا بالرد على بريدك خلال ساعات قليلة.'
                   : 'Our dedicated creator support team will respond to your email shortly.'}
@@ -93,7 +93,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label htmlFor="contact-name" className="block text-xs font-bold text-slate-700 mb-1">
+                <label htmlFor="contact-name" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   {isRtl ? 'الاسم' : 'Your Name'}
                 </label>
                 <input
@@ -102,13 +102,13 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder={isRtl ? 'سارة المنصوري' : 'Alex Rivera'}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-colors"
                   required
                 />
               </div>
 
               <div>
-                <label htmlFor="contact-email" className="block text-xs font-bold text-slate-700 mb-1">
+                <label htmlFor="contact-email" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   {isRtl ? 'البريد الإلكتروني' : 'Email Address'}
                 </label>
                 <input
@@ -117,13 +117,13 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@example.com"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-colors"
                   required
                 />
               </div>
 
               <div>
-                <label htmlFor="contact-message" className="block text-xs font-bold text-slate-700 mb-1">
+                <label htmlFor="contact-message" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   {isRtl ? 'كيف يمكننا مساعدتك؟' : 'How can we help?'}
                 </label>
                 <textarea
@@ -132,16 +132,16 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder={isRtl ? 'اكتب استفسارك هنا...' : 'Questions about custom domains, Arabic localization, or enterprise plans...'}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-colors"
                   required
                 />
               </div>
 
-              {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
+              {error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>{isRtl ? 'إرسال الرسالة' : 'Send Inquiry'}</span>

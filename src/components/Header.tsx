@@ -174,21 +174,21 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Voice-over Tour Toggle */}
             {onToggleVoiceTour && (
-              <div className="hidden sm:block">
-              <VoiceTourToggle
-                enabled={voiceTourEnabled}
-                isSpeaking={voiceTourSpeaking}
-                onToggle={onToggleVoiceTour}
-                currentSection={currentSection}
-                onReplay={onReplayVoiceTour}
-                variant="header"
-                locale={locale}
-              />
+              <div className="hidden lg:block">
+                <VoiceTourToggle
+                  enabled={voiceTourEnabled}
+                  isSpeaking={voiceTourSpeaking}
+                  onToggle={onToggleVoiceTour}
+                  currentSection={currentSection}
+                  onReplay={onReplayVoiceTour}
+                  variant="header"
+                  locale={locale}
+                />
               </div>
             )}
 
             {/* Ambient Sound Toggle */}
-            <div className="hidden sm:block">
+            <div className="hidden md:block">
               <SoundToggle
                 enabled={soundEnabled}
                 onToggle={onToggleSound}
