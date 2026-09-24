@@ -1,0 +1,5 @@
+interface:
+  display_name: "User Flow Integrity"
+  short_description: "Audit and repair complete website journeys"
+  brand_color: "#4F46E5"
+  default_prompt: "Use $user-flow-integrity to audit and repair every critical user journey in this website."
