@@ -25,7 +25,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
   const dialogRef = useModalA11y<HTMLDivElement>();
 
   const [copied, setCopied] = useState(false);
-  const [activeBgStyle, setActiveBgStyle] = useState<BackgroundStyle>('signature');
+  const [activeBgStyle, setActiveBgStyle] = useState<BackgroundStyle>('immersive');
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const bgContainerProps = getTemplateBackgroundContainerProperties(

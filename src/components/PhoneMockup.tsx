@@ -27,14 +27,14 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
   isRtl = false,
   interactive = true,
   onOpenAction,
-  backgroundStyle = 'signature',
+  backgroundStyle = 'immersive',
   customCoverImage,
   themeModeOverride = 'auto'
 }) => {
   const [clickedItem, setClickedItem] = useState<string | null>(null);
 
   // Resolve template theme configuration and actual background container properties
-  const currentBgStyle = backgroundStyle || template.backgroundStyle || 'signature';
+  const currentBgStyle = backgroundStyle || template.backgroundStyle || 'immersive';
   const themeConfig = resolveTemplateTheme(template, currentBgStyle, themeModeOverride);
   const bgContainerProps = getTemplateBackgroundContainerProperties(
     template,

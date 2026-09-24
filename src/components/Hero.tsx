@@ -37,7 +37,7 @@ export const Hero: React.FC<HeroProps> = ({
 
   // FR-2.2 Local component memory state for interactive preview canvas
   const [previewThemeMode, setPreviewThemeMode] = useState<'auto' | 'dark' | 'light'>('auto');
-  const [previewBgStyle, setPreviewBgStyle] = useState<BackgroundStyle>('signature');
+  const [previewBgStyle, setPreviewBgStyle] = useState<BackgroundStyle>('immersive');
 
   const isRtl = locale === 'ar';
   const t = dictionary[locale].hero;

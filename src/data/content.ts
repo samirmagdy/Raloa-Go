@@ -215,6 +215,226 @@ export const templatesData: TemplateItem[] = [
       { platform: 'youtube', url: 'https://youtube.com' },
       { platform: 'instagram', url: 'https://instagram.com' }
     ]
+  },
+  {
+    id: 'aria',
+    name: 'Aria',
+    role: 'Brand Strategist & Creative Director',
+    category: 'Professional',
+    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=400&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=600&q=80',
+    bio: 'Building memorable brands, sharper positioning and creative systems that scale.',
+    bioAr: 'أبني علامات تجارية مؤثرة واستراتيجيات أوضح وأنظمة إبداعية قابلة للنمو.',
+    themeColor: '#E11D48',
+    accentGradient: 'from-rose-500 to-pink-600',
+    sampleLinks: [
+      { id: 'a1', title: 'Brand Strategy Intensive', titleAr: 'جلسة استراتيجية العلامة التجارية', subtitle: 'A focused 90-minute clarity session', subtitleAr: 'جلسة مركزة لمدة ٩٠ دقيقة', url: '#strategy', type: 'booking' },
+      { id: 'a2', title: 'Selected Brand Work', titleAr: 'أعمال مختارة للعلامات التجارية', subtitle: 'Identity systems for ambitious teams', subtitleAr: 'أنظمة هوية لفرق طموحة', url: '#work', type: 'gallery' },
+      { id: 'a3', title: 'The Positioning Playbook', titleAr: 'دليل بناء المكانة التنافسية', subtitle: 'A practical guide for clearer brands', subtitleAr: 'دليل عملي لبناء علامة أوضح', url: '#playbook', type: 'shop' }
+    ],
+    socials: [
+      { platform: 'instagram', url: 'https://instagram.com' },
+      { platform: 'linkedin', url: 'https://linkedin.com' },
+      { platform: 'email', url: 'mailto:aria@example.com' }
+    ]
+  },
+  {
+    id: 'omar',
+    name: 'Omar',
+    role: 'Product Designer & Design Systems Lead',
+    category: 'Creative',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1558655146-d09347e92766?auto=format&fit=crop&w=600&q=80',
+    bio: 'Designing calm, useful digital products and systems for teams that move quickly.',
+    bioAr: 'أصمم منتجات رقمية هادئة ومفيدة وأنظمة تصميم للفرق سريعة النمو.',
+    themeColor: '#0891B2',
+    accentGradient: 'from-cyan-500 to-blue-600',
+    sampleLinks: [
+      { id: 'o1', title: 'Product Case Studies', titleAr: 'دراسات حالات المنتجات', subtitle: 'Research, flows and measurable outcomes', subtitleAr: 'أبحاث وتدفقات ونتائج قابلة للقياس', url: '#cases', type: 'gallery' },
+      { id: 'o2', title: 'Design Critique Session', titleAr: 'جلسة نقد وتصميم', subtitle: 'Bring a screen, leave with direction', subtitleAr: 'أحضر شاشتك وغادر بخطة واضحة', url: '#critique', type: 'booking' },
+      { id: 'o3', title: 'UI Kit for Founders', titleAr: 'حزمة واجهات للمؤسسين', subtitle: 'Reusable patterns for early products', subtitleAr: 'أنماط قابلة لإعادة الاستخدام للمنتجات الناشئة', url: '#kit', type: 'shop' }
+    ],
+    socials: [
+      { platform: 'linkedin', url: 'https://linkedin.com' },
+      { platform: 'x', url: 'https://x.com' },
+      { platform: 'github', url: 'https://github.com' }
+    ]
+  },
+  {
+    id: 'luma',
+    name: 'Luma',
+    role: 'Ceramic Artist & Slow Living Maker',
+    category: 'Portfolio',
+    avatar: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=400&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1610701596007-11502861dcfa?auto=format&fit=crop&w=600&q=80',
+    bio: 'Hand-shaped objects for quiet homes, daily rituals and slower mornings.',
+    bioAr: 'قطع مصنوعة يدوياً للبيوت الهادئة والطقوس اليومية والصباحات البطيئة.',
+    themeColor: '#A16207',
+    accentGradient: 'from-amber-600 to-orange-700',
+    sampleLinks: [
+      { id: 'lu1', title: 'Spring Collection', titleAr: 'تشكيلة الربيع', subtitle: 'Small-batch stoneware, made by hand', subtitleAr: 'قطع خزفية محدودة مصنوعة يدوياً', url: '#collection', type: 'shop' },
+      { id: 'lu2', title: 'Studio Journal', titleAr: 'يوميات الاستوديو', subtitle: 'Notes from the wheel and kiln', subtitleAr: 'ملاحظات من عجلة الفخار والفرن', url: '#journal', type: 'gallery' },
+      { id: 'lu3', title: 'Book a Private Workshop', titleAr: 'احجز ورشة خاصة', subtitle: 'A tactile afternoon in the studio', subtitleAr: 'تجربة عملية في الاستوديو', url: '#workshop', type: 'booking' }
+    ],
+    socials: [
+      { platform: 'instagram', url: 'https://instagram.com' },
+      { platform: 'tiktok', url: 'https://tiktok.com' },
+      { platform: 'email', url: 'mailto:luma@example.com' }
+    ]
+  },
+  {
+    id: 'atlas',
+    name: 'Atlas',
+    role: 'Notion Consultant & Operations Partner',
+    category: 'Business',
+    avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=400&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=600&q=80',
+    bio: 'Turning busy operations into clear systems, shared knowledge and focused work.',
+    bioAr: 'أحوّل العمليات المزدحمة إلى أنظمة واضحة ومعرفة مشتركة وعمل أكثر تركيزاً.',
+    themeColor: '#4F46E5',
+    accentGradient: 'from-indigo-600 to-violet-600',
+    sampleLinks: [
+      { id: 'at1', title: 'Operations Audit', titleAr: 'مراجعة العمليات', subtitle: 'Find the friction slowing your team down', subtitleAr: 'اكتشف ما يبطئ فريقك', url: '#audit', type: 'booking' },
+      { id: 'at2', title: 'Systems Library', titleAr: 'مكتبة الأنظمة', subtitle: 'Templates for modern teams', subtitleAr: 'قوالب للفرق الحديثة', url: '#library', type: 'shop' },
+      { id: 'at3', title: 'Client Results', titleAr: 'نتائج العملاء', subtitle: 'Before-and-after operating systems', subtitleAr: 'أنظمة تشغيل قبل وبعد', url: '#results', type: 'gallery' }
+    ],
+    socials: [
+      { platform: 'linkedin', url: 'https://linkedin.com' },
+      { platform: 'youtube', url: 'https://youtube.com' },
+      { platform: 'email', url: 'mailto:atlas@example.com' }
+    ]
+  },
+  {
+    id: 'yara',
+    name: 'Yara',
+    role: 'Yoga, Breathwork & Mobility Coach',
+    category: 'Fitness',
+    avatar: 'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=400&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?auto=format&fit=crop&w=600&q=80',
+    bio: 'Gentle practices for stronger bodies, steadier minds and more spacious days.',
+    bioAr: 'ممارسات لطيفة لأجساد أقوى وعقول أكثر اتزاناً وأيام أكثر رحابة.',
+    themeColor: '#059669',
+    accentGradient: 'from-emerald-500 to-teal-600',
+    sampleLinks: [
+      { id: 'y1', title: '7-Day Reset', titleAr: 'إعادة ضبط لمدة ٧ أيام', subtitle: 'Short daily practices for busy people', subtitleAr: 'تمارين يومية قصيرة للأشخاص المشغولين', url: '#reset', type: 'shop' },
+      { id: 'y2', title: 'Private Coaching', titleAr: 'تدريب خاص', subtitle: 'A grounded plan built around you', subtitleAr: 'خطة متوازنة مصممة لك', url: '#coaching', type: 'booking' },
+      { id: 'y3', title: 'Practice Library', titleAr: 'مكتبة التمارين', subtitle: 'Move, breathe and recover', subtitleAr: 'تحرك وتنفس واستعد نشاطك', url: '#practice', type: 'gallery' }
+    ],
+    socials: [
+      { platform: 'instagram', url: 'https://instagram.com' },
+      { platform: 'youtube', url: 'https://youtube.com' },
+      { platform: 'spotify', url: 'https://spotify.com' }
+    ]
+  },
+  {
+    id: 'roam-co',
+    name: 'Roam & Co.',
+    role: 'Boutique Travel Studio',
+    category: 'Travel',
+    avatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=600&q=80',
+    bio: 'Thoughtful itineraries, local stays and the kind of trips you talk about for years.',
+    bioAr: 'رحلات مدروسة وإقامات محلية وتجارب تتحدث عنها لسنوات.',
+    themeColor: '#0369A1',
+    accentGradient: 'from-sky-600 to-cyan-600',
+    sampleLinks: [
+      { id: 'r1', title: 'New Season Escapes', titleAr: 'رحلات الموسم الجديد', subtitle: 'Slow travel routes worth taking', subtitleAr: 'مسارات سفر هادئة تستحق التجربة', url: '#escapes', type: 'gallery' },
+      { id: 'r2', title: 'Plan My Trip', titleAr: 'خطط رحلتي', subtitle: 'Tell us where you want to go', subtitleAr: 'أخبرنا إلى أين تريد السفر', url: '#plan', type: 'booking' },
+      { id: 'r3', title: 'City Guides', titleAr: 'أدلة المدن', subtitle: 'Independent spots and local favorites', subtitleAr: 'أماكن مستقلة ومفضلة محلية', url: '#guides', type: 'shop' }
+    ],
+    socials: [
+      { platform: 'instagram', url: 'https://instagram.com' },
+      { platform: 'youtube', url: 'https://youtube.com' },
+      { platform: 'email', url: 'mailto:hello@roamco.example' }
+    ]
+  },
+  {
+    id: 'miso-house',
+    name: 'Miso House',
+    role: 'Supper Club & Recipe Studio',
+    category: 'Food',
+    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=600&q=80',
+    bio: 'Seasonal tables, pantry staples and intimate dinners inspired by home cooking.',
+    bioAr: 'موائد موسمية ومكونات أساسية وعشاء حميم مستوحى من الطبخ المنزلي.',
+    themeColor: '#EA580C',
+    accentGradient: 'from-orange-500 to-rose-600',
+    sampleLinks: [
+      { id: 'mh1', title: 'Reserve a Table', titleAr: 'احجز طاولتك', subtitle: 'Next supper club: Friday evening', subtitleAr: 'نادي العشاء القادم: مساء الجمعة', url: '#reserve', type: 'booking' },
+      { id: 'mh2', title: 'Pantry Notes', titleAr: 'ملاحظات المطبخ', subtitle: 'Recipes, techniques and stories', subtitleAr: 'وصفات وتقنيات وحكايات', url: '#notes', type: 'gallery' },
+      { id: 'mh3', title: 'House Chili Crisp', titleAr: 'صلصة الفلفل الحارة', subtitle: 'Small-batch jars, shipped weekly', subtitleAr: 'عبوات محدودة تشحن أسبوعياً', url: '#shop', type: 'shop' }
+    ],
+    socials: [
+      { platform: 'instagram', url: 'https://instagram.com' },
+      { platform: 'tiktok', url: 'https://tiktok.com' },
+      { platform: 'email', url: 'mailto:hello@misohouse.example' }
+    ]
+  },
+  {
+    id: 'echo',
+    name: 'Echo',
+    role: 'DJ & Event Curator',
+    category: 'Personal',
+    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=600&q=80',
+    bio: 'Late-night selections, warm rooms and soundtracks for the in-between moments.',
+    bioAr: 'اختيارات ليلية وأجواء دافئة وموسيقى للحظات التي لا تنسى.',
+    themeColor: '#DB2777',
+    accentGradient: 'from-fuchsia-600 to-purple-700',
+    sampleLinks: [
+      { id: 'e1', title: 'Listen to the Latest Set', titleAr: 'استمع إلى أحدث جلسة', subtitle: 'Two hours of left-field house', subtitleAr: 'ساعتان من موسيقى الهاوس المختارة', url: '#listen', type: 'link' },
+      { id: 'e2', title: 'Upcoming Nights', titleAr: 'الحفلات القادمة', subtitle: 'Cairo, Beirut, London and beyond', subtitleAr: 'القاهرة وبيروت ولندن وأكثر', url: '#events', type: 'booking' },
+      { id: 'e3', title: 'Merch & Mixes', titleAr: 'المنتجات والمكسات', subtitle: 'Limited pressings and digital packs', subtitleAr: 'إصدارات محدودة وحزم رقمية', url: '#merch', type: 'shop' }
+    ],
+    socials: [
+      { platform: 'spotify', url: 'https://spotify.com' },
+      { platform: 'youtube', url: 'https://youtube.com' },
+      { platform: 'instagram', url: 'https://instagram.com' }
+    ]
+  },
+  {
+    id: 'theo',
+    name: 'Theo',
+    role: 'Indie App Developer & Builder',
+    category: 'Business',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=600&q=80',
+    bio: 'Small software, thoughtful details and tools that make everyday work lighter.',
+    bioAr: 'برمجيات صغيرة وتفاصيل مدروسة وأدوات تجعل العمل اليومي أسهل.',
+    themeColor: '#2563EB',
+    accentGradient: 'from-blue-600 to-cyan-600',
+    sampleLinks: [
+      { id: 'th1', title: 'Try My Latest App', titleAr: 'جرّب أحدث تطبيقاتي', subtitle: 'A calmer way to plan your week', subtitleAr: 'طريقة أكثر هدوءاً لتخطيط أسبوعك', url: '#app', type: 'link' },
+      { id: 'th2', title: 'Build Log', titleAr: 'سجل التطوير', subtitle: 'Notes from shipping in public', subtitleAr: 'ملاحظات من البناء أمام الجمهور', url: '#log', type: 'gallery' },
+      { id: 'th3', title: 'Work With Me', titleAr: 'اعمل معي', subtitle: 'Product builds for small ambitious teams', subtitleAr: 'بناء منتجات لفرق صغيرة وطموحة', url: '#work', type: 'booking' }
+    ],
+    socials: [
+      { platform: 'github', url: 'https://github.com' },
+      { platform: 'x', url: 'https://x.com' },
+      { platform: 'linkedin', url: 'https://linkedin.com' }
+    ]
+  },
+  {
+    id: 'mira',
+    name: 'Mira',
+    role: 'Wedding & Editorial Florist',
+    category: 'Portfolio',
+    avatar: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=400&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1523438885200-e635ba2c371e?auto=format&fit=crop&w=600&q=80',
+    bio: 'Loose, seasonal florals for celebrations with a little more feeling and a lot of texture.',
+    bioAr: 'تنسيقات موسمية عفوية للاحتفالات المليئة بالمشاعر والتفاصيل.',
+    themeColor: '#BE185D',
+    accentGradient: 'from-pink-500 to-rose-600',
+    sampleLinks: [
+      { id: 'mi1', title: 'Wedding Portfolio', titleAr: 'أعمال حفلات الزفاف', subtitle: 'Flowers for intimate celebrations', subtitleAr: 'زهور لاحتفالات حميمة', url: '#weddings', type: 'gallery' },
+      { id: 'mi2', title: 'Request a Proposal', titleAr: 'اطلب عرضاً', subtitle: 'Share your date, place and feeling', subtitleAr: 'شاركنا التاريخ والمكان والإحساس', url: '#proposal', type: 'booking' },
+      { id: 'mi3', title: 'Seasonal Flower Notes', titleAr: 'ملاحظات عن الزهور الموسمية', subtitle: 'Care tips and studio stories', subtitleAr: 'نصائح العناية وحكايات الاستوديو', url: '#notes', type: 'link' }
+    ],
+    socials: [
+      { platform: 'instagram', url: 'https://instagram.com' },
+      { platform: 'linkedin', url: 'https://linkedin.com' },
+      { platform: 'email', url: 'mailto:mira@example.com' }
+    ]
   }
 ];
 
