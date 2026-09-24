@@ -139,6 +139,7 @@ interface StudioDesignTabProps {
   onCardShadowChange: (val: 'none' | 'subtle' | 'soft' | 'hard') => void;
   borderStyle: 'none' | 'thin' | 'bold' | 'dashed';
   onBorderStyleChange: (val: 'none' | 'thin' | 'bold' | 'dashed') => void;
+  onApplyPreset?: (preset: VisualPreset) => void;
   onResetDefault: () => void;
   locale: Locale;
 }
@@ -160,6 +161,7 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
   onCardShadowChange,
   borderStyle,
   onBorderStyleChange,
+  onApplyPreset,
   onResetDefault,
   locale
 }) => {
@@ -177,6 +179,10 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
   ];
 
   const handleApplyPreset = (p: VisualPreset) => {
+    if (onApplyPreset) {
+      onApplyPreset(p);
+      return;
+    }
     onAccentColorChange(p.accentColor);
     onSurfaceColorChange(p.surfaceColor);
     onCardRadiusChange(p.radius);
@@ -208,29 +214,46 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-          {VISUAL_PRESETS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => handleApplyPreset(p)}
-              className="p-3 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 bg-slate-50/60 dark:bg-slate-800/40 text-left rtl:text-right transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer group flex flex-col justify-between"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className={`w-6 h-6 rounded-full bg-gradient-to-tr ${p.previewGradient} ring-2 ring-white dark:ring-slate-900 shadow-2xs`} />
-                <span className="text-[10px] uppercase font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
-                  {isRtl ? 'تطبيق' : 'Apply'}
-                </span>
-              </div>
-              <div>
-                <p className="text-xs font-bold text-slate-900 dark:text-white">
-                  {isRtl ? p.nameAr : p.name}
-                </p>
-                <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5">
-                  {isRtl ? p.descriptionAr : p.description}
-                </p>
-              </div>
-            </button>
-          ))}
+          {VISUAL_PRESETS.map((p) => {
+            const isPresetActive =
+              accentColor.toLowerCase() === p.accentColor.toLowerCase() &&
+              bgStyle === p.bgStyle &&
+              cardRadius === p.radius;
+
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => handleApplyPreset(p)}
+                className={`p-3 rounded-2xl border text-left rtl:text-right transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer group flex flex-col justify-between ${
+                  isPresetActive
+                    ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 ring-1 ring-indigo-600 shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 bg-slate-50/60 dark:bg-slate-800/40'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`w-6 h-6 rounded-full bg-gradient-to-tr ${p.previewGradient} ring-2 ring-white dark:ring-slate-900 shadow-2xs`} />
+                  <span
+                    className={`text-[10px] uppercase font-bold transition-colors ${
+                      isPresetActive
+                        ? 'text-indigo-600 dark:text-indigo-400'
+                        : 'text-slate-400 group-hover:text-indigo-600'
+                    }`}
+                  >
+                    {isPresetActive ? (isRtl ? 'نشط' : 'Active') : (isRtl ? 'تطبيق' : 'Apply')}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">
+                    {isRtl ? p.nameAr : p.name}
+                  </p>
+                  <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5">
+                    {isRtl ? p.descriptionAr : p.description}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 

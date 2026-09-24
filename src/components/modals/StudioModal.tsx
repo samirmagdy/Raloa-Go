@@ -620,6 +620,17 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                 onCardShadowChange={(shd) => updateSiteConfig({ cardShadow: shd })}
                 borderStyle={borderStyle}
                 onBorderStyleChange={(bs) => updateSiteConfig({ borderStyle: bs })}
+                onApplyPreset={(p) => {
+                  updateSiteConfig({
+                    accentColor: p.accentColor,
+                    surfaceColor: p.surfaceColor,
+                    cardRadius: p.radius,
+                    cardShadow: p.shadow,
+                    borderStyle: p.borderStyle,
+                    bgStyle: p.bgStyle,
+                    themeMode: p.themeMode
+                  });
+                }}
                 onResetDefault={() => {
                   const preset = VISUAL_PRESETS[0];
                   updateSiteConfig({
@@ -718,6 +729,11 @@ export const StudioModal: React.FC<StudioModalProps> = ({
               locale={locale}
               previewMode={previewMode}
               onPreviewModeChange={setPreviewMode}
+              accentColor={accentColor}
+              surfaceColor={surfaceColor}
+              cardRadius={cardRadius}
+              cardShadow={cardShadow}
+              borderStyle={borderStyle}
               onOpenPhoneAction={(_action, data) => {
                 if (data?.url) {
                   window.open(data.url, '_blank', 'noopener,noreferrer');

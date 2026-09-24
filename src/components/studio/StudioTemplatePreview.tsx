@@ -21,6 +21,11 @@ export interface StudioTemplatePreviewProps {
   previewMode: 'phone' | 'social';
   onPreviewModeChange: (mode: 'phone' | 'social') => void;
   onOpenPhoneAction?: (type: 'portfolio' | 'booking' | 'shop' | 'gear', data?: any) => void;
+  accentColor?: string;
+  surfaceColor?: string;
+  cardRadius?: 'sharp' | 'subtle' | 'rounded' | 'pill';
+  cardShadow?: 'none' | 'subtle' | 'soft' | 'hard';
+  borderStyle?: 'none' | 'thin' | 'bold' | 'dashed';
 }
 
 /**
@@ -44,11 +49,17 @@ export const StudioTemplatePreview: React.FC<StudioTemplatePreviewProps> = ({
   locale,
   previewMode,
   onPreviewModeChange,
-  onOpenPhoneAction
+  onOpenPhoneAction,
+  accentColor,
+  surfaceColor,
+  cardRadius,
+  cardShadow,
+  borderStyle
 }) => {
-  // Dynamically compute the template's background container properties
+  // Dynamically compute the template's background container properties with accent color applied
+  const effectiveTemplate = accentColor ? { ...template, themeColor: accentColor } : template;
   const bgContainerProps = getTemplateBackgroundContainerProperties(
-    template,
+    effectiveTemplate,
     bgStyle,
     themeMode,
     coverImage
@@ -106,6 +117,11 @@ export const StudioTemplatePreview: React.FC<StudioTemplatePreviewProps> = ({
             customCoverImage={coverImage}
             themeModeOverride={themeMode}
             onOpenAction={onOpenPhoneAction}
+            accentColor={accentColor}
+            surfaceColor={surfaceColor}
+            cardRadius={cardRadius}
+            cardShadow={cardShadow}
+            borderStyle={borderStyle}
           />
         </div>
       ) : (

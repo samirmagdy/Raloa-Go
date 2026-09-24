@@ -19,6 +19,11 @@ interface PhoneMockupProps {
   backgroundStyle?: BackgroundStyle;
   customCoverImage?: string;
   themeModeOverride?: 'auto' | 'dark' | 'light';
+  accentColor?: string;
+  surfaceColor?: string;
+  cardRadius?: 'sharp' | 'subtle' | 'rounded' | 'pill';
+  cardShadow?: 'none' | 'subtle' | 'soft' | 'hard';
+  borderStyle?: 'none' | 'thin' | 'bold' | 'dashed';
 }
 
 export const PhoneMockup: React.FC<PhoneMockupProps> = ({
@@ -29,21 +34,104 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
   onOpenAction,
   backgroundStyle = 'immersive',
   customCoverImage,
-  themeModeOverride = 'auto'
+  themeModeOverride = 'auto',
+  accentColor,
+  surfaceColor,
+  cardRadius = 'rounded',
+  cardShadow = 'subtle',
+  borderStyle = 'thin'
 }) => {
   const [clickedItem, setClickedItem] = useState<string | null>(null);
 
   // Resolve template theme configuration and actual background container properties
   const currentBgStyle = backgroundStyle || template.backgroundStyle || 'immersive';
-  const themeConfig = resolveTemplateTheme(template, currentBgStyle, themeModeOverride);
+  const effectiveThemeColor = accentColor || template.themeColor || '#6366F1';
+  const effectiveTemplate = { ...template, themeColor: effectiveThemeColor };
+
+  const themeConfig = resolveTemplateTheme(effectiveTemplate, currentBgStyle, themeModeOverride);
   const bgContainerProps = getTemplateBackgroundContainerProperties(
-    template,
+    effectiveTemplate,
     currentBgStyle,
     themeModeOverride,
     customCoverImage
   );
   const coverImg = customCoverImage || template.coverImage;
   const isLightStatusBar = themeConfig.statusBarColor === 'light';
+  const isDark = themeConfig.mode === 'dark';
+
+  // Compute card geometry tokens
+  const getRadiusClass = () => {
+    switch (cardRadius) {
+      case 'sharp':
+        return 'rounded-none';
+      case 'subtle':
+        return 'rounded-lg';
+      case 'pill':
+        return 'rounded-full';
+      case 'rounded':
+      default:
+        return 'rounded-2xl';
+    }
+  };
+
+  const getShadowClass = () => {
+    switch (cardShadow) {
+      case 'none':
+        return 'shadow-none';
+      case 'soft':
+        return isDark ? 'shadow-[0_8px_20px_rgba(0,0,0,0.4)]' : 'shadow-[0_8px_20px_rgba(0,0,0,0.08)]';
+      case 'hard':
+        return isDark ? 'shadow-[3px_3px_0px_rgba(255,255,255,0.25)]' : 'shadow-[3px_3px_0px_#0F172A]';
+      case 'subtle':
+      default:
+        return 'shadow-xs';
+    }
+  };
+
+  const getBorderStyles = (): React.CSSProperties => {
+    if (borderStyle === 'none') {
+      return { border: 'none' };
+    }
+    const strokeWidth = borderStyle === 'bold' ? '2px' : '1px';
+    const strokeType = borderStyle === 'dashed' ? 'dashed' : 'solid';
+    const borderColor = isDark
+      ? (borderStyle === 'bold' ? `${effectiveThemeColor}80` : 'rgba(255,255,255,0.15)')
+      : (borderStyle === 'bold' ? effectiveThemeColor : 'rgba(0,0,0,0.12)');
+
+    return {
+      borderWidth: strokeWidth,
+      borderStyle: strokeType,
+      borderColor
+    };
+  };
+
+  const getCardStyle = (): React.CSSProperties => {
+    const customBorder = getBorderStyles();
+    const style: React.CSSProperties = {
+      ...customBorder
+    };
+
+    if (surfaceColor) {
+      style.backgroundColor = surfaceColor;
+      // Derive legible text color if a custom surface color was set
+      if (surfaceColor.startsWith('#')) {
+        const hex = surfaceColor.replace('#', '');
+        if (hex.length === 6) {
+          const r = parseInt(hex.substring(0, 2), 16);
+          const g = parseInt(hex.substring(2, 4), 16);
+          const b = parseInt(hex.substring(4, 6), 16);
+          const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+          if (luminance < 0.5) {
+            style.color = '#FFFFFF';
+          } else {
+            style.color = '#0F172A';
+          }
+        }
+      }
+    }
+
+    return style;
+  };
 
   const handleLinkClick = (link: typeof template.sampleLinks[0], e: React.MouseEvent) => {
     if (!interactive) return;
@@ -132,7 +220,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
               <div
                 className="w-20 h-20 rounded-full p-1 shadow-lg ring-4 ring-black/10 dark:ring-white/10"
                 style={{
-                  background: `linear-gradient(135deg, ${template.themeColor || '#6366F1'}, #9333ea)`
+                  background: `linear-gradient(135deg, ${effectiveThemeColor}, #9333ea)`
                 }}
               >
                 <img
@@ -142,8 +230,14 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                   loading="eager"
                 />
               </div>
-              <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
-                <CheckCircle2 className="w-5 h-5 text-blue-600 fill-blue-600 text-white" />
+              <div
+                className="absolute -bottom-1 -right-1 rounded-full p-0.5 shadow-sm"
+                style={{ backgroundColor: surfaceColor || '#FFFFFF' }}
+              >
+                <CheckCircle2
+                  className="w-5 h-5"
+                  style={{ color: effectiveThemeColor, fill: effectiveThemeColor }}
+                />
               </div>
             </div>
 
@@ -151,7 +245,10 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
             <h3 className={`font-extrabold text-[18px] tracking-tight leading-tight ${themeConfig.textColor}`}>
               {template.name}
             </h3>
-            <p className={`text-[12px] font-semibold mt-1 ${themeConfig.roleColor}`}>
+            <p
+              className={`text-[12px] font-semibold mt-1 transition-colors`}
+              style={{ color: effectiveThemeColor }}
+            >
               {template.role}
             </p>
             <p className={`text-[11px] mt-1.5 px-3 leading-relaxed max-w-[270px] ${themeConfig.bioColor}`}>
@@ -170,6 +267,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                     rel={social.url.startsWith('mailto:') || social.url.startsWith('tel:') ? undefined : 'noopener noreferrer'}
                     aria-label={social.platform}
                     className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all shadow-2xs ${themeConfig.socialBg} ${themeConfig.socialBorder} ${themeConfig.socialText} ${themeConfig.socialHoverBg}`}
+                    style={surfaceColor ? { backgroundColor: surfaceColor } : undefined}
                   >
                     {isPlatformIcon ? (
                       <PlatformIcon name={social.platform as PlatformIconName} className="w-3.5 h-3.5" />
@@ -185,23 +283,30 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
             <div className="w-full space-y-2.5 mt-1">
               {template.sampleLinks.map((link) => {
                 const isClicked = clickedItem === link.id;
+                const cardDynamicStyle = getCardStyle();
+                const radiusClass = getRadiusClass();
+                const shadowClass = getShadowClass();
+
                 return (
                   <button
                     key={link.id}
                     onClick={(e) => handleLinkClick(link, e)}
                     type="button"
-                    className={`w-full p-2.5 rounded-2xl border flex items-center gap-3 transition-all duration-200 text-left rtl:text-right group shadow-xs cursor-pointer ${
-                      themeConfig.cardBg
-                    } ${themeConfig.cardBorder} ${themeConfig.cardHoverBorder} ${
+                    style={cardDynamicStyle}
+                    className={`w-full p-2.5 border flex items-center gap-3 transition-all duration-200 text-left rtl:text-right group cursor-pointer ${
+                      radiusClass
+                    } ${shadowClass} ${
+                      !surfaceColor ? `${themeConfig.cardBg} ${themeConfig.cardBorder}` : ''
+                    } ${themeConfig.cardHoverBorder} ${
                       isClicked ? 'scale-[0.98] ring-2 ring-indigo-500' : 'hover:scale-[1.01]'
                     }`}
                   >
                     {link.thumbnail ? (
                       <div
-                        className={`relative w-11 h-11 rounded-xl overflow-hidden shrink-0 border border-black/10 dark:border-white/10 ${themeConfig.cardIconBg} ${themeConfig.cardIconColor}`}
+                        className={`relative w-11 h-11 ${cardRadius === 'sharp' ? 'rounded-none' : cardRadius === 'pill' ? 'rounded-full' : 'rounded-xl'} overflow-hidden shrink-0 border border-black/10 dark:border-white/10 ${themeConfig.cardIconBg} ${themeConfig.cardIconColor}`}
                       >
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <PremiumMark className="w-5 h-5" />
+                          <PremiumMark className="w-5 h-5" style={{ color: effectiveThemeColor }} />
                         </div>
                         <img
                           src={link.thumbnail}
@@ -214,7 +319,8 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                       </div>
                     ) : (
                       <div
-                        className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${themeConfig.cardIconBg} ${themeConfig.cardIconColor}`}
+                        className={`w-11 h-11 ${cardRadius === 'sharp' ? 'rounded-none' : cardRadius === 'pill' ? 'rounded-full' : 'rounded-xl'} flex items-center justify-center shrink-0 ${themeConfig.cardIconBg} ${themeConfig.cardIconColor}`}
+                        style={{ color: effectiveThemeColor }}
                       >
                         <PremiumMark className="w-5 h-5" />
                       </div>
@@ -222,12 +328,20 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className={`font-bold text-[13px] truncate transition-colors ${themeConfig.cardText}`}>
+                        <span
+                          className={`font-bold text-[13px] truncate transition-colors ${
+                            !surfaceColor ? themeConfig.cardText : ''
+                          }`}
+                        >
                           {isRtl ? link.titleAr : link.title}
                         </span>
                       </div>
                       {(link.subtitle || link.subtitleAr) && (
-                        <p className={`text-[10px] truncate mt-0.5 ${themeConfig.cardSubtext}`}>
+                        <p
+                          className={`text-[10px] truncate mt-0.5 ${
+                            !surfaceColor ? themeConfig.cardSubtext : 'opacity-70'
+                          }`}
+                        >
                           {isRtl ? link.subtitleAr : link.subtitle}
                         </p>
                       )}
@@ -251,7 +365,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
             <div className={`mt-4 pt-3 border-t border-black/10 dark:border-white/10 w-full flex items-center justify-center gap-1.5 text-[10px] font-medium ${themeConfig.footerText}`}>
               <span
                 className="w-1.5 h-1.5 rounded-full animate-ping"
-                style={{ backgroundColor: template.themeColor || '#10B981' }}
+                style={{ backgroundColor: effectiveThemeColor }}
               />
               <span>{isRtl ? 'اضغط على الروابط لتجربة التفاعل المباشر' : 'Tap links to test live interactions'}</span>
             </div>
