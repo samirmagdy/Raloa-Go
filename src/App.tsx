@@ -575,12 +575,14 @@ function MainApp() {
 
       <main>
         {/* 01 Hero Section with dynamic motion entrance & scroll parallax */}
-        <Hero
-          locale={locale}
-          heroTemplate={templatesData[0]}
-          onOpenStudio={handleOpenStudio}
-          onOpenPhoneAction={(type, data) => setPhoneAction({ type, data })}
-        />
+        <FadeInSection id="hero-reveal" threshold={0.01} rootMargin="0px 0px -20px 0px">
+          <Hero
+            locale={locale}
+            heroTemplate={templatesData[0]}
+            onOpenStudio={handleOpenStudio}
+            onOpenPhoneAction={(type, data) => setPhoneAction({ type, data })}
+          />
+        </FadeInSection>
 
         {/* 02 Trust & Benefits Section with Auto-Scrolling Marquee */}
         <FadeInSection id="trust-reveal">
