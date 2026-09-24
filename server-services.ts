@@ -87,6 +87,48 @@ export async function deleteDomain(domainId: string): Promise<void> {
   await adminDb.collection('custom_domains').doc(domainId).delete();
 }
 
+export async function getPublishedSiteByHandle(handle: string): Promise<Record<string, unknown> | null> {
+  const cleanHandle = handle.trim().toLowerCase();
+  if (!cleanHandle) return null;
+
+  const profileSnapshot = await adminDb.collection('users')
+    .where('handle', '==', cleanHandle)
+    .limit(1)
+    .get();
+  const profileDocument = profileSnapshot.docs[0];
+  if (!profileDocument) return null;
+
+  const siteDocument = await adminDb.collection('users')
+    .doc(profileDocument.id)
+    .collection('sites')
+    .doc('default')
+    .get();
+  if (!siteDocument.exists || siteDocument.data()?.isPublished !== true) return null;
+
+  return {
+    ...siteDocument.data(),
+    userId: profileDocument.id,
+    handle: cleanHandle
+  };
+}
+
+export async function getCheckoutSessionStatus(uid: string, sessionId: string): Promise<{
+  status: string;
+  paymentStatus: string | null;
+  subscriptionId: string | null;
+  customerId: string | null;
+} | null> {
+  if (!stripe) throw new Error('STRIPE_NOT_CONFIGURED');
+  const session = await stripe.checkout.sessions.retrieve(sessionId);
+  if (session.metadata?.uid !== uid) return null;
+  return {
+    status: session.status || 'unknown',
+    paymentStatus: session.payment_status || null,
+    subscriptionId: typeof session.subscription === 'string' ? session.subscription : null,
+    customerId: typeof session.customer === 'string' ? session.customer : null
+  };
+}
+
 export function getCloudflareConfig(): { apiToken: string; zoneId: string } | null {
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
   const zoneId = process.env.CLOUDFLARE_ZONE_ID;
@@ -157,6 +199,17 @@ export async function handleStripeWebhook(payload: string | Buffer, signature: s
   if (!webhookSecret) throw new Error('STRIPE_WEBHOOK_SECRET_NOT_CONFIGURED');
   const event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
 
+  if (isAdminConfigured()) {
+    const eventRef = adminDb.collection('stripe_events').doc(event.id);
+    const eventSnapshot = await eventRef.get();
+    if (eventSnapshot.exists && eventSnapshot.data()?.status === 'processed') return;
+    await eventRef.set({
+      type: event.type,
+      status: 'processing',
+      receivedAt: new Date().toISOString()
+    }, { merge: true });
+  }
+
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     const uid = session.metadata?.uid;
@@ -194,6 +247,13 @@ export async function handleStripeWebhook(payload: string | Buffer, signature: s
     const customer = typeof invoice.customer === 'string' ? invoice.customer : '';
     const userDocument = customer ? await getUserByStripeCustomerId(customer) : null;
     if (userDocument) await updateUserBilling(userDocument.id, { billingStatus: 'past_due' });
+  }
+
+  if (isAdminConfigured()) {
+    await adminDb.collection('stripe_events').doc(event.id).set({
+      status: 'processed',
+      processedAt: new Date().toISOString()
+    }, { merge: true });
   }
 }
 

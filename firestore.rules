@@ -1,139 +1,85 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
+    function signedIn() { return request.auth != null; }
+    function owner(userId) { return signedIn() && request.auth.uid == userId; }
+    function validEmail(value) {
+      return value is string && value.size() <= 320 && value.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
     }
-    
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    function validProfile(data) {
+      return data.uid is string && data.email is string && data.email.size() <= 320
+        && data.plan in ['free', 'pro', 'studio'] && data.isYearly is bool
+        && data.referralsCount is number && data.referralsCount >= 0
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'plan', 'isYearly', 'billingStatus', 'handle', 'referralsCount', 'referredBy', 'referralStatus', 'referralRewards', 'referralProUntil', 'verifiedCreator', 'customDomainPerkUnlocked', 'createdAt', 'updatedAt', 'stripeCustomerId', 'stripeSubscriptionId']);
+    }
+    function validSite(data, userId) {
+      return data.username is string && data.username.size() >= 3 && data.username.size() <= 30
+        && data.templateId is string && data.templateId.size() <= 100
+        && data.displayName is string && data.displayName.size() <= 120
+        && data.bio is string && data.bio.size() <= 2000
+        && data.links is list && data.links.size() <= 100 && data.isPublished is bool
+        && data.keys().hasOnly(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'updatedAt'])
+        && (!('userId' in data) || data.userId == userId)
+        && (get(/databases/$(database)/documents/users/$(userId)).data.plan != 'free' || data.links.size() <= 10);
     }
 
-    function billingFieldsChanged() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'plan',
-        'isYearly',
-        'billingStatus',
-        'stripeCustomerId',
-        'stripeSubscriptionId'
-      ]);
-    }
-
-    // User profile documents
     match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId)
-        && request.resource.data.plan == 'free'
-        && !request.resource.data.keys().hasAny([
-          'billingStatus',
-          'stripeCustomerId',
-          'stripeSubscriptionId'
-        ]);
-      allow update: if isOwner(userId) && !billingFieldsChanged()
-        // A newly-created account may atomically qualify itself once for its referrer.
-        || (
-          isAuthenticated()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'referralsCount',
-            'plan',
-            'isYearly',
-            'referralRewards',
-            'referralProUntil',
-            'verifiedCreator',
-            'customDomainPerkUnlocked',
-            'updatedAt'
-          ])
-          && (
-            (!resource.data.keys().hasAll(['referralsCount']) && request.resource.data.referralsCount == 1)
-            || (resource.data.referralsCount is number && request.resource.data.referralsCount == resource.data.referralsCount + 1)
-          )
-          && existsAfter(/databases/$(database)/documents/users/$(userId)/referrals/$(request.auth.uid))
-        );
+      allow read: if owner(userId);
+      allow create: if owner(userId) && request.resource.data.uid == userId && request.resource.data.plan == 'free'
+        && !request.resource.data.keys().hasAny(['billingStatus', 'stripeCustomerId', 'stripeSubscriptionId'])
+        && validProfile(request.resource.data);
+      allow update: if owner(userId) && validProfile(request.resource.data)
+        && request.resource.data.uid == resource.data.uid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plan', 'isYearly', 'billingStatus', 'stripeCustomerId', 'stripeSubscriptionId', 'referralsCount', 'referralRewards', 'referralProUntil', 'verifiedCreator', 'customDomainPerkUnlocked', 'referredBy', 'referralStatus']);
       allow delete: if false;
 
-      // User's mini-sites
       match /sites/{siteId} {
-        allow read: if isOwner(userId) || resource.data.isPublished == true;
-        allow write: if isOwner(userId);
+        allow read: if owner(userId);
+        allow create, update: if owner(userId) && validSite(request.resource.data, userId);
+        allow delete: if owner(userId);
       }
-
-      // User's referrals subcollection
       match /referrals/{referralId} {
-        allow read: if isOwner(userId);
-        allow create: if (
-            isOwner(userId)
-            && request.resource.data.status == 'invited'
-            && request.resource.data.invitedEmail is string
-          ) || (
-            isAuthenticated()
-            && referralId == request.auth.uid
-            && request.resource.data.referredUserId == request.auth.uid
-            && request.resource.data.status == 'qualified'
-            && get(/databases/$(database)/documents/users/$(userId)).data.email != request.auth.token.email
-          );
-        allow update: if isOwner(userId);
-        allow delete: if false;
+        allow read: if owner(userId);
+        allow create: if owner(userId) && request.resource.data.status == 'invited'
+          && validEmail(request.resource.data.invitedEmail)
+          && request.resource.data.keys().hasOnly(['invitedEmail', 'status', 'createdAt']);
+        allow update, delete: if false;
       }
     }
 
-    // Public lookup table used to resolve a referral code without exposing user profiles.
     match /referral_codes/{code} {
-      allow read: if true;
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAuthenticated()
-        && resource.data.userId == request.auth.uid
-        && request.resource.data.userId == request.auth.uid;
-      allow delete: if false;
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid
+        && code.size() >= 3 && code.size() <= 50
+        && request.resource.data.keys().hasOnly(['userId', 'updatedAt']);
+      allow update, delete: if false;
     }
-
-    // Contact messages
     match /contacts/{contactId} {
-      allow create: if request.resource.data.email is string
-                    && request.resource.data.message is string;
+      allow create: if validEmail(request.resource.data.email)
+        && (('name' in request.resource.data && request.resource.data.name is string) || ('fullName' in request.resource.data && request.resource.data.fullName is string))
+        && request.resource.data.message is string
+        && request.resource.data.message.size() >= 1 && request.resource.data.message.size() <= 5000
+        && request.resource.data.keys().hasOnly(['id', 'name', 'fullName', 'email', 'subject', 'message', 'createdAt']);
       allow read, update, delete: if false;
     }
-
-    // Newsletter subscriptions
     match /newsletter_subscribers/{subscriberId} {
-      allow create: if request.resource.data.email is string
-                    && request.resource.data.email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+      allow create: if validEmail(request.resource.data.email) && request.resource.data.keys().hasOnly(['email', 'createdAt']);
       allow read, update, delete: if false;
     }
-
-    // Bookings / appointments
-    match /bookings/{bookingId} {
-      allow create: if request.resource.data.clientEmail is string
-                    && request.resource.data.date is string;
-      allow read: if isAuthenticated();
-      allow update, delete: if false;
-    }
-
-    // Orders / shop purchases
-    match /orders/{orderId} {
-      allow create: if request.resource.data.itemTitle is string;
-      allow read: if isAuthenticated();
-      allow update, delete: if false;
-    }
-
-    // Page views & link click telemetry
+    match /bookings/{bookingId} { allow read, write: if false; }
+    match /orders/{orderId} { allow read, write: if false; }
     match /page_views/{viewId} {
-      allow create: if true;
-      allow read: if true;
-      allow update, delete: if false;
+      allow create: if request.resource.data.path is string && request.resource.data.path.size() <= 500
+        && request.resource.data.keys().hasOnly(['path', 'timestamp', 'userAgent']);
+      allow read, update, delete: if false;
     }
-
     match /link_clicks/{clickId} {
-      allow create: if true;
-      allow read: if true;
-      allow update, delete: if false;
+      allow create: if request.resource.data.linkId is string && request.resource.data.linkId.size() <= 200
+        && request.resource.data.url is string && request.resource.data.url.size() <= 2000
+        && request.resource.data.keys().hasOnly(['linkId', 'url', 'siteHandle', 'timestamp']);
+      allow read, update, delete: if false;
     }
-
-    // Custom domains are managed through authenticated server endpoints so
-    // Cloudflare credentials and ownership transitions never reach the client.
-    match /custom_domains/{domainId} {
-      allow read, write: if false;
-    }
+    match /custom_domains/{domainId} { allow read, write: if false; }
+    match /stripe_events/{eventId} { allow read, write: if false; }
   }
 }

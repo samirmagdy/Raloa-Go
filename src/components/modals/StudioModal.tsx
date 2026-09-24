@@ -141,7 +141,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       subtitle: (isRtl ? l.subtitleAr : l.subtitle) || '',
       type: l.type || 'link'
     })),
-    isPublished: true,
+    isPublished: false,
     accentColor: '#4F46E5',
     surfaceColor: '#FFFFFF',
     cardRadius: 'rounded',
@@ -254,7 +254,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                     subtitle: (isRtl ? l.subtitleAr : l.subtitle) || '',
                     type: l.type || 'link'
                   })),
-            isPublished: savedSite.isPublished ?? true,
+            isPublished: savedSite.isPublished ?? false,
             accentColor: (savedSite as any).accentColor || '#4F46E5',
             surfaceColor: (savedSite as any).surfaceColor || '#FFFFFF',
             cardRadius: (savedSite as any).cardRadius || 'rounded',
@@ -311,7 +311,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             bgStyle: configToSave.bgStyle,
             themeMode: configToSave.themeMode,
             links: configToSave.links,
-            isPublished: true,
+            isPublished: configToSave.isPublished,
             ...({
               accentColor: configToSave.accentColor,
               surfaceColor: configToSave.surfaceColor,

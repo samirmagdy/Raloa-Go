@@ -9,7 +9,6 @@ import {
   logOut as fbLogOut,
   fetchUserProfile,
   syncUserProfile,
-  updateUserPlan,
   saveUserMiniSiteToFirestore,
   loadUserMiniSiteFromFirestore,
   createLocalUser
@@ -50,6 +49,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const getCachedLocalUser = (): User | null => {
       if (typeof window === 'undefined') return null;
+      if (!['localhost', '127.0.0.1'].includes(window.location.hostname)) return null;
       const raw = localStorage.getItem('raloa_local_user');
       if (!raw) return null;
       try {
@@ -135,7 +135,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updatePlan = useCallback(async (plan: 'free' | 'pro' | 'studio', isYearly: boolean = false) => {
     if (!user) throw new Error('AUTH_REQUIRED');
-    await updateUserPlan(user.uid, plan, isYearly);
+    if (plan !== 'free') throw new Error('PLAN_REQUIRES_BILLING_CONFIRMATION');
+    const token = await user.getIdToken();
+    const response = await fetch('/api/billing/activate-free', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan, isYearly })
+    });
+    if (!response.ok) throw new Error('PLAN_UPDATE_FAILED');
     setProfile((prev) => (prev ? { ...prev, plan, isYearly, updatedAt: new Date().toISOString() } : null));
   }, [user]);
 
@@ -154,11 +161,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         await saveUserMiniSiteToFirestore(user.uid, siteData, siteId);
       } catch (err: any) {
-        // If permission is denied (e.g. during local dev or rules mismatch), don't crash autosave
-        if (err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions')) {
-          console.warn('Firestore permissions denied for saveMiniSite; saved to local storage fallback instead.');
-          return;
-        }
+        // Local storage is a recovery copy, never a substitute for server acknowledgement.
+        console.warn('Firestore save failed; a local recovery copy was retained.', err);
         throw err;
       }
     }

@@ -50,6 +50,7 @@ interface AuthenticatedHomeProps {
   onOpenTemplates: () => void;
   onOpenPricing: () => void;
   onManageBilling: () => void;
+  billingError?: string | null;
 }
 
 type TimeRange = '7d' | '30d' | 'all';
@@ -60,7 +61,8 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
   onOpenStudio,
   onOpenTemplates,
   onOpenPricing,
-  onManageBilling
+  onManageBilling,
+  billingError
 }) => {
   const { user, profile, loadMiniSite, saveMiniSite } = useAuth();
   const isRtl = locale === 'ar';
@@ -82,7 +84,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
     bio: '',
     avatar: '',
     templateId: 'elena',
-    isPublished: true,
+    isPublished: false,
     linksCount: 4,
     updatedAt: new Date().toISOString()
   });
@@ -120,7 +122,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
             bio: saved.bio || activeTemplate.bio,
             avatar: saved.avatar || user?.photoURL || activeTemplate.avatar,
             templateId: saved.templateId || 'elena',
-            isPublished: saved.isPublished ?? true,
+            isPublished: saved.isPublished ?? false,
             linksCount: saved.links ? saved.links.length : 4,
             updatedAt: saved.updatedAt || new Date().toISOString()
           });
@@ -131,7 +133,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
             bio: isRtl ? activeTemplate.bioAr : activeTemplate.bio,
             avatar: user?.photoURL || activeTemplate.avatar,
             templateId: activeTemplate.id,
-            isPublished: true,
+            isPublished: false,
             linksCount: 4,
             updatedAt: new Date().toISOString()
           });
@@ -329,6 +331,11 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
 
   return (
     <div className={`min-h-[100dvh] pt-24 pb-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto ${isRtl ? 'font-sans' : 'font-sans'}`}>
+      {billingError && (
+        <div role="alert" className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+          {billingError}
+        </div>
+      )}
       
       {/* 1. PERSONAL DASHBOARD HERO / HEADER BAR */}
       <section id="personal-dashboard" className="mb-8 scroll-mt-24">

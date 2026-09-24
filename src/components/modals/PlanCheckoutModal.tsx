@@ -10,6 +10,7 @@ interface PlanCheckoutModalProps {
   isYearly: boolean;
   locale: Locale;
   onClose: () => void;
+  onOpenAuth?: () => void;
   onConfirmPlan: (plan: PricingPlan) => void;
 }
 
@@ -18,6 +19,7 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
   isYearly,
   locale,
   onClose,
+  onOpenAuth,
   onConfirmPlan
 }) => {
   if (!plan) return null;
@@ -133,7 +135,7 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
                 <Check className="w-7 h-7 stroke-[3]" />
               </div>
               <h3 className="text-xl font-black text-slate-900 dark:text-white">
-                {isRtl ? 'تم تفعيل باقتك بنجاح!' : 'Plan Activated Successfully!'}
+                {isRtl ? 'تم تفعيل الباقة المجانية!' : 'Free plan selected'}
               </h3>
               <p className="text-xs text-slate-600 dark:text-slate-300">
                 {isRtl
@@ -196,8 +198,8 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
                   <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
                   <span>
                     {isRtl
-                      ? 'تفعيل فوري مرتبط مباشرة بحسابك وقاعدة البيانات. سيتم تطبيق كافة مزايا باقة ' + plan.nameAr + ' على الفور.'
-                      : `Instant activation attached directly to your account. All ${plan.name} features will be unlocked immediately.`}
+                      ? 'سيتم تحويلك إلى صفحة الدفع الآمنة. تُفتح مزايا باقة ' + plan.nameAr + ' بعد تأكيد الدفع.'
+                    : `You will be redirected to secure Stripe Checkout. Your ${plan.name} features unlock after payment is confirmed.`}
                   </span>
                 </div>
               )}
@@ -210,20 +212,25 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>{isRtl ? 'جاري تفعيل الباقة وتحديث الحساب...' : 'Activating Plan & Syncing Account...'}</span>
+                    <span>{isRtl ? 'جاري تجهيز العملية...' : 'Preparing secure checkout...'}</span>
                   </>
                 ) : (
                   <>
                     <span>
                       {plan.priceMonthly === 0
                         ? isRtl ? 'ابدأ مجاناً الآن' : 'Start Free Now'
-                        : isRtl ? `تفعيل باقة ${plan.nameAr} الآن` : `Activate ${plan.name} Plan Now`}
+                        : isRtl ? `المتابعة إلى الدفع الآمن` : `Continue to secure checkout`}
                     </span>
                     <ArrowRight className="w-4 h-4 rtl:rotate-180" />
                   </>
                 )}
               </button>
               {error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400 font-medium">{error}</p>}
+              {!user && (
+                <button type="button" onClick={onOpenAuth} className="w-full text-center text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-300">
+                  {isRtl ? 'تسجيل الدخول للمتابعة' : 'Sign in to continue'}
+                </button>
+              )}
             </form>
           )}
         </div>

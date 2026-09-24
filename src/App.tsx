@@ -56,6 +56,7 @@ function resolveInitialRoute(): {
   route: AppRoute;
   handle: string;
   attempted: string;
+  section?: string;
   authModal?: { open: boolean; mode: 'signin' | 'signup' | 'forgot' | 'reset' };
 } {
   if (typeof window === 'undefined') {
@@ -91,21 +92,14 @@ function resolveInitialRoute(): {
     return { route: 'home', handle: '', attempted: '', authModal: { open: true, mode: 'reset' } };
   }
   if (path === '/features' || path === '/pricing' || path === '/guides' || path === '/about' || path === '/contact') {
-    return { route: 'home', handle: '', attempted: '' };
+    return { route: 'home', handle: '', attempted: '', section: path.slice(1) };
   }
 
   // Handle route check: /@handle or /public-render/handle (FR-1.4)
   const handleMatch = path.match(/^\/(?:@|public-render\/)([a-zA-Z0-9._-]+)$/);
   if (handleMatch) {
     const rawHandle = handleMatch[1].toLowerCase();
-    const creatorExists = templatesData.some(
-      (t) => t.id.toLowerCase() === rawHandle || t.name.toLowerCase() === rawHandle
-    );
-    if (creatorExists) {
-      return { route: 'profile', handle: rawHandle, attempted: '' };
-    }
-    // AC-03: Invalid handle -> 404 with Claim this handle CTA
-    return { route: '404', handle: rawHandle, attempted: `/@${rawHandle}` };
+    return { route: 'profile', handle: rawHandle, attempted: '' };
   }
 
   if (hash === '#404') {
@@ -119,16 +113,74 @@ function resolveInitialRoute(): {
 }
 
 function MainApp() {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const [locale, setLocale] = useState<Locale>(() => getInitialLocale());
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => getInitialSoundEnabled());
   const [isLoading, setIsLoading] = useState(true);
+  const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
+  const [billingError, setBillingError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get('checkout');
+    const sessionId = params.get('session_id');
+    if (!checkout) return;
+    if (checkout === 'cancelled') {
+      setCheckoutNotice('Checkout was cancelled. Your current plan was not changed.');
+      return;
+    }
+    if (checkout !== 'success' || !sessionId || !user) return;
+
+    let cancelled = false;
+    const reconcile = async () => {
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch(`/api/billing/checkout-session?session_id=${encodeURIComponent(sessionId)}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error('CHECKOUT_STATUS_UNAVAILABLE');
+        const status = await response.json();
+        if (status.paymentStatus === 'paid' || status.status === 'complete') {
+          await refreshProfile();
+          if (!cancelled) setCheckoutNotice('Payment received. Your plan is syncing now.');
+        } else if (!cancelled) {
+          setCheckoutNotice('Payment is still processing. Your plan will unlock after Stripe confirms it.');
+        }
+      } catch {
+        if (!cancelled) setCheckoutNotice('Payment returned successfully, but confirmation is still pending. Please refresh shortly.');
+      }
+    };
+    reconcile();
+    window.history.replaceState(null, '', '/pricing');
+    return () => { cancelled = true; };
+  }, [user, refreshProfile]);
 
   const initialRouteInfo = resolveInitialRoute();
   const [currentRoute, setCurrentRoute] = useState<AppRoute>(initialRouteInfo.route);
   const [profileHandle, setProfileHandle] = useState<string>(initialRouteInfo.handle);
   const [attemptedPath, setAttemptedPath] = useState<string>(initialRouteInfo.attempted);
+  const [pendingSection, setPendingSection] = useState<string | undefined>(initialRouteInfo.section);
+
+  useEffect(() => {
+    if (currentRoute !== 'home' || !pendingSection) return;
+    const sectionMap: Record<string, string> = {
+      guides: 'how-it-works',
+      about: 'benefits',
+      contact: 'footer-reveal'
+    };
+    const targetId = sectionMap[pendingSection] || pendingSection;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(targetId);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        target.setAttribute('tabindex', '-1');
+        target.focus({ preventScroll: true });
+      }
+      setPendingSection(undefined);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentRoute, pendingSection]);
 
   // Dynamic Section-Aware SEO Hook (updates document.title, canonical URL, OG, Twitter tags)
   useSEO({
@@ -310,6 +362,7 @@ function MainApp() {
       setCurrentRoute(info.route);
       setProfileHandle(info.handle);
       setAttemptedPath(info.attempted);
+      setPendingSection(info.section);
       if (info.route === 'studio') {
         setStudioOpen(true);
       } else {
@@ -335,6 +388,7 @@ function MainApp() {
   const handleReturnHome = () => {
     setCurrentRoute('home');
     setAttemptedPath('');
+    setPendingSection(undefined);
     if (window.location.pathname !== '/' || window.location.hash !== '') {
       window.history.pushState(null, '', '/');
     }
@@ -354,6 +408,7 @@ function MainApp() {
   const handleNavigateToSection = (sectionId: string) => {
     setCurrentRoute('home');
     setAttemptedPath('');
+    setPendingSection(sectionId);
     if (window.location.pathname !== '/' || window.location.hash !== '') {
       window.history.pushState(null, '', `/#${sectionId}`);
     }
@@ -459,6 +514,7 @@ function MainApp() {
 
   const handleManageBilling = async () => {
     if (!user) return;
+    setBillingError(null);
     try {
       const token = await user.getIdToken();
       const response = await fetch('/api/billing/portal-session', {
@@ -470,6 +526,7 @@ function MainApp() {
       window.location.assign(payload.url);
     } catch (error) {
       console.error('Could not open billing portal:', error);
+      setBillingError('Billing management is temporarily unavailable. Please retry in a moment or contact support.');
     }
   };
 
@@ -621,6 +678,14 @@ function MainApp() {
 
       {/* Global Branded Loading Overlay */}
       <LoadingOverlay isLoading={isLoading} locale={locale} theme={theme} />
+      {checkoutNotice && (
+        <div role="status" className="fixed top-4 left-1/2 z-[70] -translate-x-1/2 max-w-[calc(100%-2rem)] rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-xs font-semibold text-slate-700 shadow-xl dark:border-indigo-900 dark:bg-slate-900 dark:text-slate-200">
+          <div className="flex items-center gap-3">
+            <span>{checkoutNotice}</span>
+            <button type="button" onClick={() => setCheckoutNotice(null)} className="rounded-lg px-2 py-1 text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/50">Dismiss</button>
+          </div>
+        </div>
+      )}
 
       {/* Dedicated Studio page, profile page, SSL error page, 404 page, or standard landing page */}
       {currentRoute === 'studio' ? (
@@ -713,6 +778,7 @@ function MainApp() {
                 }
               }}
               onManageBilling={handleManageBilling}
+              billingError={billingError}
             />
           </main>
 
@@ -910,6 +976,10 @@ function MainApp() {
           isYearly={selectedPlanState.isYearly}
           locale={locale}
           onClose={() => setSelectedPlanState(null)}
+          onOpenAuth={() => {
+            setSelectedPlanState(null);
+            setAuthModal({ open: true, mode: 'signin' });
+          }}
           onConfirmPlan={handleConfirmPlan}
         />
       )}
@@ -943,7 +1013,25 @@ function MainApp() {
           }}
           onSuccess={(email) => {
             setAuthModal({ open: false, mode: 'signin' });
-            handleOpenStudio(email.split('@')[0]);
+            const stagedTemplateId = typeof window !== 'undefined' ? sessionStorage.getItem('selected_template_id') : null;
+            const stagedTemplate = stagedTemplateId
+              ? templatesData.find((template) => template.id === stagedTemplateId)
+              : undefined;
+            const stagedPlanId = typeof window !== 'undefined' ? sessionStorage.getItem('selected_plan') : null;
+            const stagedPlan = stagedPlanId ? pricingPlans.find((plan) => plan.id === stagedPlanId) : undefined;
+            const stagedYearly = typeof window !== 'undefined' && sessionStorage.getItem('selected_plan_yearly') === 'true';
+            if (typeof window !== 'undefined') {
+              sessionStorage.removeItem('selected_template_id');
+              sessionStorage.removeItem('raloa_selected_template');
+              sessionStorage.removeItem('selected_plan');
+              sessionStorage.removeItem('selected_plan_yearly');
+              sessionStorage.removeItem('claimed_handle');
+            }
+            if (stagedPlan) {
+              setSelectedPlanState({ plan: stagedPlan, isYearly: stagedYearly });
+              return;
+            }
+            handleOpenStudio(studioUsername || email.split('@')[0], stagedTemplate);
           }}
         />
       )}

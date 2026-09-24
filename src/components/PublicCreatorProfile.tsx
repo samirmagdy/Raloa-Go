@@ -38,19 +38,66 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   const isRtl = locale === 'ar';
   const cleanHandle = handle.replace(/^@/, '').toLowerCase().trim();
   const [copied, setCopied] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Look for matching creator in templatesData or known handles
-  const creator = templatesData.find(
+  const fixtureCreator = templatesData.find(
     (t) => t.id.toLowerCase() === cleanHandle || t.name.toLowerCase() === cleanHandle
   );
+  const [creator, setCreator] = useState<TemplateItem | null>(fixtureCreator || null);
 
   useEffect(() => {
-    if (!creator) {
+    let cancelled = false;
+    setIsLoading(true);
+    fetch(`/api/public/sites/${encodeURIComponent(cleanHandle)}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('PUBLIC_SITE_NOT_FOUND');
+        const payload = await response.json();
+        const site = payload.site;
+        const links = Array.isArray(site.links) ? site.links : [];
+        return {
+          id: cleanHandle,
+          name: site.displayName || cleanHandle,
+          role: site.role || '',
+          category: 'Personal' as const,
+          avatar: site.avatar || '',
+          coverImage: site.coverImage || '',
+          bio: site.bio || '',
+          bioAr: site.bioAr || site.bio || '',
+          themeColor: site.accentColor || '#4F46E5',
+          accentGradient: 'linear-gradient(135deg, #4F46E5, #7C3AED)',
+          backgroundStyle: site.bgStyle || 'signature',
+          sampleLinks: links.map((link: any, index: number) => ({
+            id: link.id || `${cleanHandle}-${index}`,
+            title: link.title || '',
+            titleAr: link.titleAr || link.title || '',
+            subtitle: link.subtitle || '',
+            subtitleAr: link.subtitleAr || link.subtitle || '',
+            url: link.url || '#',
+            thumbnail: link.thumbnail,
+            type: link.type || 'link'
+          })),
+          socials: Array.isArray(site.socials) ? site.socials : []
+        } as TemplateItem;
+      })
+      .then((nextCreator) => {
+        if (!cancelled) setCreator(nextCreator);
+      })
+      .catch(() => {
+        if (!cancelled) setCreator(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [cleanHandle]);
+
+  useEffect(() => {
+    if (!isLoading && !creator) {
       onNotFound?.(cleanHandle);
-    } else {
+    } else if (creator) {
       recordPageView(`/@${cleanHandle}`);
     }
-  }, [cleanHandle, creator, onNotFound]);
+  }, [cleanHandle, creator, isLoading, onNotFound]);
 
   // Dynamic OpenGraph & Meta tag hydration for public creator route (FR-3.2)
   usePageSEO({
@@ -68,6 +115,10 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
     locale
   });
 
+
+  if (isLoading) {
+    return <div className="min-h-[100dvh] flex items-center justify-center text-sm text-slate-500">Loading profile...</div>;
+  }
 
   if (!creator) {
     return null;

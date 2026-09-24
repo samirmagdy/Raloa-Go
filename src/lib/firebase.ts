@@ -52,15 +52,16 @@ export async function signInWithGoogle(): Promise<User> {
     const result = await signInWithPopup(auth, googleProvider);
     const user = result.user;
     await syncUserProfile(user);
+    await establishServerSession(user);
     return user;
   } catch (err: any) {
     const isLocalhost = typeof window !== 'undefined' &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-    if (
+    if (isLocalhost && (
       err?.code === 'auth/operation-not-allowed' ||
       err?.code === 'auth/unauthorized-domain' ||
-      (isLocalhost && err?.code !== 'auth/popup-closed-by-user')
-    ) {
+      err?.code !== 'auth/popup-closed-by-user'
+    )) {
       console.warn('Firebase Google Auth fallback activated for localhost:', err);
       const localUser = createLocalUser('creator@google.com', 'google_creator');
       if (typeof window !== 'undefined') {
@@ -125,6 +126,27 @@ export function createLocalUser(email: string, handle?: string): User {
   } as unknown as User;
 }
 
+async function establishServerSession(user: User): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const token = await user.getIdToken();
+  await fetch('/api/v1/auth/session', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+async function reserveHandle(user: User, handle?: string): Promise<void> {
+  if (!handle || typeof window === 'undefined' || !user.getIdToken) return;
+  const token = await user.getIdToken();
+  const response = await fetch('/api/v1/handles/reserve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ handle })
+  });
+  if (response.status === 409) throw Object.assign(new Error('This handle is already taken.'), { code: 'auth/handle-already-in-use' });
+  if (!response.ok && response.status !== 503) throw new Error('HANDLE_RESERVATION_FAILED');
+}
+
 async function publishReferralCode(code: string | undefined, userId: string): Promise<void> {
   const cleanCode = code?.trim().toLowerCase();
   if (!cleanCode) return;
@@ -147,8 +169,8 @@ export async function signInWithEmail(email: string, pass: string): Promise<User
   const isLocalhost = typeof window !== 'undefined' &&
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-  // Attempt server login first to establish raloa_session cookie
-  try {
+  // The server fallback is deliberately limited to local development.
+  if (isLocalhost) try {
     const resp = await fetch('/api/v1/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -184,6 +206,7 @@ export async function signInWithEmail(email: string, pass: string): Promise<User
   try {
     const cred = await signInWithEmailAndPassword(auth, email, pass);
     await syncUserProfile(cred.user);
+    await establishServerSession(cred.user);
     return cred.user;
   } catch (err: any) {
     if (
@@ -216,8 +239,8 @@ export async function signUpWithEmail(email: string, pass: string, handle?: stri
   const isLocalhost = typeof window !== 'undefined' &&
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-  // Attempt server registration first to set raloa_session cookie
-  try {
+  // The server fallback is deliberately limited to local development.
+  if (isLocalhost) try {
     const resp = await fetch('/api/v1/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -249,6 +272,9 @@ export async function signUpWithEmail(email: string, pass: string, handle?: stri
   // Attempt Firebase Auth
   try {
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    const requestedHandle = handle || email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 30) || 'creator';
+    await establishServerSession(cred.user);
+    await reserveHandle(cred.user, requestedHandle);
     await syncUserProfile(cred.user, handle ? { handle } : {});
     await completeReferralSignup(cred.user.uid, captureReferralCode());
     return cred.user;
@@ -331,6 +357,10 @@ export async function syncUserProfile(
   customData: Partial<UserProfile> = {}
 ): Promise<UserProfile> {
   try {
+    const fallbackHandle = (user.displayName || user.email?.split('@')[0] || 'creator')
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '')
+      .slice(0, 30) || 'creator';
     const userDocRef = doc(db, 'users', user.uid);
     const snap = await getDoc(userDocRef);
 
@@ -340,6 +370,7 @@ export async function syncUserProfile(
         email: user.email,
         displayName: user.displayName || user.email?.split('@')[0] || 'Creator',
         photoURL: user.photoURL || null,
+        handle: fallbackHandle,
         plan: 'free',
         isYearly: false,
         referralsCount: 0,
@@ -365,6 +396,7 @@ export async function syncUserProfile(
         email: user.email ?? existing.email,
         displayName: user.displayName ?? existing.displayName,
         photoURL: user.photoURL ?? existing.photoURL,
+        handle: existing.handle || fallbackHandle,
         plan: referralExpired ? 'free' : existing.plan,
         updatedAt: new Date().toISOString(),
         ...customData
@@ -408,8 +440,21 @@ export async function completeReferralSignup(
   if (!cleanCode || !referredUserId) return false;
 
   try {
+    if (auth.currentUser) {
+      const token = await auth.currentUser.getIdToken();
+      const response = await fetch('/api/v1/referrals/qualify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ code: cleanCode })
+      });
+      if (response.ok) return Boolean((await response.json()).qualified);
+      if (typeof window === 'undefined' || !['localhost', '127.0.0.1'].includes(window.location.hostname)) return false;
+    }
+
+    if (typeof window === 'undefined' || !['localhost', '127.0.0.1'].includes(window.location.hostname)) return false;
     const codeSnap = await getDoc(doc(db, 'referral_codes', cleanCode));
-    const referrerId = codeSnap.exists() ? codeSnap.data().userId : cleanCode;
+    if (!codeSnap.exists()) return false;
+    const referrerId = codeSnap.data().userId;
     if (referrerId === referredUserId) return false;
 
     const referrerRef = doc(db, 'users', referrerId);

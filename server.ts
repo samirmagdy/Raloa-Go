@@ -13,6 +13,8 @@ import {
   deleteDomain,
   findDomainByHostname,
   findDomainById,
+  getCheckoutSessionStatus,
+  getPublishedSiteByHandle,
   getCloudflareConfig,
   handleStripeWebhook,
   isAdminConfigured,
@@ -23,6 +25,7 @@ import {
   type AuthenticatedUser,
   type DomainRecord
 } from './server-services';
+import { templatesData } from './src/data/content';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -738,7 +741,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
  * Debounced check querying GET /api/v1/handles/check?handle={name}
  * Regex: ^[a-zA-Z0-9_-]{3,30}$
  */
-app.get('/api/v1/handles/check', (req: Request, res: Response) => {
+app.get('/api/v1/handles/check', async (req: Request, res: Response) => {
   const handle = req.query.handle;
   if (typeof handle !== 'string' || !handle.trim()) {
     return res.status(400).json({
@@ -760,8 +763,11 @@ app.get('/api/v1/handles/check', (req: Request, res: Response) => {
   const isReserved = RESERVED_HANDLES.has(clean);
   const isExistingCreator = !!CREATORS_METADATA[clean];
   const isExistingUser = Object.values(USERS_DB).some((u) => u.primary_handle.toLowerCase() === clean);
+  const reservedSnapshot = isAdminConfigured()
+    ? await adminDb.collection('handles').doc(clean).get()
+    : null;
 
-  const available = !isReserved && !isExistingCreator && !isExistingUser;
+  const available = !isReserved && !isExistingCreator && !isExistingUser && !reservedSnapshot?.exists;
 
   return res.status(200).json({
     status: 'success',
@@ -771,6 +777,31 @@ app.get('/api/v1/handles/check', (req: Request, res: Response) => {
       reason: available ? undefined : 'Handle already registered or reserved'
     }
   });
+});
+
+app.post('/api/v1/handles/reserve', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+  const handle = typeof req.body?.handle === 'string' ? req.body.handle.trim().toLowerCase() : '';
+  if (!/^[a-z0-9_-]{3,30}$/.test(handle) || RESERVED_HANDLES.has(handle)) {
+    return res.status(400).json({ error: 'Invalid or reserved handle' });
+  }
+  if (!isAdminConfigured()) return res.status(503).json({ error: 'Handle reservation is not configured' });
+
+  try {
+    const reservationRef = adminDb.collection('handles').doc(handle);
+    await adminDb.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(reservationRef);
+      if (snapshot.exists && snapshot.data()?.userId !== user.uid) throw new Error('HANDLE_TAKEN');
+      transaction.set(reservationRef, { userId: user.uid, handle, updatedAt: new Date().toISOString() }, { merge: true });
+    });
+    await adminDb.collection('users').doc(user.uid).set({ handle, updatedAt: new Date().toISOString() }, { merge: true });
+    return res.status(200).json({ handle });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'HANDLE_TAKEN') return res.status(409).json({ error: 'Handle is already taken' });
+    console.error('[Handle reservation]', error);
+    return res.status(503).json({ error: 'Handle reservation is temporarily unavailable' });
+  }
 });
 
 /**
@@ -827,7 +858,10 @@ app.post('/api/v1/public/contact', (req: Request, res: Response) => {
  * FR-4.1 User Registration Endpoint (Localhost & Server Auth)
  * Supports localhost registration when Firebase Cloud provider is restricted.
  */
-app.post('/api/v1/auth/register', (req: Request, res: Response) => {
+app.post('/api/v1/auth/register', async (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(410).json({ status: 'error', message: 'Use Firebase email registration.' });
+  }
   const { email, password, handle } = req.body || {};
 
   if (!email || typeof email !== 'string') {
@@ -844,6 +878,11 @@ app.post('/api/v1/auth/register', (req: Request, res: Response) => {
 
   const rawHandle = (handle || normalizedEmail.split('@')[0] || 'creator').toLowerCase().replace(/[^a-z0-9_-]/g, '');
   const cleanHandle = rawHandle.slice(0, 30);
+  if (RESERVED_HANDLES.has(cleanHandle)) return res.status(409).json({ status: 'error', message: 'This handle is reserved.' });
+  if (isAdminConfigured()) {
+    const handleSnapshot = await adminDb.collection('handles').doc(cleanHandle).get();
+    if (handleSnapshot.exists) return res.status(409).json({ status: 'error', message: 'This handle is already registered.' });
+  }
 
   const newUserId = `usr_${crypto.randomBytes(8).toString('hex')}`;
   const salt = crypto.randomBytes(16).toString('hex');
@@ -898,6 +937,9 @@ app.post('/api/v1/auth/register', (req: Request, res: Response) => {
  * Issues short-lived access / long-lived raloa_session cookie.
  */
 app.post('/api/v1/auth/login', (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(410).json({ status: 'error', message: 'Use Firebase email authentication.' });
+  }
   const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
   const { email, password } = req.body || {};
 
@@ -1129,6 +1171,9 @@ app.post('/api/v1/auth/reset-password', (req: Request, res: Response) => {
  * FR-4.6 Social Identity Providers (Google)
  */
 app.post('/api/v1/auth/oauth/google', (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(410).json({ status: 'error', message: 'Use Firebase Google OAuth directly.' });
+  }
   const { email } = req.body || {};
   const userEmail = (email || 'google_user@example.com').toLowerCase();
   let user = USERS_DB[userEmail];
@@ -1177,6 +1222,9 @@ app.post('/api/v1/auth/oauth/google', (req: Request, res: Response) => {
  * FR-4.6 Social Identity Providers (Sign in with Apple)
  */
 app.post('/api/v1/auth/oauth/apple', (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(410).json({ status: 'error', message: 'Apple OAuth is not enabled until verified provider credentials are configured.' });
+  }
   const { email } = req.body || {};
   const userEmail = (email || 'apple_user@privaterelay.appleid.com').toLowerCase();
   let user = USERS_DB[userEmail];
@@ -1245,6 +1293,22 @@ app.get('/api/v1/auth/session', (req: Request, res: Response) => {
   });
 });
 
+app.post('/api/v1/auth/session', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return res.status(401).json({ status: 'error', message: 'Invalid Firebase session' });
+  const now = Date.now();
+  const sessionToken = crypto.randomBytes(32).toString('hex');
+  ACTIVE_SESSIONS.set(sessionToken, {
+    userId: user.uid,
+    email: user.email || '',
+    primary_handle: user.email?.split('@')[0] || 'creator',
+    createdAt: now,
+    expiresAt: now + 604800000
+  });
+  res.setHeader('Set-Cookie', `raloa_session=${sessionToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`);
+  return res.status(200).json({ status: 'success' });
+});
+
 /**
  * FR-4.5 Email Verification Confirmation
  */
@@ -1276,7 +1340,39 @@ app.get('/api/readiness', (_req: Request, res: Response) => {
     appUrl: Boolean(APP_URL)
   };
   const ready = process.env.NODE_ENV !== 'production' || Object.values(checks).every(Boolean);
-  res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready', checks });
+  res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready' });
+});
+
+app.get('/api/public/sites/:handle', async (req: Request, res: Response) => {
+  const handle = String(req.params.handle || '').trim().toLowerCase();
+  if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return res.status(400).json({ error: 'Invalid handle' });
+
+  try {
+    const site = isAdminConfigured() ? await getPublishedSiteByHandle(handle) : null;
+    if (site) return res.status(200).json({ site });
+
+    const fixture = templatesData.find((template) => template.id.toLowerCase() === handle || template.name.toLowerCase() === handle);
+    if (!fixture) return res.status(404).json({ error: 'Published site not found' });
+    return res.status(200).json({
+      site: {
+        username: handle,
+        displayName: fixture.name,
+        role: fixture.role,
+        bio: fixture.bio,
+        bioAr: fixture.bioAr,
+        avatar: fixture.avatar,
+        coverImage: fixture.coverImage,
+        bgStyle: fixture.backgroundStyle || 'signature',
+        links: fixture.sampleLinks,
+        socials: fixture.socials,
+        isPublished: true,
+        fixture: true
+      }
+    });
+  } catch (error) {
+    console.error('[Public site lookup]', error);
+    return res.status(503).json({ error: 'Public site is temporarily unavailable' });
+  }
 });
 
 app.post('/api/billing/activate-free', async (req: Request, res: Response) => {
@@ -1310,6 +1406,82 @@ app.post('/api/billing/checkout-session', async (req: Request, res: Response) =>
     console.error('[Billing checkout]', error);
     const message = error instanceof Error ? error.message : 'Checkout unavailable';
     return res.status(message.includes('NOT_CONFIGURED') ? 503 : 500).json({ error: message });
+  }
+});
+
+app.get('/api/billing/checkout-session', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+  const sessionId = typeof req.query.session_id === 'string' ? req.query.session_id : '';
+  if (!sessionId) return res.status(400).json({ error: 'session_id is required' });
+
+  try {
+    const status = await getCheckoutSessionStatus(user.uid, sessionId);
+    if (!status) return res.status(404).json({ error: 'Checkout session not found' });
+    return res.status(200).json(status);
+  } catch (error) {
+    console.error('[Billing checkout status]', error);
+    return res.status(503).json({ error: 'Checkout status is temporarily unavailable' });
+  }
+});
+
+app.post('/api/v1/referrals/qualify', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+  if (!isAdminConfigured()) return res.status(503).json({ error: 'Referral service is not configured' });
+
+  const code = typeof req.body?.code === 'string' ? req.body.code.trim().toLowerCase() : '';
+  if (!code) return res.status(400).json({ error: 'Referral code is required' });
+
+  try {
+    const codeSnapshot = await adminDb.collection('referral_codes').doc(code).get();
+    if (!codeSnapshot.exists) return res.status(404).json({ error: 'Referral code not found' });
+    const referrerId = codeSnapshot.data()?.userId;
+    if (!referrerId || referrerId === user.uid) return res.status(400).json({ error: 'Invalid referral' });
+
+    const referrerRef = adminDb.collection('users').doc(referrerId);
+    const referredRef = adminDb.collection('users').doc(user.uid);
+    const referralRef = referrerRef.collection('referrals').doc(user.uid);
+    const result = await adminDb.runTransaction(async (transaction) => {
+      const [referrerSnapshot, referredSnapshot, referralSnapshot] = await Promise.all([
+        transaction.get(referrerRef),
+        transaction.get(referredRef),
+        transaction.get(referralRef)
+      ]);
+      if (!referrerSnapshot.exists || !referredSnapshot.exists || referralSnapshot.exists) return false;
+      if (referrerSnapshot.data()?.email === referredSnapshot.data()?.email) return false;
+
+      const currentCount = Number(referrerSnapshot.data()?.referralsCount || 0);
+      const nextCount = currentCount + 1;
+      const earnedBefore = Math.floor(currentCount / 3);
+      const earnedAfter = Math.floor(nextCount / 3);
+      const newFreeMonths = earnedAfter - earnedBefore;
+      const existingUntil = Date.parse(referrerSnapshot.data()?.referralProUntil || '') || 0;
+      const baseDate = Math.max(Date.now(), existingUntil);
+      const rewards = {
+        verifiedBadgeUnlocked: nextCount >= 1,
+        freeProMonthsEarned: earnedAfter,
+        customDomainUnlocked: nextCount >= 5
+      };
+
+      transaction.set(referrerRef, {
+        referralsCount: nextCount,
+        referralRewards: rewards,
+        referralProUntil: newFreeMonths > 0
+          ? new Date(baseDate + newFreeMonths * 30 * 24 * 60 * 60 * 1000).toISOString()
+          : referrerSnapshot.data()?.referralProUntil || null,
+        verifiedCreator: rewards.verifiedBadgeUnlocked,
+        customDomainPerkUnlocked: rewards.customDomainUnlocked,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      transaction.create(referralRef, { referredUserId: user.uid, status: 'qualified', qualifiedAt: new Date().toISOString() });
+      transaction.set(referredRef, { referredBy: referrerId, referralStatus: 'qualified', updatedAt: new Date().toISOString() }, { merge: true });
+      return true;
+    });
+    return res.status(200).json({ qualified: result });
+  } catch (error) {
+    console.error('[Referral qualification]', error);
+    return res.status(503).json({ error: 'Referral qualification is temporarily unavailable' });
   }
 });
 
@@ -1445,7 +1617,7 @@ if (fs.existsSync(distPath)) {
 /**
  * FR-1.4 Public Handle Rewriting & FR-3.1/FR-3.2 SSR Meta Tag Hydration
  */
-app.get('*', (req: Request, res: Response) => {
+app.get('*', async (req: Request, res: Response) => {
   let html = getIndexHtml();
   const requestPath = req.path;
 
@@ -1470,7 +1642,16 @@ app.get('*', (req: Request, res: Response) => {
   const handleMatch = requestPath.match(/^\/(?:@|public-render\/)([a-zA-Z0-9._-]+)$/);
   if (handleMatch) {
     const handle = handleMatch[1].toLowerCase();
-    const creator = CREATORS_METADATA[handle];
+    const publishedSite = isAdminConfigured() ? await getPublishedSiteByHandle(handle).catch(() => null) : null;
+    const fixtureCreator = CREATORS_METADATA[handle];
+    const creator = publishedSite
+      ? {
+          name: String(publishedSite.displayName || handle),
+          avatar: String(publishedSite.avatar || ''),
+          bio: String(publishedSite.bio || ''),
+          role: String(publishedSite.role || '')
+        }
+      : fixtureCreator;
 
     if (creator) {
       // Dynamic OpenGraph & Twitter hydration (FR-3.2)

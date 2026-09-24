@@ -103,6 +103,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         ? 'تسجيل الدخول بالبريد الإلكتروني غير مفعّل في لوحة Firebase Console. يرجى تفعيله من قسم Authentication.'
         : 'Email/Password is disabled in Firebase Console. Enable it in Firebase Console > Authentication > Sign-in method.';
     }
+    if (code === 'auth/handle-already-in-use') {
+      return isRtl ? 'هذا المعرف مستخدم بالفعل. اختر معرفاً آخر.' : 'That handle is already taken. Please choose another.';
+    }
     return err?.message || (isRtl ? 'حدث خطأ أثناء المصادقة. يرجى المحاولة ثانية.' : 'Authentication error. Please try again.');
   };
 
@@ -111,14 +114,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
     try {
       const user = await signInWithGoogle();
-      // Establish server session cookie in background
-      try {
-        await fetch('/api/v1/auth/oauth/google', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: user.email || 'creator@google.com', name: user.displayName })
-        });
-      } catch (_) {}
       setSubmitted(true);
       setTimeout(() => {
         onSuccess(user.email || 'creator@google.com');
@@ -126,32 +121,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } catch (err: any) {
       console.error('Google sign in error:', err);
       setError(formatAuthError(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // FR-4.6 Sign in with Apple OAuth
-  const handleAppleSignIn = async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const appleEmail = email || 'creator@apple.com';
-      try {
-        await fetch('/api/v1/auth/oauth/apple', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: appleEmail })
-        });
-      } catch (_) {}
-      const user = await signInWithEmail(appleEmail, 'AppleSecureAuth2026!');
-      setSubmitted(true);
-      setTimeout(() => {
-        onSuccess(user.email || appleEmail);
-      }, 500);
-    } catch (err: any) {
-      console.error('Apple sign in error:', err);
-      setError(isRtl ? 'تعذر إتمام الدخول عبر حساب Apple' : 'Failed to complete Sign in with Apple');
     } finally {
       setLoading(false);
     }
@@ -400,10 +369,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               )}
 
-              {/* OAuth Providers (FR-4.6 Google & Apple) */}
+              {/* OAuth Providers */}
               {mode !== 'forgot' && mode !== 'reset' && (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-1 gap-2.5">
                     {/* Google OAuth Button */}
                     <button
                       type="button"
@@ -420,18 +389,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <span>Google</span>
                     </button>
 
-                    {/* Apple OAuth Button (FR-4.6) */}
-                    <button
-                      type="button"
-                      onClick={handleAppleSignIn}
-                      disabled={loading || lockoutSeconds > 0}
-                      className="w-full py-2.5 px-3 rounded-xl border border-slate-900 dark:border-slate-700 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-2xs hover:shadow-xs cursor-pointer disabled:opacity-50"
-                    >
-                      <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 170 170">
-                        <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.7-3.04-7.58-7.78-11.65-14.21-6.19-9.88-11.13-20.73-14.81-32.55-3.69-11.83-5.54-22.75-5.54-32.78 0-14.45 3.65-26.4 10.95-35.84 7.3-9.45 16.5-14.26 27.6-14.44 4.58 0 9.88 1.25 15.9 3.75 6.03 2.5 10.15 3.81 12.37 3.93 1.96-.24 6.13-1.6 12.51-4.08 6.38-2.47 11.85-3.61 16.42-3.41 12.07.6 22.01 4.96 29.82 13.08-10.74 6.53-15.97 15.42-15.69 26.68.27 8.92 3.77 16.43 10.5 22.54 6.74 6.11 14.73 9.77 23.98 10.97-2.28 7.07-5.11 14.15-8.48 21.23zM119.22 33.15c0-7.39 2.65-14.35 7.95-20.89 5.3-6.53 11.82-10.87 19.56-13.01.65 1.52.98 3.15.98 4.89 0 7.39-2.77 14.47-8.31 21.24-5.54 6.77-12.27 10.83-20.18 12.18z" />
-                      </svg>
-                      <span>Apple</span>
-                    </button>
                   </div>
 
                   <div className="relative flex items-center justify-center">

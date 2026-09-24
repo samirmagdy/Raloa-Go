@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Settings,
   Globe,
@@ -83,29 +83,54 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
+  useEffect(() => {
+    if (activeSubSection !== 'domain' || !customDomain) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch('/api/domains', { headers: await getApiHeaders() });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const existing = (payload.domains || []).find((domain: any) => domain.hostname === customDomain);
+        if (!cancelled && existing) {
+          setDomainId(existing.domainId);
+          setDomainVerified(existing.verificationStatus === 'verified' && existing.sslStatus === 'active');
+          setDnsRecords(existing.dnsRecords || []);
+        }
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, [activeSubSection, customDomain]);
+
   const handleVerifyDomain = async () => {
     setIsVerifying(true);
     setDomainError('');
     try {
       const headers = { 'Content-Type': 'application/json', ...(await getApiHeaders()) };
-      const provision = await fetch('/api/domains/provision', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ hostname: customDomain, siteId: handle || 'default' })
-      });
-      const payload = await provision.json();
-      if (!provision.ok) throw new Error(payload.error || 'Could not provision domain');
-      setDomainId(payload.domain.domainId);
-      setDnsRecords(payload.dnsRecords || payload.domain.dnsRecords || []);
+      let activeDomainId = domainId;
+      let payload: any = null;
+      if (!activeDomainId) {
+        const provision = await fetch('/api/domains/provision', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ hostname: customDomain, siteId: handle || 'default' })
+        });
+        payload = await provision.json();
+        if (!provision.ok) throw new Error(payload.error || 'Could not provision domain');
+        activeDomainId = payload.domain.domainId;
+        setDomainId(activeDomainId);
+        setDnsRecords(payload.dnsRecords || payload.domain.dnsRecords || []);
+      }
 
       const verification = await fetch('/api/domains/verify', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ domainId: payload.domain.domainId })
+        body: JSON.stringify({ domainId: activeDomainId })
       });
       const verifiedPayload = await verification.json();
       if (!verification.ok) throw new Error(verifiedPayload.error || 'Could not verify domain');
-      setDomainVerified(verifiedPayload.domain.verificationStatus === 'verified');
+      setDomainVerified(verifiedPayload.domain.verificationStatus === 'verified' && verifiedPayload.domain.sslStatus === 'active');
+      setDnsRecords(verifiedPayload.domain.dnsRecords || dnsRecords);
     } catch (error) {
       setDomainError(error instanceof Error ? error.message : 'Could not verify domain');
     } finally {
@@ -243,7 +268,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
                     <span>{isRtl ? 'مفعل' : 'Active'}</span>
                   </span>
                 ) : (
-                  isRtl ? 'تحقق من DNS' : 'Verify DNS'
+                  domainId ? (isRtl ? 'إعادة التحقق' : 'Check status again') : (isRtl ? 'تحقق من DNS' : 'Verify DNS')
                 )}
               </button>
             </div>
