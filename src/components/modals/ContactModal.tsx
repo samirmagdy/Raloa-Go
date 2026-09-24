@@ -28,18 +28,51 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
     setError('');
 
     try {
-      await saveContactMessage({
-        name: name || 'Anonymous',
-        email,
-        message
+      const resp = await fetch('/api/v1/public/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: name || 'Anonymous',
+          email,
+          subject: 'General Inquiry',
+          message
+        })
       });
+
+      if (resp.status === 429) {
+        setError(isRtl ? 'تم تجاوز حد إرسال الرسائل (أقصى حد ٥ رسائل بالساعة).' : 'Rate limit exceeded: maximum 5 inquiries per hour per IP.');
+        setLoading(false);
+        return;
+      }
+
+      if (!resp.ok) {
+        // Fallback to client Firestore save
+        await saveContactMessage({
+          name: name || 'Anonymous',
+          email,
+          message
+        });
+      }
+
       setSent(true);
       setTimeout(() => {
         onClose();
       }, 2000);
     } catch (err) {
       console.error('Error saving contact message:', err);
-      setError(isRtl ? 'تعذر إرسال الرسالة. حاول مرة أخرى.' : 'We could not send your message. Please try again.');
+      try {
+        await saveContactMessage({
+          name: name || 'Anonymous',
+          email,
+          message
+        });
+        setSent(true);
+        setTimeout(() => {
+          onClose();
+        }, 2000);
+      } catch (_) {
+        setError(isRtl ? 'تعذر إرسال الرسالة. حاول مرة أخرى.' : 'We could not send your message. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

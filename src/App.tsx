@@ -55,7 +55,7 @@ function resolveInitialRoute(): {
   route: AppRoute;
   handle: string;
   attempted: string;
-  authModal?: { open: boolean; mode: 'signin' | 'signup' };
+  authModal?: { open: boolean; mode: 'signin' | 'signup' | 'forgot' | 'reset' };
 } {
   if (typeof window === 'undefined') {
     return { route: 'home', handle: '', attempted: '' };
@@ -80,10 +80,16 @@ function resolveInitialRoute(): {
     return { route: 'home', handle: '', attempted: '', authModal: { open: true, mode: 'signin' } };
   }
   if (path === '/register') {
-    const handleParam = searchParams.get('handle') || '';
+    const handleParam = searchParams.get('handle') || (typeof window !== 'undefined' ? sessionStorage.getItem('claimed_handle') || '' : '');
     return { route: 'home', handle: handleParam, attempted: '', authModal: { open: true, mode: 'signup' } };
   }
-  if (path === '/features' || path === '/pricing' || path === '/guides' || path === '/about') {
+  if (path === '/forgot-password') {
+    return { route: 'home', handle: '', attempted: '', authModal: { open: true, mode: 'forgot' } };
+  }
+  if (path === '/reset-password') {
+    return { route: 'home', handle: '', attempted: '', authModal: { open: true, mode: 'reset' } };
+  }
+  if (path === '/features' || path === '/pricing' || path === '/guides' || path === '/about' || path === '/contact') {
     return { route: 'home', handle: '', attempted: '' };
   }
 
@@ -194,7 +200,7 @@ function MainApp() {
 
   const [authModal, setAuthModal] = useState<{
     open: boolean;
-    mode: 'signin' | 'signup';
+    mode: 'signin' | 'signup' | 'forgot' | 'reset';
   }>(() => initialRouteInfo.authModal || { open: false, mode: 'signin' });
 
   const [contactOpen, setContactOpen] = useState(false);
@@ -406,10 +412,21 @@ function MainApp() {
 
   const handleUseTemplateFromPreview = (template: TemplateItem) => {
     handleClosePreviewTemplate();
-    handleOpenStudio(undefined, template);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('selected_template_id', template.id);
+      sessionStorage.setItem('raloa_selected_template', JSON.stringify(template));
+      window.history.pushState(null, '', `/register?template=${encodeURIComponent(template.id)}`);
+    }
+    setStudioTemplate(template);
+    setAuthModal({ open: true, mode: 'signup' });
   };
 
   const handleSelectPlan = (plan: PricingPlan, isYearly: boolean) => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('selected_plan', plan.id);
+      sessionStorage.setItem('selected_plan_yearly', String(isYearly));
+      window.history.pushState(null, '', `/register?plan=${encodeURIComponent(plan.id)}`);
+    }
     setSelectedPlanState({ plan, isYearly });
   };
 
@@ -819,8 +836,16 @@ function MainApp() {
       {authModal.open && (
         <AuthModal
           initialMode={authModal.mode}
+          initialHandle={studioUsername}
+          initialTemplate={studioTemplate?.id}
+          resetToken={typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('token') || '' : ''}
           locale={locale}
-          onClose={() => setAuthModal({ open: false, mode: 'signin' })}
+          onClose={() => {
+            setAuthModal({ open: false, mode: 'signin' });
+            if (typeof window !== 'undefined' && ['/login', '/register', '/forgot-password', '/reset-password'].includes(window.location.pathname)) {
+              window.history.pushState(null, '', '/');
+            }
+          }}
           onSuccess={(email) => {
             setAuthModal({ open: false, mode: 'signin' });
             handleOpenStudio(email.split('@')[0]);

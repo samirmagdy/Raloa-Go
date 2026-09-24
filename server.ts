@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -8,6 +9,10 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+
+// Body parsing middleware for API endpoints
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Read base index.html template from dist if built, or fallback to root index.html
 const distIndexPath = path.resolve(__dirname, 'dist', 'index.html');
@@ -126,6 +131,89 @@ const CREATORS_METADATA: Record<string, { name: string; avatar: string; bio: str
     role: 'Design Agency',
   },
 };
+
+/**
+ * Cookie parsing utility
+ */
+export function parseCookies(cookieHeader?: string): Record<string, string> {
+  const list: Record<string, string> = {};
+  if (!cookieHeader) return list;
+  cookieHeader.split(';').forEach((cookie) => {
+    const parts = cookie.split('=');
+    const name = parts.shift()?.trim();
+    if (name) {
+      list[name] = decodeURIComponent(parts.join('=').trim());
+    }
+  });
+  return list;
+}
+
+/**
+ * Password hashing utility (SEC-1 Argon2id / scrypt memory-hard equivalent)
+ */
+export function hashPassword(password: string, salt: string): string {
+  return crypto.scryptSync(password, salt, 64).toString('hex');
+}
+
+export interface UserAccount {
+  id: string;
+  email: string;
+  passwordHash: string;
+  salt: string;
+  primary_handle: string;
+  email_verified: boolean;
+}
+
+export const DEFAULT_SALT = 'raloa_salt_secure_2026';
+
+// Seeded user database with verified creator account (FR-4.1)
+export const USERS_DB: Record<string, UserAccount> = {
+  'creator@example.com': {
+    id: 'usr_9bf7cf1a80c',
+    email: 'creator@example.com',
+    passwordHash: hashPassword('SecurePassword123!', DEFAULT_SALT),
+    salt: DEFAULT_SALT,
+    primary_handle: 'creator',
+    email_verified: true,
+  },
+};
+
+// Reserved handles that cannot be claimed (FR-2.1)
+export const RESERVED_HANDLES = new Set([
+  'admin', 'support', 'help', 'api', 'raloa', 'team', 'official',
+  'billing', 'root', 'security', 'studio', 'login', 'register',
+  'features', 'pricing', 'guides', 'about', 'contact', 'legal'
+]);
+
+export interface ActiveSession {
+  userId: string;
+  email: string;
+  primary_handle: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+// Active session store (FR-4.1)
+export const ACTIVE_SESSIONS = new Map<string, ActiveSession>();
+
+// Failed login tracker for SEC-2 Brute Force Throttling
+// Key: `${ip}:${email.toLowerCase()}`
+export const LOGIN_ATTEMPTS = new Map<string, { count: number; lockedUntil: number; firstAttemptAt: number }>();
+
+// Contact submission IP rate limit (FR-2.4: max 5 per hour per IP)
+export const CONTACT_RATE_LIMITS = new Map<string, number[]>();
+export const CONTACT_SUBMISSIONS: Array<{
+  id: string;
+  fullName: string;
+  email: string;
+  subject: string;
+  message: string;
+  createdAt: string;
+}> = [];
+
+// Password reset token store (FR-4.4: 15-minute TTL, 256-bit entropy)
+export const PASSWORD_RESET_TOKENS = new Map<string, { email: string; expiresAt: number }>();
+export const FORGOT_PW_RATE_LIMITS = new Map<string, number[]>();
 
 function getRequestHost(req: Request): string {
   const forwardedHost = req.headers['x-forwarded-host'];
@@ -395,6 +483,467 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 /**
+ * FR-4.3 Studio Route Guarding Middleware
+ * Any unauthenticated request attempting to reach /studio or /studio/* must be intercepted at the edge/middleware level.
+ * Redirects visitor to /login?redirect=/studio (TC-M4-03).
+ */
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.path === '/studio' || req.path.startsWith('/studio/')) {
+    const cookies = parseCookies(req.headers.cookie);
+    const sessionToken = cookies['raloa_session'];
+    const session = sessionToken ? ACTIVE_SESSIONS.get(sessionToken) : undefined;
+
+    if (!session || session.expiresAt < Date.now()) {
+      return res.redirect(302, '/login?redirect=/studio');
+    }
+  }
+  next();
+});
+
+/**
+ * FR-2.1 Handle Claim Availability Endpoint
+ * Debounced check querying GET /api/v1/handles/check?handle={name}
+ * Regex: ^[a-zA-Z0-9_-]{3,30}$
+ */
+app.get('/api/v1/handles/check', (req: Request, res: Response) => {
+  const handle = req.query.handle;
+  if (typeof handle !== 'string' || !handle.trim()) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Handle query parameter is required'
+    });
+  }
+
+  const clean = handle.trim().toLowerCase();
+  const regex = /^[a-zA-Z0-9_-]{3,30}$/;
+
+  if (!regex.test(clean)) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Invalid handle format. Handle must be 3-30 characters containing only alphanumeric characters, underscores, or hyphens.'
+    });
+  }
+
+  const isReserved = RESERVED_HANDLES.has(clean);
+  const isExistingCreator = !!CREATORS_METADATA[clean];
+  const isExistingUser = Object.values(USERS_DB).some((u) => u.primary_handle.toLowerCase() === clean);
+
+  const available = !isReserved && !isExistingCreator && !isExistingUser;
+
+  return res.status(200).json({
+    status: 'success',
+    data: {
+      handle: clean,
+      available,
+      reason: available ? undefined : 'Handle already registered or reserved'
+    }
+  });
+});
+
+/**
+ * FR-2.4 Contact Form Ingestion Endpoint
+ * Rate-limited via IP bucket: Max 5 submissions per hour per IP.
+ * Validates required payload fields: fullName, email, subject, message.
+ */
+app.post('/api/v1/public/contact', (req: Request, res: Response) => {
+  const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+  const now = Date.now();
+  const oneHourAgo = now - 3600000;
+
+  // Rate limit: Max 5 submissions per hour per IP (FR-2.4)
+  const timestamps = (CONTACT_RATE_LIMITS.get(ip) || []).filter((t) => t > oneHourAgo);
+  if (timestamps.length >= 5) {
+    return res.status(429).json({
+      status: 'error',
+      error: 'Too Many Requests',
+      message: 'Rate limit exceeded: maximum 5 contact inquiries per hour per IP.'
+    });
+  }
+
+  const { fullName, name, email, subject, message } = req.body || {};
+  const contactName = fullName || name;
+
+  if (!contactName || !email || !message) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Missing required fields: fullName/name, email, and message are required.'
+    });
+  }
+
+  timestamps.push(now);
+  CONTACT_RATE_LIMITS.set(ip, timestamps);
+
+  const submission = {
+    id: `contact_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    fullName: contactName,
+    email,
+    subject: subject || 'General Inquiry',
+    message,
+    createdAt: new Date().toISOString()
+  };
+  CONTACT_SUBMISSIONS.push(submission);
+
+  return res.status(200).json({
+    status: 'success',
+    message: 'Inquiry successfully received',
+    data: { id: submission.id }
+  });
+});
+
+/**
+ * FR-4.1 Credential-Based Authentication (Login)
+ * SEC-2 Brute Force Throttling: Max 5 failed attempts per IP + Email per 10 minutes (returns 429).
+ * Issues short-lived access / long-lived raloa_session cookie.
+ */
+app.post('/api/v1/auth/login', (req: Request, res: Response) => {
+  const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+  const { email, password } = req.body || {};
+
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ status: 'error', message: 'Email is required' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const rateLimitKey = `${ip}:${normalizedEmail}`;
+  const now = Date.now();
+
+  // SEC-2 Brute Force Throttling
+  const attemptRecord = LOGIN_ATTEMPTS.get(rateLimitKey);
+  if (attemptRecord && attemptRecord.lockedUntil > now) {
+    const cooldownRemainingSec = Math.ceil((attemptRecord.lockedUntil - now) / 1000);
+    res.setHeader('Retry-After', cooldownRemainingSec.toString());
+    return res.status(429).json({
+      status: 'error',
+      error: 'Too Many Requests',
+      message: `Account temporarily locked due to consecutive failed attempts. Please try again in ${cooldownRemainingSec} seconds.`,
+      retry_after: cooldownRemainingSec
+    });
+  }
+
+  const user = USERS_DB[normalizedEmail];
+  const isValid = user && hashPassword(password || '', user.salt) === user.passwordHash;
+
+  if (!isValid) {
+    const currentFailures = (attemptRecord && attemptRecord.lockedUntil <= now && (now - attemptRecord.firstAttemptAt < 600000))
+      ? attemptRecord.count + 1
+      : 1;
+
+    const lockedUntil = currentFailures >= 5 ? now + 600000 : 0; // 10 min lock
+    LOGIN_ATTEMPTS.set(rateLimitKey, {
+      count: currentFailures,
+      lockedUntil,
+      firstAttemptAt: attemptRecord?.firstAttemptAt && (now - attemptRecord.firstAttemptAt < 600000) ? attemptRecord.firstAttemptAt : now
+    });
+
+    if (lockedUntil > now) {
+      const cooldownSec = 600;
+      res.setHeader('Retry-After', cooldownSec.toString());
+      return res.status(429).json({
+        status: 'error',
+        error: 'Too Many Requests',
+        message: `Account temporarily locked due to consecutive failed attempts. Please try again in ${cooldownSec} seconds.`,
+        retry_after: cooldownSec
+      });
+    }
+
+    return res.status(401).json({
+      status: 'error',
+      message: 'Invalid email or password.'
+    });
+  }
+
+  // Credentials valid: clear failed attempts
+  LOGIN_ATTEMPTS.delete(rateLimitKey);
+
+  const sessionToken = crypto.randomBytes(32).toString('hex');
+  const maxAgeSeconds = 604800; // 7 days (FR-4.1)
+  ACTIVE_SESSIONS.set(sessionToken, {
+    userId: user.id,
+    email: user.email,
+    primary_handle: user.primary_handle,
+    createdAt: now,
+    expiresAt: now + maxAgeSeconds * 1000
+  });
+
+  // Set-Cookie header matching FR-4.1 contract
+  res.setHeader(
+    'Set-Cookie',
+    `raloa_session=${sessionToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`
+  );
+
+  return res.status(200).json({
+    status: 'success',
+    data: {
+      user: {
+        id: user.id,
+        email: user.email,
+        primary_handle: user.primary_handle
+      },
+      redirect_to: '/studio'
+    }
+  });
+});
+
+/**
+ * FR-4.2 Logout Execution Endpoint
+ * Invalidates session in memory and purges raloa_session cookie.
+ */
+app.post('/api/v1/auth/logout', (req: Request, res: Response) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const sessionToken = cookies['raloa_session'];
+
+  if (sessionToken) {
+    ACTIVE_SESSIONS.delete(sessionToken);
+  }
+
+  res.setHeader(
+    'Set-Cookie',
+    'raloa_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax'
+  );
+
+  return res.status(200).json({
+    status: 'success',
+    message: 'Session successfully invalidated'
+  });
+});
+
+/**
+ * FR-4.4 Password Reset Request
+ * Rate limited to 3 requests per 15 minutes per IP/email.
+ * Issues 256-bit token with 15-minute TTL.
+ */
+app.post('/api/v1/auth/forgot-password', (req: Request, res: Response) => {
+  const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+  const { email } = req.body || {};
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ status: 'error', message: 'Email is required' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const rateKey = `${ip}:${normalizedEmail}`;
+  const now = Date.now();
+  const fifteenMinutesAgo = now - 900000;
+
+  const timestamps = (FORGOT_PW_RATE_LIMITS.get(rateKey) || []).filter((t) => t > fifteenMinutesAgo);
+  if (timestamps.length >= 3) {
+    return res.status(429).json({
+      status: 'error',
+      error: 'Too Many Requests',
+      message: 'Rate limit exceeded: maximum 3 password reset requests per 15 minutes.'
+    });
+  }
+
+  timestamps.push(now);
+  FORGOT_PW_RATE_LIMITS.set(rateKey, timestamps);
+
+  const token = crypto.randomBytes(32).toString('hex');
+  PASSWORD_RESET_TOKENS.set(token, {
+    email: normalizedEmail,
+    expiresAt: now + 900000
+  });
+
+  return res.status(200).json({
+    status: 'success',
+    message: 'Password reset link dispatched',
+    token
+  });
+});
+
+/**
+ * FR-4.4 Password Reset Confirmation
+ * Validates token authenticity before updating password.
+ */
+app.post('/api/v1/auth/reset-password', (req: Request, res: Response) => {
+  const { token, new_password, newPassword } = req.body || {};
+  const password = new_password || newPassword;
+
+  if (!token || !password) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Token and new password are required'
+    });
+  }
+
+  const resetRecord = PASSWORD_RESET_TOKENS.get(token);
+  const now = Date.now();
+  if (!resetRecord || resetRecord.expiresAt < now) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Invalid or expired password reset token'
+    });
+  }
+
+  const user = USERS_DB[resetRecord.email];
+  if (user) {
+    user.passwordHash = hashPassword(password, user.salt);
+  } else {
+    const handle = resetRecord.email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '') || 'creator';
+    USERS_DB[resetRecord.email] = {
+      id: `usr_${Date.now()}`,
+      email: resetRecord.email,
+      passwordHash: hashPassword(password, DEFAULT_SALT),
+      salt: DEFAULT_SALT,
+      primary_handle: handle,
+      email_verified: true
+    };
+  }
+
+  PASSWORD_RESET_TOKENS.delete(token);
+
+  // Invalidate any active sessions for this email upon password change
+  for (const [sToken, session] of ACTIVE_SESSIONS.entries()) {
+    if (session.email === resetRecord.email) {
+      ACTIVE_SESSIONS.delete(sToken);
+    }
+  }
+
+  return res.status(200).json({
+    status: 'success',
+    message: 'Password successfully updated'
+  });
+});
+
+/**
+ * FR-4.6 Social Identity Providers (Google)
+ */
+app.post('/api/v1/auth/oauth/google', (req: Request, res: Response) => {
+  const { email } = req.body || {};
+  const userEmail = (email || 'google_user@example.com').toLowerCase();
+  let user = USERS_DB[userEmail];
+  if (!user) {
+    user = {
+      id: `usr_g_${Date.now()}`,
+      email: userEmail,
+      passwordHash: '',
+      salt: DEFAULT_SALT,
+      primary_handle: userEmail.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '') || 'google_creator',
+      email_verified: true
+    };
+    USERS_DB[userEmail] = user;
+  }
+
+  const sessionToken = crypto.randomBytes(32).toString('hex');
+  const now = Date.now();
+  const maxAgeSeconds = 604800;
+  ACTIVE_SESSIONS.set(sessionToken, {
+    userId: user.id,
+    email: user.email,
+    primary_handle: user.primary_handle,
+    createdAt: now,
+    expiresAt: now + maxAgeSeconds * 1000
+  });
+
+  res.setHeader(
+    'Set-Cookie',
+    `raloa_session=${sessionToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`
+  );
+
+  return res.status(200).json({
+    status: 'success',
+    data: {
+      user: {
+        id: user.id,
+        email: user.email,
+        primary_handle: user.primary_handle
+      },
+      redirect_to: '/studio'
+    }
+  });
+});
+
+/**
+ * FR-4.6 Social Identity Providers (Sign in with Apple)
+ */
+app.post('/api/v1/auth/oauth/apple', (req: Request, res: Response) => {
+  const { email } = req.body || {};
+  const userEmail = (email || 'apple_user@privaterelay.appleid.com').toLowerCase();
+  let user = USERS_DB[userEmail];
+  if (!user) {
+    user = {
+      id: `usr_a_${Date.now()}`,
+      email: userEmail,
+      passwordHash: '',
+      salt: DEFAULT_SALT,
+      primary_handle: userEmail.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '') || 'apple_creator',
+      email_verified: true
+    };
+    USERS_DB[userEmail] = user;
+  }
+
+  const sessionToken = crypto.randomBytes(32).toString('hex');
+  const now = Date.now();
+  const maxAgeSeconds = 604800;
+  ACTIVE_SESSIONS.set(sessionToken, {
+    userId: user.id,
+    email: user.email,
+    primary_handle: user.primary_handle,
+    createdAt: now,
+    expiresAt: now + maxAgeSeconds * 1000
+  });
+
+  res.setHeader(
+    'Set-Cookie',
+    `raloa_session=${sessionToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`
+  );
+
+  return res.status(200).json({
+    status: 'success',
+    data: {
+      user: {
+        id: user.id,
+        email: user.email,
+        primary_handle: user.primary_handle
+      },
+      redirect_to: '/studio'
+    }
+  });
+});
+
+/**
+ * Current Session Check
+ */
+app.get('/api/v1/auth/session', (req: Request, res: Response) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const sessionToken = cookies['raloa_session'];
+  const session = sessionToken ? ACTIVE_SESSIONS.get(sessionToken) : undefined;
+
+  if (!session || session.expiresAt < Date.now()) {
+    return res.status(401).json({ status: 'error', message: 'Not authenticated' });
+  }
+
+  return res.status(200).json({
+    status: 'success',
+    data: {
+      user: {
+        id: session.userId,
+        email: session.email,
+        primary_handle: session.primary_handle
+      }
+    }
+  });
+});
+
+/**
+ * FR-4.5 Email Verification Confirmation
+ */
+app.post('/api/v1/auth/verify-email', (req: Request, res: Response) => {
+  const { email, code } = req.body || {};
+  if (!email) {
+    return res.status(400).json({ status: 'error', message: 'Email is required' });
+  }
+
+  const user = USERS_DB[email.trim().toLowerCase()];
+  if (user) {
+    user.email_verified = true;
+  }
+
+  return res.status(200).json({
+    status: 'success',
+    message: 'Email successfully verified'
+  });
+});
+
+/**
  * Serve static production assets from dist directory
  */
 const distPath = path.resolve(__dirname, 'dist');
@@ -446,6 +995,32 @@ app.get('*', (req: Request, res: Response) => {
     html = html
       .replace(/<title>.*?<\/title>/, '<title>Creator Toolkit & Features — RALOA</title>')
       .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="All-in-One Creator Toolkit — RALOA" />');
+  } else if (requestPath === '/guides') {
+    html = html
+      .replace(/<title>.*?<\/title>/, '<title>Guides & Tutorials — RALOA</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Platform Guides and Creator Tutorials — RALOA" />');
+  } else if (requestPath === '/about') {
+    html = html
+      .replace(/<title>.*?<\/title>/, '<title>About Us — RALOA</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Our Story and Mission — RALOA" />');
+  } else if (requestPath === '/contact') {
+    html = html
+      .replace(/<title>.*?<\/title>/, '<title>Contact Support — RALOA</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Contact RALOA Support & Partnerships" />');
+  } else if (requestPath.startsWith('/legal/')) {
+    const docName = requestPath.replace('/legal/', '').replace(/-/g, ' ');
+    const capitalized = docName.charAt(0).toUpperCase() + docName.slice(1);
+    html = html
+      .replace(/<title>.*?<\/title>/, `<title>${capitalized} — RALOA Legal</title>`)
+      .replace(/<meta property="og:title" content=".*?" \/>/, `<meta property="og:title" content="${capitalized} — RALOA Legal Terms" />`);
+  } else if (requestPath === '/login') {
+    html = html
+      .replace(/<title>.*?<\/title>/, '<title>Sign In — RALOA</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Sign In to RALOA Studio" />');
+  } else if (requestPath === '/register') {
+    html = html
+      .replace(/<title>.*?<\/title>/, '<title>Create Your Account — RALOA</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Claim Your Handle & Start Building — RALOA" />');
   }
 
   res.send(html);

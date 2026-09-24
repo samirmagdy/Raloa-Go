@@ -1,7 +1,7 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Check, ArrowRight, AlertCircle, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { motion, useTransform } from 'motion/react';
-import { Locale, TemplateItem } from '../types';
+import { Locale, TemplateItem, BackgroundStyle } from '../types';
 import { dictionary } from '../data/content';
 import { PhoneMockup } from './PhoneMockup';
 import { PremiumMark } from './brand/PremiumMark';
@@ -32,20 +32,66 @@ export const Hero: React.FC<HeroProps> = ({
 }) => {
   const [username, setUsername] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const [apiAvailable, setApiAvailable] = useState<boolean | null>(null);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // FR-2.2 Local component memory state for interactive preview canvas
+  const [previewThemeMode, setPreviewThemeMode] = useState<'auto' | 'dark' | 'light'>('auto');
+  const [previewBgStyle, setPreviewBgStyle] = useState<BackgroundStyle>('signature');
+
   const isRtl = locale === 'ar';
   const t = dictionary[locale].hero;
 
   const heroRef = useRef<HTMLElement>(null);
 
-  // Real-time handle validation state according to RALOA Section 3 spec: Available, Unavailable, Invalid
+  // FR-2.1 Real-time handle validation regex: ^[a-zA-Z0-9_-]{3,30}$
   const handleStatus = useMemo<'empty' | 'available' | 'unavailable' | 'invalid'>(() => {
     const clean = username.trim().toLowerCase();
     if (!clean) return 'empty';
-    if (clean.length < 2) return 'invalid';
-    const validPattern = /^[a-zA-Z0-9_-]{2,30}$/;
+    if (clean.length < 3) return 'invalid';
+    const validPattern = /^[a-zA-Z0-9_-]{3,30}$/;
     if (!validPattern.test(clean)) return 'invalid';
     if (RESERVED_HANDLES.has(clean)) return 'unavailable';
+    if (apiAvailable === false) return 'unavailable';
+    if (apiAvailable === true) return 'available';
     return 'available';
+  }, [username, apiAvailable]);
+
+  // FR-2.1 300ms Asynchronous debounce querying GET /api/v1/handles/check?handle={name}
+  useEffect(() => {
+    const clean = username.trim().toLowerCase();
+    const validPattern = /^[a-zA-Z0-9_-]{3,30}$/;
+
+    if (!clean || !validPattern.test(clean) || RESERVED_HANDLES.has(clean)) {
+      setApiAvailable(null);
+      setIsChecking(false);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      return;
+    }
+
+    setIsChecking(true);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+
+    debounceTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/v1/handles/check?handle=${encodeURIComponent(clean)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setApiAvailable(Boolean(data.data?.available));
+        } else {
+          setApiAvailable(false);
+        }
+      } catch (_) {
+        setApiAvailable(!RESERVED_HANDLES.has(clean));
+      } finally {
+        setIsChecking(false);
+      }
+    }, 300);
+
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
   }, [username]);
 
   // Track scroll progress through the hero section with smooth physics
@@ -75,7 +121,17 @@ export const Hero: React.FC<HeroProps> = ({
       return;
     }
 
-    if (handleStatus === 'unavailable') {
+    const validPattern = /^[a-zA-Z0-9_-]{3,30}$/;
+    if (!validPattern.test(cleanUsername)) {
+      setError(
+        isRtl
+          ? 'يجب أن يتكون الاسم من ٣-٣٠ حرفاً إنجليزياً أو أرقام أو شرطات'
+          : 'Username must be 3–30 alphanumeric characters, dashes or underscores'
+      );
+      return;
+    }
+
+    if (handleStatus === 'unavailable' || apiAvailable === false) {
       setError(
         isRtl
           ? 'عذراً، هذا الاسم محجوز بالفعل. يرجى اختيار اسم مستخدم آخر'
@@ -84,22 +140,23 @@ export const Hero: React.FC<HeroProps> = ({
       return;
     }
 
-    if (handleStatus === 'invalid') {
-      setError(
-        isRtl
-          ? 'يجب أن يتكون الاسم من ٢-٣٠ حرفاً إنجليزياً أو أرقام أو شرطات'
-          : 'Username must be 2–30 alphanumeric characters, dashes or underscores'
-      );
-      return;
+    setError(null);
+
+    // FR-2.1: Clicking "Claim" stores claimed handle in sessionStorage and executes client navigation to /register?handle={name}
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('claimed_handle', cleanUsername);
+      sessionStorage.setItem('raloa_claimed_handle', cleanUsername);
+      window.history.pushState(null, '', `/register?handle=${encodeURIComponent(cleanUsername)}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
     }
 
-    setError(null);
     onOpenStudio(cleanUsername);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '');
     setUsername(val);
+    setApiAvailable(null);
     if (error) setError(null);
   };
 
@@ -188,19 +245,25 @@ export const Hero: React.FC<HeroProps> = ({
                     spellCheck="false"
                   />
                   {/* Status Indicator Pill */}
-                  {handleStatus === 'available' && (
+                  {isChecking && (
+                    <span className="ml-2 rtl:mr-2 rtl:ml-0 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-bold border border-slate-200 dark:border-slate-700 shrink-0">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
+                      <span>{isRtl ? 'جارٍ الفحص...' : 'Checking...'}</span>
+                    </span>
+                  )}
+                  {!isChecking && handleStatus === 'available' && (
                     <span className="ml-2 rtl:mr-2 rtl:ml-0 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 text-[11px] font-bold border border-emerald-200 dark:border-emerald-800 shrink-0">
                       <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
                       <span>{isRtl ? 'متاح' : 'Available'}</span>
                     </span>
                   )}
-                  {handleStatus === 'unavailable' && (
+                  {!isChecking && handleStatus === 'unavailable' && (
                     <span className="ml-2 rtl:mr-2 rtl:ml-0 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-[11px] font-bold border border-amber-200 dark:border-amber-800 shrink-0">
                       <XCircle className="w-3.5 h-3.5 stroke-[2.5]" />
                       <span>{isRtl ? 'محجوز' : 'Unavailable'}</span>
                     </span>
                   )}
-                  {handleStatus === 'invalid' && username.length > 0 && (
+                  {!isChecking && handleStatus === 'invalid' && username.length > 0 && (
                     <span className="ml-2 rtl:mr-2 rtl:ml-0 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 text-[11px] font-bold border border-rose-200 dark:border-rose-800 shrink-0">
                       <AlertCircle className="w-3.5 h-3.5 stroke-[2.5]" />
                       <span>{isRtl ? 'غير صالح' : 'Invalid'}</span>
@@ -291,11 +354,44 @@ export const Hero: React.FC<HeroProps> = ({
                 }}
                 className="w-full flex justify-center"
               >
-                <PhoneMockup
-                  template={heroTemplate}
-                  isRtl={isRtl}
-                  onOpenAction={onOpenPhoneAction}
-                />
+                <div className="flex flex-col items-center w-full">
+                  <PhoneMockup
+                    template={heroTemplate}
+                    isRtl={isRtl}
+                    onOpenAction={onOpenPhoneAction}
+                    backgroundStyle={previewBgStyle}
+                    themeModeOverride={previewThemeMode}
+                  />
+
+                  {/* FR-2.2 Embedded Client-Side Interactive Canvas Preview Controls (No Auth Required) */}
+                  <div className="mt-4 inline-flex items-center gap-1.5 p-1.5 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 shadow-md text-xs font-semibold z-20">
+                    <span className="px-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider select-none">
+                      {isRtl ? 'المعاينة الحية:' : 'Live Canvas:'}
+                    </span>
+                    {(['signature', 'minimal', 'gradient', 'immersive', 'banner'] as const).map((bg) => (
+                      <button
+                        key={bg}
+                        type="button"
+                        onClick={() => setPreviewBgStyle(bg)}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold capitalize transition-all cursor-pointer ${
+                          previewBgStyle === bg
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        {bg}
+                      </button>
+                    ))}
+                    <div className="w-px h-3.5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewThemeMode((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+                      className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 transition-colors cursor-pointer"
+                    >
+                      {previewThemeMode === 'dark' ? '🌙 Dark' : '☀️ Light'}
+                    </button>
+                  </div>
+                </div>
               </motion.div>
             </motion.div>
 
