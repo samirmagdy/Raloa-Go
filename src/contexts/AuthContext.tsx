@@ -141,12 +141,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const saveMiniSite = useCallback(async (siteData: Partial<UserMiniSite>, siteId: string = 'default') => {
     if (!user) return;
-    await saveUserMiniSiteToFirestore(user.uid, siteData, siteId);
+    // Always persist to local cache for resilient offline & local dev support
+    try {
+      localStorage.setItem(`raloa_site_${user.uid}_${siteId}`, JSON.stringify(siteData));
+      if (siteData.username) {
+        localStorage.setItem(`raloa_studio_site_${siteData.username}`, JSON.stringify(siteData));
+      }
+    } catch (_) {}
+
+    // Only attempt Firestore write if real Firebase Auth session is active
+    if (auth.currentUser) {
+      try {
+        await saveUserMiniSiteToFirestore(user.uid, siteData, siteId);
+      } catch (err: any) {
+        // If permission is denied (e.g. during local dev or rules mismatch), don't crash autosave
+        if (err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions')) {
+          console.warn('Firestore permissions denied for saveMiniSite; saved to local storage fallback instead.');
+          return;
+        }
+        throw err;
+      }
+    }
   }, [user]);
 
   const loadMiniSite = useCallback(async (siteId: string = 'default') => {
     if (!user) return null;
-    return await loadUserMiniSiteFromFirestore(user.uid, siteId);
+    let firestoreData: UserMiniSite | null = null;
+    if (auth.currentUser) {
+      try {
+        firestoreData = await loadUserMiniSiteFromFirestore(user.uid, siteId);
+      } catch (err) {
+        console.warn('Could not load site from Firestore; checking local cache fallback:', err);
+      }
+    }
+    if (firestoreData) return firestoreData;
+
+    try {
+      const cached = localStorage.getItem(`raloa_site_${user.uid}_${siteId}`);
+      if (cached) return JSON.parse(cached);
+    } catch (_) {}
+    return null;
   }, [user]);
 
   return (
