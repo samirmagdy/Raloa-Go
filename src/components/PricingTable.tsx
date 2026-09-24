@@ -72,8 +72,12 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
 
   return (
 
-    <section id="pricing" className="py-14 sm:py-20 md:py-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
-      <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
+    <section id="pricing" className="relative isolate overflow-hidden py-14 sm:py-20 md:py-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 -z-10 bg-[url('/graphics/raloa-pattern-light-512.png')] bg-[length:512px_512px] bg-repeat opacity-45 dark:hidden"
+      />
+      <div className="relative z-10 max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
         <div className="text-center max-w-[640px] mx-auto mb-12">

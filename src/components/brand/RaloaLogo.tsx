@@ -36,7 +36,7 @@ export const RaloaMark: React.FC<{
   if (isMonoWhite) {
     return (
       <img
-        src="/brand/raloa-official-mark-white.webp"
+        src="/brand/raloa-mark-white.webp"
         alt="RALOA Mark"
         width={markWidth}
         height={size}
@@ -51,7 +51,7 @@ export const RaloaMark: React.FC<{
   if (isMonoBlack) {
     return (
       <img
-        src="/brand/raloa-official-mark-black.webp"
+        src="/brand/raloa-mark-black.webp"
         alt="RALOA Mark"
         width={markWidth}
         height={size}
@@ -66,7 +66,7 @@ export const RaloaMark: React.FC<{
   // Primary 3D Gradient Ribbon Mark
   return (
     <img
-      src="/brand/raloa-official-mark-black.webp"
+      src="/brand/raloa-mark-black.webp"
       alt="RALOA Mark"
       width={markWidth}
       height={size}
@@ -88,10 +88,10 @@ export const RaloaWordmark: React.FC<{
 }> = ({ height = 22, className = '', theme = 'primary' }) => {
   const isDark = theme === 'on-dark' || theme === 'monochrome-white';
   const src = isDark
-    ? '/brand/raloa-official-wordmark-white.webp'
+    ? '/brand/raloa-wordmark-white.webp'
     : theme === 'monochrome-black'
-    ? '/brand/raloa-official-wordmark-black.webp'
-    : '/brand/raloa-official-wordmark-navy.webp';
+    ? '/brand/raloa-wordmark-black.webp'
+    : '/brand/raloa-wordmark-navy.webp';
   const width = Math.round(height * WORDMARK_ASPECT_RATIO);
 
   return (
@@ -162,7 +162,7 @@ export const RaloaLogo: React.FC<RaloaLogoProps> = ({
     if (theme === 'on-dark') {
       return (
         <img
-          src="/brand/raloa-official-horizontal-on-dark.webp"
+          src="/brand/raloa-logo-horizontal-on-dark.png"
           alt="RALOA"
           width={finalWidth}
           height={finalHeight}
@@ -178,7 +178,7 @@ export const RaloaLogo: React.FC<RaloaLogoProps> = ({
     if (theme === 'monochrome-white') {
       return (
         <img
-          src="/brand/raloa-official-horizontal-on-dark.webp"
+          src="/brand/raloa-logo-horizontal-on-dark.png"
           alt="RALOA"
           width={finalWidth}
           height={finalHeight}
@@ -194,7 +194,7 @@ export const RaloaLogo: React.FC<RaloaLogoProps> = ({
     if (theme === 'monochrome-black') {
       return (
         <img
-          src="/brand/raloa-official-horizontal-monochrome-black.webp"
+          src="/brand/raloa-logo-horizontal-monochrome-black.png"
           alt="RALOA"
           width={finalWidth}
           height={finalHeight}
@@ -210,7 +210,7 @@ export const RaloaLogo: React.FC<RaloaLogoProps> = ({
     return (
       <>
         <img
-          src="/brand/raloa-official-horizontal-primary.webp"
+          src="/brand/raloa-logo-horizontal-primary.png"
           alt="RALOA"
           width={finalWidth}
           height={finalHeight}
@@ -220,7 +220,7 @@ export const RaloaLogo: React.FC<RaloaLogoProps> = ({
           loading="eager"
         />
         <img
-          src="/brand/raloa-official-horizontal-on-dark.webp"
+          src="/brand/raloa-logo-horizontal-on-dark.png"
           alt="RALOA"
           width={finalWidth}
           height={finalHeight}

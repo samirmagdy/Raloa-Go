@@ -105,10 +105,6 @@ export const Hero: React.FC<HeroProps> = ({
   const phoneRotate = useTransform(smoothProgress, [0, 1], [0, isRtl ? 3.5 : -3.5]);
   const phoneScale = useTransform(smoothProgress, [0, 0.7, 1], [1, 0.98, 0.94]);
 
-  const sticker1Y = useTransform(smoothProgress, [0, 1], [0, -45]);
-  const sticker2Y = useTransform(smoothProgress, [0, 1], [0, 55]);
-  const sticker3Y = useTransform(smoothProgress, [0, 1], [0, -50]);
-  const badgeY = useTransform(smoothProgress, [0, 1], [0, 35]);
   const glowY = useTransform(smoothProgress, [0, 1], [0, 60]);
   const glowScale = useTransform(smoothProgress, [0, 1], [1, 1.15]);
 
@@ -164,8 +160,18 @@ export const Hero: React.FC<HeroProps> = ({
     <section
       ref={heroRef}
       id="hero"
-      className="relative pt-[92px] sm:pt-[100px] md:pt-[124px] pb-12 sm:pb-16 md:pb-24 overflow-hidden bg-gradient-to-br from-[#EEF2FF] via-[#F8FAFC] to-[#F5F3FF] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 transition-colors duration-200"
+      className="relative isolate pt-[92px] sm:pt-[100px] md:pt-[124px] pb-12 sm:pb-16 md:pb-24 overflow-hidden bg-[#F8FAFC] dark:bg-slate-950 transition-colors duration-200"
     >
+      {/* Approved RALOA hero artwork, with a restrained pattern layer for depth. */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 -z-20 bg-[url('/graphics/hero-background-light-1920x1080.jpg')] bg-cover bg-center dark:hidden"
+      />
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 -z-20 hidden bg-[url('/graphics/hero-background-dark-1920x1080.webp')] bg-cover bg-center dark:block"
+      />
+
       {/* Decorative ambient subtle glow with scroll parallax */}
       <motion.div
         style={{ y: glowY, scale: glowScale }}
@@ -397,11 +403,11 @@ export const Hero: React.FC<HeroProps> = ({
 
             {/* Floating Annotation Sticker 1 (Top Left) */}
             <motion.div
-              style={{ y: sticker1Y }}
+              style={{ y: phoneY }}
               initial={{ opacity: 0, scale: 0, rotate: -15 }}
               animate={{ opacity: 1, scale: 1, rotate: 0 }}
               transition={{ type: 'spring', stiffness: 260, damping: 20, delay: 0.55 }}
-              className="hidden sm:block absolute -top-4 -left-6 md:-left-10 z-20 pointer-events-none"
+              className="hidden sm:block absolute top-0 left-0 md:-left-2 z-20 pointer-events-none"
             >
               <div className="flex flex-col items-end">
                 <AnnotationCard rotation="-rotate-3">
@@ -413,11 +419,11 @@ export const Hero: React.FC<HeroProps> = ({
 
             {/* Floating Annotation Sticker 2 (Bottom Left) */}
             <motion.div
-              style={{ y: sticker2Y }}
+              style={{ y: phoneY }}
               initial={{ opacity: 0, scale: 0, rotate: 15 }}
               animate={{ opacity: 1, scale: 1, rotate: 0 }}
               transition={{ type: 'spring', stiffness: 260, damping: 20, delay: 0.7 }}
-              className="hidden sm:block absolute bottom-12 -left-6 md:-left-8 z-20 pointer-events-none"
+              className="hidden sm:block absolute bottom-[-4rem] left-0 md:-left-2 z-20 pointer-events-none"
             >
               <div className="flex flex-col items-end">
                 <CurvedArrowUpRight className="mb-1 mr-2" />
@@ -429,11 +435,11 @@ export const Hero: React.FC<HeroProps> = ({
 
             {/* Floating Annotation Sticker 3 (Top Right) */}
             <motion.div
-              style={{ y: sticker3Y }}
+              style={{ y: phoneY }}
               initial={{ opacity: 0, scale: 0, rotate: 20 }}
               animate={{ opacity: 1, scale: 1, rotate: 0 }}
               transition={{ type: 'spring', stiffness: 260, damping: 20, delay: 0.62 }}
-              className="hidden sm:block absolute top-6 -right-6 md:-right-8 z-20 pointer-events-none"
+              className="hidden sm:block absolute top-4 right-0 md:-right-2 z-20 pointer-events-none"
             >
               <div className="flex flex-col items-start">
                 <AnnotationCard rotation="rotate-3">
@@ -445,11 +451,11 @@ export const Hero: React.FC<HeroProps> = ({
 
             {/* Floating Metric Badge (+300% More clicks) (Middle Right) */}
             <motion.div
-              style={{ y: badgeY }}
+              style={{ y: phoneY }}
               initial={{ opacity: 0, scale: 0.4, x: 25 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
               transition={{ type: 'spring', stiffness: 220, damping: 18, delay: 0.8 }}
-              className="hidden sm:block absolute top-1/2 -right-8 md:-right-12 -translate-y-1/2 z-20"
+              className="hidden sm:block absolute top-[48%] right-0 md:-right-4 -translate-y-1/2 z-20"
             >
               <FloatingMetricBadge
                 metric={locale === 'ar' ? '+٣٠٠٪' : '+300%'}

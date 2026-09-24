@@ -24,6 +24,15 @@
   --shadow-md: 0 16px 40px rgba(15, 23, 42, 0.10);
   --shadow-phone: 0 28px 70px rgba(15, 23, 42, 0.18);
   --container: 1200px;
+  --raloa-navy: #0F172A;
+  --raloa-primary: #6366F1;
+  --raloa-purple: #8B5CF6;
+  --raloa-pink: #EC4899;
+  --raloa-cyan: #06B6D4;
+  --raloa-offwhite: #F8FAFC;
+  --raloa-slate: #64748B;
+  --raloa-font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --raloa-font-ui: 'Inter', system-ui, sans-serif;
 }
 
 html {
@@ -38,11 +47,18 @@ body,
 }
 
 [dir="rtl"] {
-  font-family: 'Noto Sans Arabic', 'Manrope', system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans Arabic', var(--raloa-font-ui);
 }
 
 [dir="ltr"] {
-  font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--raloa-font-ui);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--raloa-font-display);
 }
 
 /* Custom scrollbar for horizontal gallery */

@@ -1,0 +1,21 @@
+{
+  "brand": "RALOA",
+  "tagline": "Your space on the internet.",
+  "positioning": "Mini-sites for creators, businesses and agencies.",
+  "colors": {
+    "navy": "#0F172A",
+    "primary": "#6366F1",
+    "purple": "#8B5CF6",
+    "pink": "#EC4899",
+    "cyan": "#06B6D4",
+    "offWhite": "#F8FAFC",
+    "slate": "#64748B",
+    "white": "#FFFFFF",
+    "black": "#000000"
+  },
+  "typography": {
+    "display": "Plus Jakarta Sans",
+    "ui": "Inter",
+    "fallback": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+  }
+}

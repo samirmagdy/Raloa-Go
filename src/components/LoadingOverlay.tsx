@@ -1,6 +1,5 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { RaloaMark } from './brand/RaloaLogo';
 import { Locale } from '../types';
 import { Theme } from '../utils/theme';
 
@@ -84,7 +83,14 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
                 }}
                 className="relative z-10 drop-shadow-[0_8px_24px_rgba(99,102,241,0.25)]"
               >
-                <RaloaMark size={58} theme={isDark ? 'primary' : 'primary'} />
+                <img
+                  src="/graphics/loader-mark-256.png"
+                  alt=""
+                  width="256"
+                  height="256"
+                  className="h-[58px] w-[58px] object-contain"
+                  draggable={false}
+                />
               </motion.div>
             </div>
 

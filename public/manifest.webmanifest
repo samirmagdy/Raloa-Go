@@ -5,25 +5,26 @@
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0F172A",
-  "theme_color": "#5B5CF6",
+  "theme_color": "#0F172A",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/brand/raloa-official-mark-black.png",
+      "src": "/icons/android-chrome-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/brand/raloa-official-mark-black.png",
+      "src": "/icons/android-chrome-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/brand/raloa-mark-primary.png",
+      "src": "/icons/maskable-icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "categories": ["productivity", "social", "business"],

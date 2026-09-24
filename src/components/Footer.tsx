@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Keyboard, BarChart3, Link2, Check, Share2, Gift } from 'lucide-react';
 import { PlatformIcon } from './brand/PlatformIcon';
-import { RaloaLogo } from './brand/RaloaLogo';
 import { Locale } from '../types';
 import { dictionary } from '../data/content';
 import { Tooltip } from './Tooltip';
@@ -141,7 +140,22 @@ export const Footer: React.FC<FooterProps> = ({
           
           {/* Brand Info (4 cols) */}
           <div className="col-span-2 md:col-span-4 flex flex-col items-start">
-            <RaloaLogo isRtl={isRtl} size="md" />
+            <img
+              src="/brand/raloa-logo-horizontal-primary.png"
+              alt="RALOA"
+              width="630"
+              height="280"
+              className="h-9 w-auto object-contain dark:hidden"
+              draggable={false}
+            />
+            <img
+              src="/graphics/footer-logo-white.png"
+              alt="RALOA"
+              width="720"
+              height="180"
+              className="hidden h-9 w-auto object-contain dark:block"
+              draggable={false}
+            />
             <p className="text-[13px] text-slate-500 dark:text-slate-400 mt-4 max-w-xs leading-relaxed">
               {isRtl
                 ? 'المنصة الرائدة لبناء المواقع المصغرة الأنيقة لصناع المحتوى والمستقلين وأصحاب الأعمال.'

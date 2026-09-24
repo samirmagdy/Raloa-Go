@@ -309,7 +309,22 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center gap-2 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-lg group"
               aria-label="RALOA Home"
             >
-              <RaloaLogo isRtl={isRtl} theme={isDark ? 'on-dark' : 'primary'} />
+              <img
+                src="/graphics/navbar-logo.png"
+                alt="RALOA"
+                width="720"
+                height="180"
+                className="h-8 w-auto object-contain dark:hidden"
+                draggable={false}
+              />
+              <img
+                src="/brand/raloa-logo-horizontal-on-dark.png"
+                alt="RALOA"
+                width="630"
+                height="280"
+                className="hidden h-8 w-auto object-contain dark:block"
+                draggable={false}
+              />
             </a>
 
             {/* Desktop Navigation Links */}

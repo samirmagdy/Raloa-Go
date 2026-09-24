@@ -1,0 +1,8 @@
+:root{
+--raloa-navy:#0F172A;--raloa-primary:#6366F1;--raloa-purple:#8B5CF6;
+--raloa-pink:#EC4899;--raloa-cyan:#06B6D4;--raloa-offwhite:#F8FAFC;
+--raloa-slate:#64748B;--raloa-white:#FFFFFF;
+--raloa-gradient:linear-gradient(135deg,#06B6D4 0%,#6366F1 40%,#8B5CF6 70%,#EC4899 100%);
+--raloa-font-display:"Plus Jakarta Sans",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+--raloa-font-ui:"Inter",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
