@@ -1,0 +1,463 @@
+import express, { Request, Response, NextFunction } from 'express';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = Number(process.env.PORT) || 3000;
+
+// Read base index.html template from dist if built, or fallback to root index.html
+const distIndexPath = path.resolve(__dirname, 'dist', 'index.html');
+const rootIndexPath = path.resolve(__dirname, 'index.html');
+let indexHtmlTemplate = '';
+
+function getIndexHtml(): string {
+  if (fs.existsSync(distIndexPath)) {
+    return fs.readFileSync(distIndexPath, 'utf-8');
+  }
+  if (fs.existsSync(rootIndexPath)) {
+    return fs.readFileSync(rootIndexPath, 'utf-8');
+  }
+  return '<!doctype html><html><head><title>RALOA</title></head><body><div id="root"></div></body></html>';
+}
+
+/**
+ * 6.2 Custom Domain Mapping Contract (Database Entity)
+ */
+interface CustomDomainDnsRecord {
+  type: 'CNAME' | 'A';
+  name: string;
+  value: string;
+  is_verified: boolean;
+}
+
+interface CustomDomainMapping {
+  domain_id: string;
+  site_id: string;
+  user_id: string;
+  hostname: string;
+  ssl_status: 'pending' | 'active' | 'expired' | 'failed';
+  verification_token: string;
+  dns_records: CustomDomainDnsRecord[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Sample in-memory edge registry for custom domain mapping (FR-1.3)
+const CUSTOM_DOMAINS: Record<string, CustomDomainMapping> = {
+  'portfolio.johndoe.com': {
+    domain_id: 'd-1001-uuid',
+    site_id: 'elena',
+    user_id: 'user-001',
+    hostname: 'portfolio.johndoe.com',
+    ssl_status: 'active',
+    verification_token: 'raloa-verify-9a8b7c6d',
+    dns_records: [
+      { type: 'CNAME', name: 'portfolio', value: 'cname.raloa.app', is_verified: true },
+    ],
+    is_active: true,
+    created_at: '2026-09-01T00:00:00Z',
+    updated_at: '2026-09-24T00:00:00Z',
+  },
+  'pending.custombrand.io': {
+    domain_id: 'd-1002-uuid',
+    site_id: 'studio',
+    user_id: 'user-002',
+    hostname: 'pending.custombrand.io',
+    ssl_status: 'pending',
+    verification_token: 'raloa-verify-pending-123',
+    dns_records: [
+      { type: 'CNAME', name: 'pending', value: 'cname.raloa.app', is_verified: false },
+    ],
+    is_active: false,
+    created_at: '2026-09-23T00:00:00Z',
+    updated_at: '2026-09-24T00:00:00Z',
+  },
+  'invalid.failedssl.org': {
+    domain_id: 'd-1003-uuid',
+    site_id: 'mateo',
+    user_id: 'user-003',
+    hostname: 'invalid.failedssl.org',
+    ssl_status: 'failed',
+    verification_token: 'raloa-verify-failed-456',
+    dns_records: [
+      { type: 'A', name: '@', value: '192.0.2.1', is_verified: false },
+    ],
+    is_active: false,
+    created_at: '2026-09-22T00:00:00Z',
+    updated_at: '2026-09-24T00:00:00Z',
+  },
+};
+
+// Known Creator Profiles for SSR Metadata (FR-3.2)
+const CREATORS_METADATA: Record<string, { name: string; avatar: string; bio: string; role: string }> = {
+  elena: {
+    name: 'Elena',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+    bio: 'Art Director & Architectural Photographer. Exploring light, concrete and minimal spaces.',
+    role: 'Art Director & Architectural Photographer',
+  },
+  mateo: {
+    name: 'Mateo',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+    bio: 'Independent director & DP crafting cinematic narratives for music and brands.',
+    role: 'Filmmaker & Visual Storyteller',
+  },
+  studio: {
+    name: 'STUDIO',
+    avatar: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=400&q=80',
+    bio: 'Sustainable interior architecture, bespoke ceramics and calm living spaces.',
+    role: 'Modern Interior & Object Design',
+  },
+  'dr-ahmed': {
+    name: 'Dr. Ahmed',
+    avatar: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&w=400&q=80',
+    bio: 'Consultant Dermatologist & Skincare Educator. Evidence-based routines.',
+    role: 'Consultant Dermatologist',
+  },
+  forma: {
+    name: 'Forma Design',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+    bio: 'Digital product design agency building clean interfaces.',
+    role: 'Design Agency',
+  },
+};
+
+function getRequestHost(req: Request): string {
+  const forwardedHost = req.headers['x-forwarded-host'];
+  if (typeof forwardedHost === 'string' && forwardedHost.trim()) {
+    return forwardedHost.split(',')[0].trim().toLowerCase();
+  }
+  return (req.headers.host || '').split(':')[0].toLowerCase();
+}
+
+/**
+ * FR-1.1 Canonical Apex Redirect Middleware
+ * All requests hitting http://* or https://www.raloa.app must resolve with a 301 Permanent Redirect to https://raloa.app/.
+ */
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const host = getRequestHost(req);
+  const forwardedProto = req.headers['x-forwarded-proto'];
+
+  // Check if hitting www.raloa.app or plain HTTP on raloa.app
+  if (host === 'www.raloa.app') {
+    return res.redirect(301, `https://raloa.app${req.originalUrl}`);
+  }
+
+  if (forwardedProto === 'http' && (host === 'raloa.app' || host === 'www.raloa.app')) {
+    return res.redirect(301, `https://raloa.app${req.originalUrl}`);
+  }
+
+  next();
+});
+
+
+/**
+ * FR-1.2 & NFR-4 Security & Edge Hardening Headers
+ */
+app.use((req: Request, res: Response, next: NextFunction) => {
+  // HSTS (Strict-Transport-Security)
+  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+
+  // MIME type sniffing protection
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  // Referrer policy
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+  // X-Frame-Options: SAMEORIGIN (allow iframe embedding on authorized template preview routes)
+  if (req.path.startsWith('/templates/preview') || req.path.startsWith('/embed/')) {
+    res.setHeader('X-Frame-Options', 'ALLOWALL');
+  } else {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  }
+
+  // Content-Security-Policy
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://apis.google.com; " +
+    "connect-src 'self' https: wss:; " +
+    "frame-src 'self' https://js.stripe.com https://hooks.stripe.com; " +
+    "img-src 'self' https: data: blob:;"
+  );
+
+  next();
+});
+
+/**
+ * FR-2.1 & FR-2.2 Edge Attribution & UTM Parameter Capture
+ */
+app.use((req: Request, res: Response, next: NextFunction) => {
+  // 1. Referral capture (?ref=...)
+  const ref = req.query.ref;
+  if (typeof ref === 'string' && ref.trim().length > 0) {
+    const cleanRef = ref.trim().toUpperCase();
+    const cookieDomain = req.hostname.endsWith('raloa.app') ? '; Domain=.raloa.app' : '';
+    res.setHeader(
+      'Set-Cookie',
+      `_raloa_ref=${encodeURIComponent(cleanRef)}; Max-Age=2592000; Path=/; SameSite=Lax; Secure${cookieDomain}`
+    );
+  }
+
+  // 2. UTM parameter capture
+  const utmSource = req.query.utm_source;
+  const utmMedium = req.query.utm_medium;
+  const utmCampaign = req.query.utm_campaign;
+  const utmTerm = req.query.utm_term;
+  const utmContent = req.query.utm_content;
+
+  if (utmSource || utmMedium || utmCampaign || utmTerm || utmContent) {
+    let referrerHost: string | null = null;
+    if (req.headers.referer) {
+      try {
+        referrerHost = new URL(req.headers.referer).hostname;
+      } catch (_) {}
+    }
+
+    const payload = {
+      utm_source: typeof utmSource === 'string' ? utmSource : null,
+      utm_medium: typeof utmMedium === 'string' ? utmMedium : null,
+      utm_campaign: typeof utmCampaign === 'string' ? utmCampaign : null,
+      utm_term: typeof utmTerm === 'string' ? utmTerm : null,
+      utm_content: typeof utmContent === 'string' ? utmContent : null,
+      initial_landing_path: req.path,
+      referrer_host: referrerHost,
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+
+    const cookieDomain = req.hostname.endsWith('raloa.app') ? '; Domain=.raloa.app' : '';
+    const cookieValue = encodeURIComponent(JSON.stringify(payload));
+    res.append(
+      'Set-Cookie',
+      `_raloa_utm=${cookieValue}; Max-Age=2592000; Path=/; SameSite=Lax; Secure${cookieDomain}`
+    );
+  }
+
+  // 3. FR-2.3 In-App Browser (IAB) Detection
+  const ua = req.headers['user-agent'] || '';
+  if (/FBAN\/FBAV|Instagram/i.test(ua)) {
+    res.setHeader('X-In-App-Browser', 'instagram');
+  } else if (/musical_ly|ByteDance|TikTok/i.test(ua)) {
+    res.setHeader('X-In-App-Browser', 'tiktok');
+  } else if (/Twitter/i.test(ua)) {
+    res.setHeader('X-In-App-Browser', 'twitter');
+  }
+
+  next();
+});
+
+/**
+ * FR-3.3 Dynamic robots.txt Endpoint (AC-05)
+ * Returns Disallow: /studio/, Disallow: /api/, Disallow: /login, Disallow: /register, Allow: /
+ */
+app.get('/robots.txt', (_req: Request, res: Response) => {
+  res.type('text/plain');
+  res.send(`User-agent: *
+Allow: /
+Disallow: /studio/
+Disallow: /api/
+Disallow: /login
+Disallow: /register
+
+Sitemap: https://raloa.app/sitemap.xml
+`);
+});
+
+/**
+ * FR-3.3 Dynamic sitemap.xml Endpoint
+ */
+app.get('/sitemap.xml', (_req: Request, res: Response) => {
+  res.type('application/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://raloa.app/</loc>
+    <lastmod>2026-09-24</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://raloa.app/?lang=en" />
+    <xhtml:link rel="alternate" hreflang="ar" href="https://raloa.app/?lang=ar" />
+  </url>
+  <url>
+    <loc>https://raloa.app/templates</loc>
+    <lastmod>2026-09-24</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://raloa.app/features</loc>
+    <lastmod>2026-09-24</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://raloa.app/pricing</loc>
+    <lastmod>2026-09-24</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://raloa.app/@elena</loc>
+    <lastmod>2026-09-24</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://raloa.app/@mateo</loc>
+    <lastmod>2026-09-24</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://raloa.app/@studio</loc>
+    <lastmod>2026-09-24</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+</urlset>`);
+});
+
+/**
+ * FR-1.3 Custom Domain Handshake & Edge Resolution
+ * Handles CNAME/A record resolution and 526 SSL fallback (AC-06)
+ */
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const host = getRequestHost(req);
+  const isPlatformDomain =
+    host === 'raloa.app' ||
+    host === 'www.raloa.app' ||
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.raloa.app');
+
+  if (isPlatformDomain) {
+    return next();
+  }
+
+
+  // Lookup in custom domain database
+  const mapping = CUSTOM_DOMAINS[host];
+  if (!mapping) {
+    return res.status(404).send(`
+      <!doctype html>
+      <html>
+        <head><title>404 - Domain Unregistered | RALOA Edge</title></head>
+        <body style="font-family: system-ui, sans-serif; text-align: center; padding: 48px;">
+          <h1>404 Domain Unregistered</h1>
+          <p>The domain <strong>${host}</strong> is pointed to RALOA Anycast IPs, but is not attached to any published mini-site.</p>
+          <a href="https://raloa.app">Return to RALOA</a>
+        </body>
+      </html>
+    `);
+  }
+
+  // AC-06: Custom domain with invalid / pending SSL -> 526 Invalid SSL Screen
+  if (mapping.ssl_status === 'pending' || mapping.ssl_status === 'failed') {
+    return res.status(526).send(`
+      <!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>526 Invalid SSL / Configuration Pending — ${host}</title>
+          <style>
+            body { font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 24px; box-sizing: border-box; }
+            .card { background: #131c2e; border: 1px solid #1e293b; border-radius: 24px; padding: 40px; max-width: 540px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+            .badge { display: inline-block; background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); font-size: 12px; font-weight: 700; padding: 6px 14px; border-radius: 999px; margin-bottom: 20px; }
+            h1 { font-size: 24px; margin: 0 0 12px; }
+            .hostname { font-family: monospace; color: #818cf8; font-size: 14px; background: rgba(99, 102, 241, 0.1); padding: 8px 16px; border-radius: 8px; display: inline-block; margin-bottom: 16px; }
+            p { font-size: 14px; line-height: 1.6; color: #94a3b8; margin: 0 0 24px; }
+            .btn { display: inline-block; background: #6366f1; color: #fff; font-weight: 600; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-size: 14px; transition: background 0.2s; }
+            .btn:hover { background: #4f46e5; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="badge">HTTP 526 · Invalid SSL / Configuration Pending</div>
+            <h1>SSL Certificate Handshake Pending</h1>
+            <div class="hostname">${host}</div>
+            <p>The custom domain is pointed to the RALOA Edge Network, but the automated Let's Encrypt / ZeroSSL certificate challenge has not yet completed or DNS propagation is pending.</p>
+            <a class="btn" href="https://raloa.app/#faq">View Setup Documentation</a>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+
+  // Active custom domain: rewrite internally to public-render without URL path pollution
+  req.url = `/@${mapping.site_id}`;
+  next();
+});
+
+/**
+ * Serve static production assets from dist directory
+ */
+const distPath = path.resolve(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath, { index: false }));
+}
+
+/**
+ * FR-1.4 Public Handle Rewriting & FR-3.1/FR-3.2 SSR Meta Tag Hydration
+ */
+app.get('*', (req: Request, res: Response) => {
+  let html = getIndexHtml();
+  const requestPath = req.path;
+
+  // Handle public creator routes: /@handle or /public-render/handle
+  const handleMatch = requestPath.match(/^\/(?:@|public-render\/)([a-zA-Z0-9._-]+)$/);
+  if (handleMatch) {
+    const handle = handleMatch[1].toLowerCase();
+    const creator = CREATORS_METADATA[handle];
+
+    if (creator) {
+      // Dynamic OpenGraph & Twitter hydration (FR-3.2)
+      const ogTitle = `${creator.name} (@${handle}) — RALOA Mini-Site`;
+      const ogDesc = creator.bio;
+      const ogImage = creator.avatar;
+
+      html = html
+        .replace(/<title>.*?<\/title>/, `<title>${ogTitle}</title>`)
+        .replace(/<meta property="og:title" content=".*?" \/>/, `<meta property="og:title" content="${ogTitle}" />`)
+        .replace(/<meta property="og:description" content=".*?" \/>/, `<meta property="og:description" content="${ogDesc}" />`)
+        .replace(/<meta property="og:image" content=".*?" \/>/, `<meta property="og:image" content="${ogImage}" />`)
+        .replace(/<meta name="twitter:title" content=".*?" \/>/, `<meta name="twitter:title" content="${ogTitle}" />`)
+        .replace(/<meta name="twitter:description" content=".*?" \/>/, `<meta name="twitter:description" content="${ogDesc}" />`)
+        .replace(/<meta name="twitter:image" content=".*?" \/>/, `<meta name="twitter:image" content="${ogImage}" />`);
+    } else {
+      // AC-03: Invalid handle 404 metadata
+      const notFoundTitle = `404: Handle @${handle} Available — RALOA`;
+      html = html.replace(/<title>.*?<\/title>/, `<title>${notFoundTitle}</title>`);
+    }
+  } else if (requestPath === '/templates') {
+    html = html
+      .replace(/<title>.*?<\/title>/, '<title>All Templates — RALOA Design Gallery</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Explore All Mini-Site Templates — RALOA" />');
+  } else if (requestPath === '/pricing') {
+    html = html
+      .replace(/<title>.*?<\/title>/, '<title>Pricing Plans — RALOA</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Transparent Pricing Plans — Free & Pro | RALOA" />');
+  } else if (requestPath === '/features') {
+    html = html
+      .replace(/<title>.*?<\/title>/, '<title>Creator Toolkit & Features — RALOA</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="All-in-One Creator Toolkit — RALOA" />');
+  }
+
+  res.send(html);
+});
+
+// Start listening if run directly
+const isDirectExecution = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isDirectExecution && process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[RALOA Edge Proxy] Listening on http://0.0.0.0:${PORT}`);
+  });
+}
+
+export default app;
+

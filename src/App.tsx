@@ -19,6 +19,8 @@ import { ScrollSpyDots } from './components/ScrollSpyDots';
 import { BackToTop } from './components/BackToTop';
 import { FadeInSection } from './components/FadeInSection';
 import { NotFound } from './components/NotFound';
+import { PublicCreatorProfile } from './components/PublicCreatorProfile';
+import { InvalidSslFallback } from './components/InvalidSslFallback';
 
 // Interactive Modals
 const CommandPaletteModal = lazy(() => import('./components/modals/CommandPaletteModal').then((m) => ({ default: m.CommandPaletteModal })));
@@ -45,6 +47,69 @@ import { useVoiceTour } from './hooks/useVoiceTour';
 import { VoiceTourToggle } from './components/VoiceTourToggle';
 import { AuthProvider } from './contexts/AuthContext';
 import { recordPageView, recordLinkClick } from './lib/firebase';
+import { initAttribution } from './utils/attribution';
+
+type AppRoute = 'home' | '404' | 'studio' | 'templates' | 'profile' | 'ssl_error';
+
+function resolveInitialRoute(): {
+  route: AppRoute;
+  handle: string;
+  attempted: string;
+  authModal?: { open: boolean; mode: 'signin' | 'signup' };
+} {
+  if (typeof window === 'undefined') {
+    return { route: 'home', handle: '', attempted: '' };
+  }
+
+  const path = window.location.pathname;
+  const hash = window.location.hash;
+  const searchParams = new URLSearchParams(window.location.search);
+
+  // AC-06: SSL Error 526 fallback check
+  if (searchParams.get('ssl_error') === '526' || searchParams.get('ssl_error') === 'true') {
+    return { route: 'ssl_error', handle: '', attempted: path };
+  }
+
+  if (path === '/studio' || path.startsWith('/studio/')) {
+    return { route: 'studio', handle: '', attempted: '' };
+  }
+  if (path === '/templates') {
+    return { route: 'templates', handle: '', attempted: '' };
+  }
+  if (path === '/login') {
+    return { route: 'home', handle: '', attempted: '', authModal: { open: true, mode: 'signin' } };
+  }
+  if (path === '/register') {
+    const handleParam = searchParams.get('handle') || '';
+    return { route: 'home', handle: handleParam, attempted: '', authModal: { open: true, mode: 'signup' } };
+  }
+  if (path === '/features' || path === '/pricing' || path === '/guides' || path === '/about') {
+    return { route: 'home', handle: '', attempted: '' };
+  }
+
+  // Handle route check: /@handle or /public-render/handle (FR-1.4)
+  const handleMatch = path.match(/^\/(?:@|public-render\/)([a-zA-Z0-9._-]+)$/);
+  if (handleMatch) {
+    const rawHandle = handleMatch[1].toLowerCase();
+    const creatorExists = templatesData.some(
+      (t) => t.id.toLowerCase() === rawHandle || t.name.toLowerCase() === rawHandle
+    );
+    if (creatorExists) {
+      return { route: 'profile', handle: rawHandle, attempted: '' };
+    }
+    // AC-03: Invalid handle -> 404 with Claim this handle CTA
+    return { route: '404', handle: rawHandle, attempted: `/@${rawHandle}` };
+  }
+
+  if (hash === '#404') {
+    return { route: '404', handle: '', attempted: '#404' };
+  }
+  if (path !== '/' && path !== '' && path !== '/index.html') {
+    return { route: '404', handle: '', attempted: path };
+  }
+
+  return { route: 'home', handle: '', attempted: '' };
+}
 
 function MainApp() {
   const [locale, setLocale] = useState<Locale>(() => getInitialLocale());
@@ -52,31 +117,10 @@ function MainApp() {
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => getInitialSoundEnabled());
   const [isLoading, setIsLoading] = useState(true);
 
-  // Client Routing State for Handling 404 and Broken Links Gracefully
-  const [currentRoute, setCurrentRoute] = useState<'home' | '404' | 'studio' | 'templates'>(() => {
-    if (typeof window === 'undefined') return 'home';
-    const path = window.location.pathname;
-    const hash = window.location.hash;
-    if (path === '/studio') return 'studio';
-    if (path === '/templates') return 'templates';
-    if (hash === '#404') return '404';
-    if (path !== '/' && path !== '' && path !== '/index.html') return '404';
-    return 'home';
-  });
-
-  useEffect(() => {
-    const activePath = typeof window !== 'undefined' ? window.location.pathname : '/';
-    recordPageView(activePath || '/');
-  }, [currentRoute]);
-
-  const [attemptedPath, setAttemptedPath] = useState<string>(() => {
-    if (typeof window === 'undefined') return '';
-    const path = window.location.pathname;
-    const hash = window.location.hash;
-    if (path !== '/' && path !== '' && path !== '/index.html') return path;
-    if (hash === '#404') return '#404';
-    return '';
-  });
+  const initialRouteInfo = resolveInitialRoute();
+  const [currentRoute, setCurrentRoute] = useState<AppRoute>(initialRouteInfo.route);
+  const [profileHandle, setProfileHandle] = useState<string>(initialRouteInfo.handle);
+  const [attemptedPath, setAttemptedPath] = useState<string>(initialRouteInfo.attempted);
 
   // Dynamic Section-Aware SEO Hook (updates document.title, canonical URL, OG, Twitter tags)
   useSEO({
@@ -113,9 +157,15 @@ function MainApp() {
   } = useVoiceTour({ locale });
 
   // Modal States
-  const [studioOpen, setStudioOpen] = useState(() => typeof window !== 'undefined' && window.location.pathname === '/studio');
-  const [studioUsername, setStudioUsername] = useState('creator');
+  const [studioOpen, setStudioOpen] = useState(() => typeof window !== 'undefined' && (window.location.pathname === '/studio' || window.location.pathname.startsWith('/studio/')));
+  const [studioUsername, setStudioUsername] = useState(() => initialRouteInfo.handle || 'creator');
   const [studioTemplate, setStudioTemplate] = useState<TemplateItem>(templatesData[0]);
+
+  // Attribution & In-App Browser Initialization (FR-2.1, FR-2.2, FR-2.3)
+  useEffect(() => {
+    initAttribution();
+  }, []);
+
 
   const [previewTemplate, setPreviewTemplate] = useState<TemplateItem | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -145,7 +195,7 @@ function MainApp() {
   const [authModal, setAuthModal] = useState<{
     open: boolean;
     mode: 'signin' | 'signup';
-  }>({ open: false, mode: 'signin' });
+  }>(() => initialRouteInfo.authModal || { open: false, mode: 'signin' });
 
   const [contactOpen, setContactOpen] = useState(false);
   const [legalTitle, setLegalTitle] = useState<string | null>(null);
@@ -228,21 +278,20 @@ function MainApp() {
   // Listen to popstate and hashchange events for browser history back/forward navigation
   useEffect(() => {
     const handleLocationChange = () => {
-      const path = window.location.pathname;
-      const hash = window.location.hash;
-      if (path === '/studio') {
+      const info = resolveInitialRoute();
+      setCurrentRoute(info.route);
+      setProfileHandle(info.handle);
+      setAttemptedPath(info.attempted);
+      if (info.route === 'studio') {
         setStudioOpen(true);
-        setCurrentRoute('studio');
-      } else if (path === '/templates') {
-        setStudioOpen(false);
-        setCurrentRoute('templates');
-      } else if (hash === '#404' || (path !== '/' && path !== '' && path !== '/index.html')) {
-        setStudioOpen(false);
-        setCurrentRoute('404');
-        setAttemptedPath(path !== '/' && path !== '' ? path : hash);
       } else {
         setStudioOpen(false);
-        setCurrentRoute('home');
+      }
+      if (info.authModal) {
+        setAuthModal(info.authModal);
+      }
+      if (info.handle) {
+        setStudioUsername(info.handle);
       }
     };
 
@@ -253,6 +302,7 @@ function MainApp() {
       window.removeEventListener('hashchange', handleLocationChange);
     };
   }, []);
+
 
   const handleReturnHome = () => {
     setCurrentRoute('home');
@@ -520,7 +570,7 @@ function MainApp() {
       {/* Global Branded Loading Overlay */}
       <LoadingOverlay isLoading={isLoading} locale={locale} theme={theme} />
 
-      {/* Dedicated Studio page, 404 page, or standard landing page */}
+      {/* Dedicated Studio page, profile page, SSL error page, 404 page, or standard landing page */}
       {currentRoute === 'studio' ? (
         <Suspense fallback={<LoadingOverlay isLoading locale={locale} theme={theme} />}>
           <StudioModal
@@ -536,6 +586,25 @@ function MainApp() {
           onReturnHome={handleReturnHome}
           onSelectTemplate={handleSelectTemplate}
         />
+      ) : currentRoute === 'profile' ? (
+        <PublicCreatorProfile
+          handle={profileHandle}
+          locale={locale}
+          onClaimHandle={(handle) => {
+            setStudioUsername(handle);
+            setAuthModal({ open: true, mode: 'signup' });
+          }}
+          onReturnHome={handleReturnHome}
+          onNotFound={(handle) => {
+            setCurrentRoute('404');
+            setAttemptedPath(`/@${handle}`);
+          }}
+        />
+      ) : currentRoute === 'ssl_error' ? (
+        <InvalidSslFallback
+          locale={locale}
+          onReturnHome={handleReturnHome}
+        />
       ) : currentRoute === '404' ? (
         <NotFound
           locale={locale}
@@ -545,8 +614,13 @@ function MainApp() {
           onReturnHome={handleReturnHome}
           onNavigateToSection={handleNavigateToSection}
           attemptedPath={attemptedPath}
+          onClaimHandle={(handle) => {
+            setStudioUsername(handle);
+            setAuthModal({ open: true, mode: 'signup' });
+          }}
         />
       ) : (
+
         <>
           {/* 00 Fixed Viewport Scroll Progress Bar */}
           <ScrollProgressBar isRtl={locale === 'ar'} />

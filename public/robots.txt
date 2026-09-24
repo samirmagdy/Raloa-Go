@@ -1,4 +1,8 @@
 User-agent: *
 Allow: /
+Disallow: /studio/
+Disallow: /api/
+Disallow: /login
+Disallow: /register
 
 Sitemap: https://raloa.app/sitemap.xml

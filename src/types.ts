@@ -167,3 +167,35 @@ export interface ContactInquiry {
   message: string;
   createdAt?: string;
 }
+
+export interface CustomDomainDnsRecord {
+  type: 'CNAME' | 'A';
+  name: string;
+  value: string;
+  is_verified: boolean;
+}
+
+export interface CustomDomainMapping {
+  domain_id: string;              // UUIDv4
+  site_id: string;                // References target site
+  user_id: string;                // References account owner
+  hostname: string;               // e.g., "portfolio.johndoe.com"
+  ssl_status: 'pending' | 'active' | 'expired' | 'failed';
+  verification_token: string;     // DNS TXT challenge token
+  dns_records: CustomDomainDnsRecord[];
+  is_active: boolean;
+  created_at: string;             // ISO-8601 UTC
+  updated_at: string;             // ISO-8601 UTC
+}
+
+export interface AttributionUtmPayload {
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_term: string | null;
+  utm_content: string | null;
+  initial_landing_path: string;
+  referrer_host: string | null;
+  timestamp: number;
+}
+

@@ -15,6 +15,7 @@ interface NotFoundProps {
   onReturnHome: () => void;
   onNavigateToSection?: (sectionId: string) => void;
   attemptedPath?: string;
+  onClaimHandle?: (handle: string) => void;
 }
 
 export const NotFound: React.FC<NotFoundProps> = ({
@@ -24,16 +25,39 @@ export const NotFound: React.FC<NotFoundProps> = ({
   onSelectLocale,
   onReturnHome,
   onNavigateToSection,
-  attemptedPath = '/page-not-found'
+  attemptedPath = '/page-not-found',
+  onClaimHandle
 }) => {
   const isRtl = locale === 'ar';
 
+  // Check if the requested path is a handle route (e.g. /@nonexistent or /public-render/nonexistent)
+  const handleMatch = attemptedPath.match(/^\/(?:@|public-render\/)([a-zA-Z0-9._-]+)/);
+  const detectedHandle = handleMatch ? handleMatch[1] : null;
+
   const t = {
-    badge: isRtl ? 'خطأ 404 · صفحة غير موجودة' : '404 Error · Page Not Found',
-    title: isRtl ? 'عذراً، هذه الصفحة غير موجودة' : 'Lost in the digital canvas?',
-    description: isRtl
-      ? 'يبدو أن الرابط الذي اتبعته قد تغير، أو أن الصفحة لم تعد متاحة. لا تقلق، يمكنك العودة فوراً إلى الصفحة الرئيسية واستكشاف أدوات ومزايا RALOA.'
-      : 'The link you followed may be broken, or the page may have been moved. Let us help you find your way back to your creative workflow.',
+    badge: detectedHandle
+      ? isRtl
+        ? `المعرف @${detectedHandle} متاح الآن!`
+        : `Handle @${detectedHandle} is available!`
+      : isRtl
+        ? 'خطأ 404 · صفحة غير موجودة'
+        : '404 Error · Page Not Found',
+    title: detectedHandle
+      ? isRtl
+        ? `هل تبحث عن @${detectedHandle}؟`
+        : `Looking for @${detectedHandle}?`
+      : isRtl
+        ? 'عذراً، هذه الصفحة غير موجودة'
+        : 'Lost in the digital canvas?',
+    description: detectedHandle
+      ? isRtl
+        ? `هذا المعرف (@${detectedHandle}) غير مسجل حتى الآن. يمكنك تسجيل حسابك وحجز رابطك الشخصي المميز فوراً قبل أن يأخذه شخص آخر!`
+        : `The handle @${detectedHandle} has not been claimed yet. Create your account and secure this custom link before someone else does!`
+      : isRtl
+        ? 'يبدو أن الرابط الذي اتبعته قد تغير، أو أن الصفحة لم تعد متاحة. لا تقلق، يمكنك العودة فوراً إلى الصفحة الرئيسية واستكشاف أدوات ومزايا RALOA.'
+        : 'The link you followed may be broken, or the page may have been moved. Let us help you find your way back to your creative workflow.',
+    claimHandle: isRtl ? `احجز @${detectedHandle} الآن` : `Claim @${detectedHandle} Now`,
+
     returnHome: isRtl ? 'العودة إلى الصفحة الرئيسية' : 'Return Home',
     exploreTemplates: isRtl ? 'استعراض القوالب' : 'Explore Templates',
     viewPricing: isRtl ? 'جدول الأسعار' : 'View Pricing',
@@ -41,6 +65,7 @@ export const NotFound: React.FC<NotFoundProps> = ({
     brokenPathLabel: isRtl ? 'المسار المطلوب:' : 'Requested URL:',
     popularLinks: isRtl ? 'أقسام مقترحة:' : 'Popular Destinations:'
   };
+
 
   return (
     <div
@@ -264,7 +289,11 @@ export const NotFound: React.FC<NotFoundProps> = ({
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.1 }}
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200/80 dark:border-rose-900/60 mb-4 shadow-2xs"
+          className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold mb-4 shadow-2xs border ${
+            detectedHandle
+              ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+              : 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border-rose-200/80 dark:border-rose-900/60'
+          }`}
         >
           <AlertCircle className="w-3.5 h-3.5" />
           <span>{t.badge}</span>
@@ -304,27 +333,57 @@ export const NotFound: React.FC<NotFoundProps> = ({
           </motion.div>
         )}
 
-        {/* Action Buttons: Primary 'Return Home' CTA */}
+        {/* Action Buttons: Primary 'Claim Handle' CTA (AC-03) or 'Return Home' */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.3 }}
           className="flex flex-wrap items-center justify-center gap-3 sm:gap-4 w-full"
         >
-          <button
-            id="return-home-button"
-            type="button"
-            onClick={onReturnHome}
-            className="inline-flex items-center justify-center gap-2.5 px-6 py-3 rounded-full bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-sm sm:text-base font-bold shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-          >
-            {isRtl ? (
-              <ArrowRight className="w-4 h-4 rtl:rotate-0" />
-            ) : (
-              <Home className="w-4 h-4" />
-            )}
-            <span>{t.returnHome}</span>
-            {!isRtl && <ArrowRight className="w-4 h-4" />}
-          </button>
+          {detectedHandle ? (
+            <>
+              <button
+                id="claim-handle-button"
+                type="button"
+                onClick={() => {
+                  if (onClaimHandle) {
+                    onClaimHandle(detectedHandle);
+                  } else if (typeof window !== 'undefined') {
+                    window.location.href = `/register?handle=${encodeURIComponent(detectedHandle)}`;
+                  }
+                }}
+                className="inline-flex items-center justify-center gap-2.5 px-6 py-3 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm sm:text-base font-bold shadow-lg hover:shadow-indigo-500/25 transition-all transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              >
+                <span>{t.claimHandle}</span>
+                {isRtl ? <ArrowLeft className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
+              </button>
+
+              <button
+                id="return-home-button"
+                type="button"
+                onClick={onReturnHome}
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-full bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-200 text-sm sm:text-base font-semibold border border-slate-200 dark:border-slate-800 transition-colors shadow-2xs cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              >
+                <Home className="w-4 h-4 text-slate-500" />
+                <span>{t.returnHome}</span>
+              </button>
+            </>
+          ) : (
+            <button
+              id="return-home-button"
+              type="button"
+              onClick={onReturnHome}
+              className="inline-flex items-center justify-center gap-2.5 px-6 py-3 rounded-full bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-sm sm:text-base font-bold shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              {isRtl ? (
+                <ArrowRight className="w-4 h-4 rtl:rotate-0" />
+              ) : (
+                <Home className="w-4 h-4" />
+              )}
+              <span>{t.returnHome}</span>
+              {!isRtl && <ArrowRight className="w-4 h-4" />}
+            </button>
+          )}
 
           {onNavigateToSection && (
             <button
