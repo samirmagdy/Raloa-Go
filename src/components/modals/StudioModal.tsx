@@ -7,19 +7,12 @@ import {
   Settings,
   Lock,
   ArrowRight,
-  Sparkles,
-  Smartphone,
-  Eye,
-  Edit3,
-  Globe,
-  Loader2,
-  AlertCircle
+  Sparkles
 } from 'lucide-react';
 import { Locale, TemplateItem, BackgroundStyle } from '../../types';
 import { templatesData } from '../../data/content';
 import { useAuth } from '../../hooks/useAuth';
 import { useHistoryState } from '../../hooks/useHistoryState';
-import { RaloaMark } from '../brand/RaloaLogo';
 import { PremiumMark } from '../brand/PremiumMark';
 
 // Modular Studio Subcomponents

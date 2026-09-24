@@ -25,7 +25,6 @@ const SECTIONS: SectionItem[] = [
 
 export const ScrollSpyDots: React.FC<ScrollSpyDotsProps> = ({ locale }) => {
   const [activeSection, setActiveSection] = useState<string>('hero');
-  const [isHoveredNav, setIsHoveredNav] = useState<boolean>(false);
   const isRtl = locale === 'ar';
 
   const intersectionRatiosRef = useRef<Map<string, number>>(new Map());
@@ -120,8 +119,6 @@ export const ScrollSpyDots: React.FC<ScrollSpyDotsProps> = ({ locale }) => {
       id="page-scroll-spy"
       aria-label={isRtl ? 'التنقل السريع بين الأقسام' : 'Page Section Navigation'}
       onKeyDown={handleKeyDown}
-      onMouseEnter={() => setIsHoveredNav(true)}
-      onMouseLeave={() => setIsHoveredNav(false)}
       className="fixed right-3 sm:right-5 rtl:right-auto rtl:left-3 rtl:sm:left-5 top-1/2 -translate-y-1/2 z-30 hidden lg:flex flex-col items-center gap-1.5 p-2 bg-white/85 dark:bg-slate-900/85 backdrop-blur-md rounded-full border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-950/10 transition-all duration-300 print:hidden select-none"
     >
       {/* Background connecting rail with reactive animated glow indicator */}

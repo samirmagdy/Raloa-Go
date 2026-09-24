@@ -2,12 +2,8 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Locale } from '../types';
 import {
   registerSectionSEO,
-  unregisterSectionSEO,
-  getRegisteredSectionSEO,
   SectionSEOMetadata,
   MetaTagItem,
-  useSEO,
-  UseSEOReturn
 } from './useSEO';
 
 export interface UsePageSEOProps {

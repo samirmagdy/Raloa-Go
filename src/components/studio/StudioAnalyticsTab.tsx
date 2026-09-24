@@ -1,14 +1,10 @@
 import React, { useState } from 'react';
 import {
-  BarChart2,
   TrendingUp,
   Eye,
   MousePointerClick,
   Users,
   Compass,
-  ArrowUpRight,
-  Calendar,
-  Share2
 } from 'lucide-react';
 import {
   AreaChart,

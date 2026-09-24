@@ -1,17 +1,12 @@
 import React from 'react';
 import {
-  Palette,
   RotateCcw,
   Sparkles,
-  Check,
-  Sliders,
-  Layers,
   Sun,
   Moon,
   Monitor
 } from 'lucide-react';
-import { Locale, BackgroundStyle, TemplateItem } from '../../types';
-import { templatesData } from '../../data/content';
+import { Locale, BackgroundStyle } from '../../types';
 
 export interface VisualPreset {
   id: string;
@@ -145,15 +140,12 @@ interface StudioDesignTabProps {
 }
 
 export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
-  templateId,
-  onTemplateIdChange,
   bgStyle,
   onBgStyleChange,
   themeMode,
   onThemeModeChange,
   accentColor,
   onAccentColorChange,
-  surfaceColor,
   onSurfaceColorChange,
   cardRadius,
   onCardRadiusChange,

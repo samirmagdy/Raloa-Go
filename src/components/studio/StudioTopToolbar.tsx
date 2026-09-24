@@ -1,18 +1,15 @@
 import React, { useState } from 'react';
 import {
-  X,
   Check,
   Copy,
   ExternalLink,
   QrCode as QrIcon,
-  Cloud,
   CheckCircle2,
   AlertCircle,
   Undo2,
   Redo2,
   Globe,
   ChevronDown,
-  Sparkles,
   ArrowLeft
 } from 'lucide-react';
 import { Locale } from '../../types';

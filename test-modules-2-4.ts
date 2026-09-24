@@ -18,12 +18,10 @@
 
 import http from 'node:http';
 import app, {
-  USERS_DB,
   ACTIVE_SESSIONS,
   LOGIN_ATTEMPTS,
   CONTACT_RATE_LIMITS,
   FORGOT_PW_RATE_LIMITS,
-  PASSWORD_RESET_TOKENS
 } from './server';
 
 const TEST_PORT = 3098;

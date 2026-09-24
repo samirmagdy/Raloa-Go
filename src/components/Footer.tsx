@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Keyboard, BarChart3, Link2, Check, Share2, Gift } from 'lucide-react';
+import { Keyboard, BarChart3, Check, Share2, Gift } from 'lucide-react';
 import { PlatformIcon } from './brand/PlatformIcon';
 import { Locale } from '../types';
 import { dictionary } from '../data/content';

@@ -17,7 +17,6 @@ import {
   Globe,
   Settings,
   ArrowRight,
-  ShieldCheck,
   RefreshCw,
   CheckCircle2,
   Circle,
@@ -26,7 +25,6 @@ import {
   Zap,
   BarChart2,
   Users,
-  Compass
 } from 'lucide-react';
 import {
   AreaChart,
@@ -89,7 +87,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
     updatedAt: new Date().toISOString()
   });
 
-  const [isLoadingSite, setIsLoadingSite] = useState(true);
+  const [, setIsLoadingSite] = useState(true);
   const [isCopied, setIsCopied] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
   const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -667,7 +665,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
 
             {/* Interactive Step Items */}
             <div className="space-y-3">
-              {onboardingSteps.map((step, idx) => (
+              {onboardingSteps.map((step) => (
                 <div
                   key={step.id}
                   className={`flex items-center justify-between p-3.5 sm:p-4 rounded-2xl border transition-all ${

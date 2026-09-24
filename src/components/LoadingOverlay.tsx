@@ -11,10 +11,8 @@ interface LoadingOverlayProps {
 
 export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
   isLoading,
-  locale = 'en',
-  theme = 'light'
+  locale = 'en'
 }) => {
-  const isDark = theme === 'dark';
   const isRtl = locale === 'ar';
   const prefersReducedMotion = useReducedMotion();
 

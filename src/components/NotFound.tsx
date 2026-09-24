@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Home, ArrowLeft, ArrowRight, Compass, AlertCircle, HelpCircle } from 'lucide-react';
+import { Home, ArrowLeft, ArrowRight, Compass, AlertCircle } from 'lucide-react';
 import { Locale } from '../types';
 import { Theme } from '../utils/theme';
 import { RaloaLogo } from './brand/RaloaLogo';

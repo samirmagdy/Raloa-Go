@@ -451,7 +451,7 @@ export function useSEO({
     // First, clean up previous dynamic custom meta tags
     document.querySelectorAll('meta[data-raloa-custom-tag="true"]').forEach((node) => node.remove());
 
-    resolvedMetadata.metaTags.forEach((tag, idx) => {
+    resolvedMetadata.metaTags.forEach((tag) => {
       if (tag.name) {
         let el = document.querySelector(`meta[name="${tag.name}"]`);
         if (!el) {

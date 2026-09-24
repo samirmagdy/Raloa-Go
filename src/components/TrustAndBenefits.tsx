@@ -12,7 +12,7 @@ interface TrustAndBenefitsProps {
 export const TrustAndBenefits: React.FC<TrustAndBenefitsProps> = ({ locale, onOpenPublishedSite }) => {
   const isRtl = locale === 'ar';
 
-  const getIcon = (iconName: string, color: string) => {
+  const getIcon = (iconName: string) => {
     switch (iconName) {
       case 'zap':
         return <Zap className="w-5 h-5 text-[#EC4899]" />;
@@ -47,7 +47,7 @@ export const TrustAndBenefits: React.FC<TrustAndBenefitsProps> = ({ locale, onOp
                 className="w-12 h-12 rounded-2xl flex items-center justify-center mb-5 transition-transform group-hover:scale-110 duration-200"
                 style={{ backgroundColor: benefit.bgColor }}
               >
-                {getIcon(benefit.icon, benefit.color)}
+                {getIcon(benefit.icon)}
               </div>
 
               <h3 className="font-extrabold text-[17px] text-[#0F172A] dark:text-white tracking-tight leading-snug mb-2">

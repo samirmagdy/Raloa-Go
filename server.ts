@@ -20,7 +20,6 @@ import {
   isAdminConfigured,
   isStripeConfigured,
   saveDomain,
-  stripe,
   verifyBearerToken,
   type AuthenticatedUser,
   type DomainRecord
@@ -71,8 +70,6 @@ app.use(express.urlencoded({ extended: true }));
 // Read base index.html template from dist if built, or fallback to root index.html
 const distIndexPath = path.resolve(__dirname, 'dist', 'index.html');
 const rootIndexPath = path.resolve(__dirname, 'index.html');
-let indexHtmlTemplate = '';
-
 function getIndexHtml(): string {
   if (fs.existsSync(distIndexPath)) {
     return fs.readFileSync(distIndexPath, 'utf-8');
@@ -430,7 +427,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 /**
  * FR-1.2 & NFR-4 Security & Edge Hardening Headers
  */
-app.use((req: Request, res: Response, next: NextFunction) => {
+app.use((_req: Request, res: Response, next: NextFunction) => {
   // HSTS (Strict-Transport-Security)
   res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
 
@@ -1313,7 +1310,7 @@ app.post('/api/v1/auth/session', async (req: Request, res: Response) => {
  * FR-4.5 Email Verification Confirmation
  */
 app.post('/api/v1/auth/verify-email', (req: Request, res: Response) => {
-  const { email, code } = req.body || {};
+  const { email } = req.body || {};
   if (!email) {
     return res.status(400).json({ status: 'error', message: 'Email is required' });
   }

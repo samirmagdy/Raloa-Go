@@ -2,23 +2,14 @@ import React, { useEffect, useState } from 'react';
 import {
   Settings,
   Globe,
-  Shield,
   CreditCard,
   Sliders,
-  ExternalLink,
   CheckCircle2,
-  AlertTriangle,
   Download,
-  Upload,
   Trash2,
-  Sparkles,
-  Link,
-  Lock,
   Zap,
-  EyeOff
 } from 'lucide-react';
 import { Locale } from '../../types';
-import { PremiumMark } from '../brand/PremiumMark';
 import { auth } from '../../lib/firebase';
 
 interface StudioSettingsTabProps {

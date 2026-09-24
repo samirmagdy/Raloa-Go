@@ -20,7 +20,7 @@ export interface UseScrollProgressOptions {
  * and Framer Motion spring-damped MotionValues.
  */
 export function useScrollProgress(options: UseScrollProgressOptions = {}) {
-  const { threshold = 50, targetRef, offset = ['start start', 'end start'], smooth = true } = options;
+  const { threshold = 50, targetRef, offset = ['start start', 'end start'] } = options;
 
   // React state for standard component logic
   const [scrollState, setScrollState] = useState<ScrollProgressState>({

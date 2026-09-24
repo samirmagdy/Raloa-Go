@@ -1,16 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Users,
   Mail,
   MessageSquare,
   Download,
   Search,
-  Filter,
   TrendingUp,
   FileSpreadsheet,
   CheckCircle2,
-  Calendar,
-  ExternalLink,
   Plus,
   Trash2,
   X

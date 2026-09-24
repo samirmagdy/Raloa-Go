@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Calendar as CalendarIcon, Check, ShoppingBag, Eye, Camera, Star, ArrowRight, Printer, Loader2 } from 'lucide-react';
+import { X, Check, ShoppingBag, ArrowRight, Printer, Loader2 } from 'lucide-react';
 import { Locale } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { useAuth } from '../../hooks/useAuth';

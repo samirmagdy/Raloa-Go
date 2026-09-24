@@ -3,12 +3,10 @@ import { motion } from 'motion/react';
 import {
   CheckCircle2,
   Share2,
-  ExternalLink,
   Sparkles,
   ArrowRight,
   ArrowLeft,
   Mail,
-  Copy,
   Check
 } from 'lucide-react';
 import { TemplateItem, Locale } from '../types';

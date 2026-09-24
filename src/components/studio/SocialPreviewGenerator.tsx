@@ -5,9 +5,7 @@ import {
   Check,
   RefreshCw,
   Code,
-  ExternalLink,
   ShieldCheck,
-  Layers,
   Sliders,
   Share2,
   CheckCircle2,
@@ -64,7 +62,7 @@ export const SocialPreviewGenerator: React.FC<SocialPreviewGeneratorProps> = ({
   const [ogTheme, setOgTheme] = useState<OgTheme>('gradient');
   const [badgeText, setBadgeText] = useState(isRtl ? 'صانع محتوى موثق' : 'Verified Creator');
   const [showAvatar, setShowAvatar] = useState(true);
-  const [showBadge, setShowBadge] = useState(true);
+  const [showBadge] = useState(true);
   const [showStats, setShowStats] = useState(true);
 
   const [copiedSnippet, setCopiedSnippet] = useState(false);

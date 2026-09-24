@@ -29,7 +29,6 @@ import {
   ShoppingBag,
   Calendar,
   Image as ImageIcon,
-  ExternalLink,
   Link2
 } from 'lucide-react';
 import { Locale } from '../../types';

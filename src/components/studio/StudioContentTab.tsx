@@ -9,20 +9,12 @@ import {
   Circle,
   ShoppingBag,
   Calendar,
-  Image as ImageIcon,
   Video,
   Music,
   Mail,
   MessageSquare,
   Heading,
   Layers,
-  ChevronRight,
-  Upload,
-  Globe,
-  Trash2,
-  Eye,
-  EyeOff,
-  Edit2,
   X
 } from 'lucide-react';
 import { Locale } from '../../types';
@@ -64,7 +56,6 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
   const isRtl = locale === 'ar';
   const [activePage, setActivePage] = useState<'main' | 'shop' | 'portfolio'>('main');
   const [addBlockModalOpen, setAddBlockModalOpen] = useState(false);
-  const [editingBlock, setEditingBlock] = useState<StudioBlockItem | null>(null);
 
   // New block form state
   const [newBlockType, setNewBlockType] = useState<string>('link');
@@ -77,7 +68,6 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
   const hasBio = Boolean(bio && bio.trim().length > 10);
   const hasLinks = links.length >= 3;
   const hasAvatar = Boolean(avatar);
-  const isChecklistComplete = hasHandle && hasBio && hasLinks && hasAvatar;
 
   const completedCount = [hasHandle, hasBio, hasLinks, hasAvatar].filter(Boolean).length;
   const progressPercent = Math.round((completedCount / 4) * 100);
@@ -113,10 +103,6 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
     }
   };
 
-  const handleUpdateBlock = (updated: StudioBlockItem) => {
-    onLinksChange(links.map((b) => (b.id === updated.id ? updated : b)));
-    setEditingBlock(null);
-  };
 
   const handleRemoveBlock = (id: string) => {
     onLinksChange(links.filter((b) => b.id !== id));

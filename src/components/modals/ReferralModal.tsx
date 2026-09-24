@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Gift, Copy, Check, Users, Clock, ShieldCheck, Sparkles, CheckCircle2, Globe, Send, Loader2 } from 'lucide-react';
+import { X, Gift, Copy, Check, Users, Clock, ShieldCheck, Sparkles, CheckCircle2, Send, Loader2 } from 'lucide-react';
 import { Locale } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { useAuth } from '../../hooks/useAuth';
@@ -21,7 +21,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, locale, on
   const [copied, setCopied] = useState(false);
   const [referralLink, setReferralLink] = useState('https://raloa.app/join');
   const [completedCount, setCompletedCount] = useState(0);
-  const [loadingStats, setLoadingStats] = useState(false);
+  const [, setLoadingStats] = useState(false);
 
   const [inviteEmail, setInviteEmail] = useState('');
   const [sendingInvite, setSendingInvite] = useState(false);

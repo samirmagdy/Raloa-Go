@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowRight, Check, Mail, Lock, AlertCircle, Loader2, Sparkles, KeyRound } from 'lucide-react';
+import { X, ArrowRight, Check, Mail, Lock, AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { Locale } from '../../types';
 import { RaloaMark } from '../brand/RaloaLogo';
 import { useAuth } from '../../hooks/useAuth';
@@ -28,7 +28,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot' | 'reset'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -36,7 +35,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
 
   // Staged parameters from query params or sessionStorage
-  const [claimedHandle, setClaimedHandle] = useState<string>(() => {
+  const [claimedHandle] = useState<string>(() => {
     if (initialHandle) return initialHandle;
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('handle');
@@ -46,7 +45,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     return '';
   });
 
-  const [stagedTemplate, setStagedTemplate] = useState<string>(() => {
+  const [stagedTemplate] = useState<string>(() => {
     if (initialTemplate) return initialTemplate;
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('template');

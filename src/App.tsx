@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { Locale, TemplateItem, PricingPlan } from './types';
 import { templatesData, pricingPlans } from './data/content';
 import { Header } from './components/Header';
@@ -47,7 +47,7 @@ import { useSEO } from './hooks/useSEO';
 import { useVoiceTour } from './hooks/useVoiceTour';
 import { VoiceTourToggle } from './components/VoiceTourToggle';
 import { AuthProvider } from './contexts/AuthContext';
-import { recordPageView, recordLinkClick } from './lib/firebase';
+import { recordLinkClick } from './lib/firebase';
 import { initAttribution } from './utils/attribution';
 
 type AppRoute = 'home' | '404' | 'studio' | 'templates' | 'profile' | 'ssl_error';
@@ -507,7 +507,7 @@ function MainApp() {
     setSelectedPlanState({ plan, isYearly });
   };
 
-  const handleConfirmPlan = (plan: PricingPlan) => {
+  const handleConfirmPlan = () => {
     setSelectedPlanState(null);
     handleOpenStudio();
   };

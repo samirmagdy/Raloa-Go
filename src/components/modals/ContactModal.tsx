@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Send, Check, MessageSquare, Loader2 } from 'lucide-react';
+import { X, Send, Check, MessageSquare } from 'lucide-react';
 import { Locale } from '../../types';
 import { saveContactMessage } from '../../lib/firebase';
 import { useAuth } from '../../hooks/useAuth';
@@ -15,7 +15,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
   const [name, setName] = useState(user?.displayName || '');
   const [email, setEmail] = useState(user?.email || '');
   const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const dialogRef = useModalA11y<HTMLDivElement>();

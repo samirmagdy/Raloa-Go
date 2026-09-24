@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ShieldAlert, RefreshCw, ExternalLink, ArrowLeft, ArrowRight, HelpCircle, CheckCircle2 } from 'lucide-react';
+import { ShieldAlert, RefreshCw, ExternalLink, HelpCircle, CheckCircle2 } from 'lucide-react';
 import { RaloaLogo } from './brand/RaloaLogo';
 import { Locale } from '../types';
 

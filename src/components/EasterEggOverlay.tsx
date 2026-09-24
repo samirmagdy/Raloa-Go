@@ -9,7 +9,6 @@ import {
   Share2,
   Check,
   Flame,
-  ArrowRight,
 } from 'lucide-react';
 import { Locale } from '../types';
 import { fireSiteLaunchConfetti } from '../utils/confetti';

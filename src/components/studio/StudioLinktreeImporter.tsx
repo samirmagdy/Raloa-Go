@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Sparkles, ArrowRight, Download, Check, AlertCircle, Link2, ExternalLink } from 'lucide-react';
+import { X, Sparkles, Download, AlertCircle } from 'lucide-react';
 import { Locale } from '../../types';
 import { StudioBlockItem } from './SortableBlockList';
 

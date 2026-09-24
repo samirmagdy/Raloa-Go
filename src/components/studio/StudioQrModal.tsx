@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { X, Download, Copy, Check, Printer, ExternalLink, QrCode as QrIcon } from 'lucide-react';
+import { X, Download, Copy, Check, Printer, QrCode as QrIcon } from 'lucide-react';
 import { Locale } from '../../types';
 
 interface StudioQrModalProps {

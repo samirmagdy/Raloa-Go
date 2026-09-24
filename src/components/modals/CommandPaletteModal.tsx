@@ -10,7 +10,6 @@ import {
   Workflow,
   Mail,
   Home,
-  ArrowRight,
   PlusCircle,
   Sun,
   Moon,
@@ -101,12 +100,6 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   const isRtl = locale === 'ar';
   const dialogRef = useModalA11y<HTMLDivElement>(isOpen);
   const isDark = theme === 'dark';
-
-  // Detect platform modifier symbol (⌘ vs Ctrl)
-  const isMac = useMemo(() => {
-    if (typeof navigator === 'undefined') return true;
-    return /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || navigator.platform);
-  }, []);
 
   // Reset state and autofocus input on open
   useEffect(() => {

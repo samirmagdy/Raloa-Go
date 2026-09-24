@@ -42,7 +42,6 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
     return `https://raloa.me/?template=${encodeURIComponent(template.id)}`;
   };
 
-  const templateUrl = getTemplateUrl();
   const displayUrl = `raloa.app/?template=${template.id}`;
 
   const handleCopyUrl = async () => {
