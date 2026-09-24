@@ -1,0 +1,32 @@
+{
+  "name": "RALOA — Beautiful Mini-Sites for Creators",
+  "short_name": "RALOA",
+  "description": "Create a polished mini-site for your links, content, bookings and products. Launch in minutes with RALOA — no coding required.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0F172A",
+  "theme_color": "#5B5CF6",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/brand/raloa-official-mark-black.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/brand/raloa-official-mark-black.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/brand/raloa-mark-primary.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["productivity", "social", "business"],
+  "lang": "en",
+  "dir": "auto"
+}
