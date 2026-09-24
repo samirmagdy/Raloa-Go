@@ -43,6 +43,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (code === 'auth/weak-password') {
       return isRtl ? 'كلمة المرور يجب أن تتكون من 6 أحرف على الأقل.' : 'Password should be at least 6 characters.';
     }
+    if (code === 'auth/unauthorized-domain') {
+      const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+      return isRtl
+        ? `النطاق الحالي (${currentHost}) غير مضاف في نطاقات Firebase Auth المصرح بها. يرجى إضافته في Firebase Console > Authentication > Settings > Authorized domains، أو يمكنك استخدام التسجيل بالبريد وكلمة المرور مباشرة.`
+        : `Domain "${currentHost}" is not authorized in Firebase Auth. Add it under Firebase Console > Authentication > Settings > Authorized domains, or use Email & Password below.`;
+    }
     if (code === 'auth/invalid-email') {
       return isRtl ? 'عنوان البريد الإلكتروني غير صالح.' : 'Invalid email address format.';
     }
