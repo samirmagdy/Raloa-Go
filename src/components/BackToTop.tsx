@@ -14,26 +14,14 @@ export const BackToTop: React.FC<BackToTopProps> = ({ locale }) => {
   const label = isRtl ? 'العودة إلى الأعلى' : 'Back to top';
 
   useEffect(() => {
-    const handleScroll = () => {
-      const heroElement = document.getElementById('hero');
-      if (heroElement) {
-        const heroBottom = heroElement.getBoundingClientRect().bottom;
-        // Button appears when the user scrolls past the hero section
-        setIsVisible(heroBottom < 60);
-      } else {
-        // Fallback if hero isn't found
-        setIsVisible(window.scrollY > 500);
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    window.addEventListener('resize', handleScroll, { passive: true });
-    handleScroll();
-
-    return () => {
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', handleScroll);
-    };
+    const heroElement = document.getElementById('hero');
+    if (!heroElement || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsVisible(!entry.isIntersecting),
+      { threshold: 0.05 }
+    );
+    observer.observe(heroElement);
+    return () => observer.disconnect();
   }, []);
 
   const scrollToTop = () => {
@@ -67,9 +55,6 @@ export const BackToTop: React.FC<BackToTopProps> = ({ locale }) => {
               aria-label={label}
               className="group relative flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/90 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 shadow-[0_8px_24px_rgba(15,23,42,0.12)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.5)] hover:shadow-[0_12px_32px_rgba(99,102,241,0.22)] hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-all duration-200 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 cursor-pointer"
             >
-              {/* Subtle brand glow on hover */}
-              <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-cyan-500/10 via-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-
               {/* Up arrow icon with upward nudge on hover */}
               <ArrowUp className="w-5 h-5 sm:w-5.5 sm:h-5.5 transition-transform duration-200 group-hover:-translate-y-0.5 shrink-0" />
             </button>

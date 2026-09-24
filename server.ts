@@ -684,7 +684,7 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
         <head>
           <meta charset="UTF-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-          <title>526 Invalid SSL / Configuration Pending — ${host}</title>
+          <title>526 Invalid SSL / Configuration Pending - ${host}</title>
           <style>
             body { font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 24px; box-sizing: border-box; }
             .card { background: #131c2e; border: 1px solid #1e293b; border-radius: 24px; padding: 40px; max-width: 540px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
@@ -1474,7 +1474,7 @@ app.get('*', (req: Request, res: Response) => {
 
     if (creator) {
       // Dynamic OpenGraph & Twitter hydration (FR-3.2)
-      const ogTitle = `${creator.name} (@${handle}) — RALOA Mini-Site`;
+      const ogTitle = `${creator.name} (@${handle}) - RALOA Mini-Site`;
       const ogDesc = creator.bio;
       const ogImage = creator.avatar;
 
@@ -1488,52 +1488,52 @@ app.get('*', (req: Request, res: Response) => {
         .replace(/<meta name="twitter:image" content=".*?" \/>/, `<meta name="twitter:image" content="${ogImage}" />`);
     } else {
       // AC-03: Invalid handle 404 metadata
-      const notFoundTitle = `404: Handle @${handle} Available — RALOA`;
+      const notFoundTitle = `404: Handle @${handle} Available - RALOA`;
       html = html.replace(/<title>.*?<\/title>/, `<title>${notFoundTitle}</title>`);
     }
   } else if (requestPath === '/templates') {
     html = html
       .replace(/<title>.*?<\/title>/, '<title>All Templates — RALOA Design Gallery</title>')
-      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Explore All Mini-Site Templates — RALOA" />');
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Explore All Mini-Site Templates - RALOA" />');
   } else if (requestPath === '/pricing') {
     html = html
-      .replace(/<title>.*?<\/title>/, '<title>Pricing Plans — RALOA</title>')
-      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Transparent Pricing Plans — Free & Pro | RALOA" />');
+      .replace(/<title>.*?<\/title>/, '<title>Pricing Plans - RALOA</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Transparent Pricing Plans - Free & Pro | RALOA" />');
   } else if (requestPath === '/features') {
     html = html
-      .replace(/<title>.*?<\/title>/, '<title>Creator Toolkit & Features — RALOA</title>')
-      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="All-in-One Creator Toolkit — RALOA" />');
+      .replace(/<title>.*?<\/title>/, '<title>Creator Toolkit & Features - RALOA</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="All-in-One Creator Toolkit - RALOA" />');
   } else if (requestPath === '/guides') {
     html = html
-      .replace(/<title>.*?<\/title>/, '<title>Guides & Tutorials — RALOA</title>')
-      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Platform Guides and Creator Tutorials — RALOA" />');
+      .replace(/<title>.*?<\/title>/, '<title>Guides & Tutorials - RALOA</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Platform Guides and Creator Tutorials - RALOA" />');
   } else if (requestPath === '/about') {
     html = html
-      .replace(/<title>.*?<\/title>/, '<title>About Us — RALOA</title>')
-      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Our Story and Mission — RALOA" />');
+      .replace(/<title>.*?<\/title>/, '<title>About Us - RALOA</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Our Story and Mission - RALOA" />');
   } else if (requestPath === '/contact') {
     html = html
-      .replace(/<title>.*?<\/title>/, '<title>Contact Support — RALOA</title>')
+      .replace(/<title>.*?<\/title>/, '<title>Contact Support - RALOA</title>')
       .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Contact RALOA Support & Partnerships" />');
   } else if (requestPath.startsWith('/legal/')) {
     const docName = requestPath.replace('/legal/', '').replace(/-/g, ' ');
     const capitalized = docName.charAt(0).toUpperCase() + docName.slice(1);
     html = html
-      .replace(/<title>.*?<\/title>/, `<title>${capitalized} — RALOA Legal</title>`)
-      .replace(/<meta property="og:title" content=".*?" \/>/, `<meta property="og:title" content="${capitalized} — RALOA Legal Terms" />`);
+      .replace(/<title>.*?<\/title>/, `<title>${capitalized} - RALOA Legal</title>`)
+      .replace(/<meta property="og:title" content=".*?" \/>/, `<meta property="og:title" content="${capitalized} - RALOA Legal Terms" />`);
   } else if (requestPath === '/login') {
     html = html
-      .replace(/<title>.*?<\/title>/, '<title>Sign In — RALOA</title>')
+      .replace(/<title>.*?<\/title>/, '<title>Sign In - RALOA</title>')
       .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Sign In to RALOA Studio" />');
   } else if (requestPath === '/register') {
     html = html
-      .replace(/<title>.*?<\/title>/, '<title>Create Your Account — RALOA</title>')
-      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Claim Your Handle & Start Building — RALOA" />');
+      .replace(/<title>.*?<\/title>/, '<title>Create Your Account - RALOA</title>')
+      .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Claim Your Handle & Start Building - RALOA" />');
   }
 
   const routeSeo: Record<string, { description: string; canonical: string }> = {
     '/': {
-      description: 'Create a polished mini-site for your links, content, bookings and products. Launch in minutes with RALOA — no coding required.',
+      description: 'Create a polished mini-site for your links, content, bookings and products. Launch in minutes with RALOA - no coding required.',
       canonical: 'https://raloa.app/'
     },
     '/templates': {

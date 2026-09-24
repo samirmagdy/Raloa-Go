@@ -67,7 +67,7 @@ export const StudioTemplatePreview: React.FC<StudioTemplatePreviewProps> = ({
 
   return (
     <div
-      className="flex lg:col-span-5 flex-col items-center justify-center p-6 min-h-[680px] overflow-y-auto border-t border-slate-200 lg:border-t-0 studio-preview-column print:flex! print:p-2! print:bg-white! print:overflow-visible! transition-all duration-500"
+      className="flex lg:col-span-5 flex-col items-center justify-center p-4 sm:p-6 min-h-[520px] lg:min-h-[680px] max-h-[calc(100dvh-8rem)] lg:max-h-none overflow-y-auto border-t border-slate-200 lg:border-t-0 studio-preview-column print:flex! print:p-2! print:bg-white! print:overflow-visible! transition-all duration-500"
       style={bgContainerProps.stageContainerStyle}
     >
       {/* View Mode Switcher Pill */}

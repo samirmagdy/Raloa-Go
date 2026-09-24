@@ -70,7 +70,7 @@ export const NotFound: React.FC<NotFoundProps> = ({
   return (
     <div
       id="not-found-page"
-      className="min-h-screen flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-200 relative overflow-hidden"
+      className="min-h-[100dvh] flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-200 relative overflow-hidden"
     >
       {/* Background Decorative Ambient Gradients */}
       <div

@@ -5,6 +5,7 @@ import {
   Mail
 } from 'lucide-react';
 import { PremiumMark } from './brand/PremiumMark';
+import { SafeImage } from './SafeImage';
 import { PlatformIcon, PlatformIconName } from './brand/PlatformIcon';
 import { TemplateItem, BackgroundStyle } from '../types';
 import { RaloaMark } from './brand/RaloaLogo';
@@ -197,7 +198,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
           {/* Header Cover Banner (Signature or Banner style) */}
           {(currentBgStyle === 'signature' || currentBgStyle === 'banner') && coverImg && (
             <div className="relative w-full h-28 sm:h-32 overflow-hidden shrink-0 select-none">
-              <img
+              <SafeImage
                 src={coverImg}
                 alt=""
                 className="w-full h-full object-cover scale-105"
@@ -223,7 +224,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                   background: `linear-gradient(135deg, ${effectiveThemeColor}, #9333ea)`
                 }}
               >
-                <img
+                <SafeImage
                   src={template.avatar}
                   alt={template.name}
                   className="w-full h-full object-cover rounded-full bg-slate-100"
@@ -308,13 +309,10 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                         <div className="absolute inset-0 flex items-center justify-center">
                           <PremiumMark className="w-5 h-5" style={{ color: effectiveThemeColor }} />
                         </div>
-                        <img
+                        <SafeImage
                           src={link.thumbnail}
                           alt={link.title}
                           className="relative z-10 w-full h-full object-cover"
-                          onError={(event) => {
-                            event.currentTarget.style.display = 'none';
-                          }}
                         />
                       </div>
                     ) : (

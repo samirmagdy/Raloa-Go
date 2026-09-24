@@ -426,7 +426,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   // 1. Authenticated-Only Gate Screen
   if (!authLoading && !user) {
     return (
-      <main className="min-h-screen w-full bg-slate-950 text-white flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden">
+      <main className="min-h-[100dvh] w-full bg-slate-950 text-white flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden">
         {/* Ambient background styling */}
         <div className="absolute inset-0 bg-radial from-indigo-900/30 via-slate-950 to-slate-950 -z-10 pointer-events-none" />
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -484,7 +484,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 
   // 2. Main Studio / Editor Interface
   return (
-    <main className="min-h-screen w-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans select-none antialiased">
+    <main className="min-h-[100dvh] w-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans antialiased">
       {/* Top Toolbar */}
       <StudioTopToolbar
         handle={username}

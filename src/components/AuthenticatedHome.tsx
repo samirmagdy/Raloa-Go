@@ -328,7 +328,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
   };
 
   return (
-    <div className={`min-h-screen pt-24 pb-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto ${isRtl ? 'font-sans' : 'font-sans'}`}>
+    <div className={`min-h-[100dvh] pt-24 pb-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto ${isRtl ? 'font-sans' : 'font-sans'}`}>
       
       {/* 1. PERSONAL DASHBOARD HERO / HEADER BAR */}
       <section id="personal-dashboard" className="mb-8 scroll-mt-24">

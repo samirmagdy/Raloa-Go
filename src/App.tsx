@@ -38,7 +38,6 @@ const ProjectStatsModal = lazy(() => import('./components/modals/ProjectStatsMod
 const ReferralModal = lazy(() => import('./components/modals/ReferralModal').then((m) => ({ default: m.ReferralModal })));
 import { EasterEggOverlay } from './components/EasterEggOverlay';
 import { LoadingOverlay } from './components/LoadingOverlay';
-import { CustomCursor } from './components/CustomCursor';
 import { getInitialLocale, persistLocale } from './utils/locale';
 import { Theme, getInitialTheme, applyTheme } from './utils/theme';
 import { getInitialSoundEnabled, persistSoundEnabled, ambientSound } from './utils/audio';
@@ -137,12 +136,12 @@ function MainApp() {
     customTitle:
       currentRoute === '404'
         ? locale === 'ar'
-          ? '٤٠٤: الصفحة غير موجودة — RALOA'
-          : '404: Page Not Found — RALOA'
+          ? '٤٠٤: الصفحة غير موجودة - RALOA'
+          : '404: Page Not Found - RALOA'
         : currentRoute === 'templates'
           ? locale === 'ar'
-            ? 'معرض قوالب رالوا — جميع التصاميم'
-            : 'All Templates — RALOA Design Gallery'
+            ? 'معرض قوالب رالوا - جميع التصاميم'
+            : 'All Templates - RALOA Design Gallery'
           : undefined,
     customDescription:
       currentRoute === '404'
@@ -251,7 +250,7 @@ function MainApp() {
     return eggParam ? eggParam.toUpperCase() : null;
   });
 
-  // Global listener for secret key sequence (e.g. 'RALOA' or Konami Code: ↑↑↓↓←→←→BA)
+  // Global listener for the optional secret key sequence.
   const { reset: resetEasterEgg, trigger: triggerEasterEgg } = useGlobalKeyboardListener({
     onTrigger: (sequenceName) => {
       setEasterEggActive(sequenceName);
@@ -265,13 +264,9 @@ function MainApp() {
     persistLocale(locale);
   }, [locale]);
 
-  // Initial page load branded overlay dismissal
+  // Do not hold the page behind a decorative timer. Suspense handles real async boundaries.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 750);
-
-    return () => clearTimeout(timer);
+    setIsLoading(false);
   }, []);
 
   // Synchronize theme with document element and persistence
@@ -622,10 +617,7 @@ function MainApp() {
   ]);
 
   return (
-    <div className={`min-h-screen bg-white dark:bg-slate-950 text-[#0F172A] dark:text-slate-100 transition-colors duration-200 ${locale === 'ar' ? 'font-sans' : 'font-sans'}`}>
-      
-      {/* Keep the editor canvas clean: the system cursor remains available in Studio. */}
-      {!studioOpen && <CustomCursor theme={theme} />}
+    <div className={`min-h-[100dvh] bg-white dark:bg-slate-950 text-[#0F172A] dark:text-slate-100 transition-colors duration-200 ${locale === 'ar' ? 'font-sans' : 'font-sans'}`}>
 
       {/* Global Branded Loading Overlay */}
       <LoadingOverlay isLoading={isLoading} locale={locale} theme={theme} />
@@ -882,7 +874,7 @@ function MainApp() {
     </>
   )}
 
-      {/* --- REAL INTERACTIVE MODALS (0% FAKE IMPLEMENTATION) --- */}
+      {/* - REAL INTERACTIVE MODALS (0% FAKE IMPLEMENTATION) - */}
 
       <Suspense fallback={null}>
       {/* Project Analytics & Stats Modal (Recharts) */}

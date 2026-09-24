@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { motion, useScroll, useSpring } from 'motion/react';
+import React, { useState } from 'react';
+import { motion, useMotionValueEvent, useScroll, useSpring } from 'motion/react';
 
 interface ScrollProgressBarProps {
   isRtl?: boolean;
@@ -8,8 +8,8 @@ interface ScrollProgressBarProps {
 /**
  * ScrollProgressBar
  * A subtle, fixed-position progress bar at the very top of the viewport.
- * Uses hardware-accelerated spring-smoothed scroll progress with RALOA's
- * signature cyan-to-purple brand gradient.
+ * Uses hardware-accelerated spring-smoothed scroll progress with the primary
+ * indigo brand token.
  */
 export const ScrollProgressBar: React.FC<ScrollProgressBarProps> = ({ isRtl = false }) => {
   const { scrollYProgress } = useScroll();
@@ -21,16 +21,9 @@ export const ScrollProgressBar: React.FC<ScrollProgressBarProps> = ({ isRtl = fa
 
   const [isVisible, setIsVisible] = useState(false);
 
-  useEffect(() => {
-    const handleScroll = () => {
-      // Only show when the user has started scrolling down (greater than 4px)
-      setIsVisible(window.scrollY > 4);
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  useMotionValueEvent(scrollYProgress, 'change', (progress) => {
+    setIsVisible(progress > 0.002);
+  });
 
   return (
     <div
@@ -43,13 +36,9 @@ export const ScrollProgressBar: React.FC<ScrollProgressBarProps> = ({ isRtl = fa
       {/* Background track: ultra-subtle transparent tint */}
       <div className="absolute inset-0 bg-slate-200/40 backdrop-blur-xs" />
 
-      {/* Active progress bar with RALOA signature cyan-to-purple gradient */}
+      {/* Active progress bar uses one accent so it does not compete with the hero. */}
       <motion.div
-        className={`h-full w-full shadow-[0_0_10px_rgba(0,112,243,0.45)] ${
-          isRtl
-            ? 'bg-gradient-to-l from-[#00D2FF] via-[#0070F3] to-[#7C3AED]'
-            : 'bg-gradient-to-r from-[#00D2FF] via-[#0070F3] to-[#7C3AED]'
-        }`}
+        className="h-full w-full bg-indigo-600 dark:bg-indigo-400 shadow-[0_0_10px_rgba(91,92,246,0.35)]"
         style={{
           scaleX,
           transformOrigin: isRtl ? 'right' : 'left'

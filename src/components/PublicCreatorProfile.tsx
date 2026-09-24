@@ -18,6 +18,7 @@ import { PlatformIcon, PlatformIconName } from './brand/PlatformIcon';
 import { RaloaLogo } from './brand/RaloaLogo';
 import { recordLinkClick, recordPageView } from '../lib/firebase';
 import { usePageSEO } from '../hooks/usePageSEO';
+import { SafeImage } from './SafeImage';
 
 interface PublicCreatorProfileProps {
   handle: string;
@@ -55,7 +56,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   usePageSEO({
     sectionId: `creator-${cleanHandle}`,
     title: creator
-      ? `${creator.name} (@${cleanHandle}) — RALOA Mini-Site`
+      ? `${creator.name} (@${cleanHandle}) - RALOA Mini-Site`
       : `RALOA Profile`,
     description: creator
       ? (isRtl ? creator.bioAr : creator.bio) || `Check out @${cleanHandle}'s official links and mini-site on RALOA.`
@@ -100,7 +101,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
 
   return (
     <div
-      className="min-h-screen flex flex-col justify-between selection:bg-indigo-500/20 selection:text-indigo-600 transition-colors duration-200 relative overflow-x-hidden"
+      className="min-h-[100dvh] flex flex-col justify-between selection:bg-indigo-500/20 selection:text-indigo-600 transition-colors duration-200 relative overflow-x-hidden"
       style={bgContainerProps.screenContainerStyle}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
@@ -137,7 +138,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
         {/* Cover Banner if present */}
         {creator.coverImage && (
           <div className="w-full h-32 sm:h-40 rounded-3xl overflow-hidden mb-[-48px] shadow-sm relative z-0">
-            <img
+            <SafeImage
               src={creator.coverImage}
               alt=""
               className="w-full h-full object-cover"
@@ -154,7 +155,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
           className="relative z-10 mb-4"
         >
           <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full p-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md shadow-xl border border-white/40">
-            <img
+            <SafeImage
               src={creator.avatar}
               alt={creator.name}
               className="w-full h-full rounded-full object-cover"
@@ -233,7 +234,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
               }}
             >
               {link.thumbnail && (
-                <img
+                <SafeImage
                   src={link.thumbnail}
                   alt=""
                   className="w-11 h-11 rounded-xl object-cover shrink-0 shadow-2xs"

@@ -50,7 +50,7 @@ export const InvalidSslFallback: React.FC<InvalidSslFallbackProps> = ({
   return (
     <div
       id="ssl-fallback-page"
-      className="min-h-screen flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-200 relative overflow-hidden"
+      className="min-h-[100dvh] flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-200 relative overflow-hidden"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
       {/* Decorative ambient gradient backdrop */}

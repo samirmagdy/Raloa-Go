@@ -80,7 +80,7 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div
           dir={isRtl ? 'rtl' : 'ltr'}
-          className={`min-h-screen w-full flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans transition-colors duration-200 ${
+          className={`min-h-[100dvh] w-full flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans transition-colors duration-200 ${
             isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
           }`}
         >

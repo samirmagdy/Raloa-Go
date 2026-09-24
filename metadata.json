@@ -1,6 +1,6 @@
 {
-  "name": "RALOA — Design-first mini-sites",
-  "description": "Create a polished mini-site for your links, content, bookings and products. Launch in minutes with RALOA — no coding required.",
+  "name": "RALOA - Design-first mini-sites",
+  "description": "Create a polished mini-site for your links, content, bookings and products. Launch in minutes with RALOA - no coding required.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

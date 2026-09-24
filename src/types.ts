@@ -75,7 +75,7 @@ export interface PricingPlan {
   name: string;
   nameAr: string;
   priceMonthly: number;
-  priceYearly: number; // monthly equivalent when paid annually
+  priceYearly: number; // total price for one year
   period: string;
   periodAr: string;
   description: string;

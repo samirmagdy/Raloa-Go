@@ -53,14 +53,14 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
     sectionId: 'pricing',
     locale,
     title: isRtl
-      ? 'خطط الأسعار الشفافة — مجانية واحترافية وبدون عمولات | رالوا'
-      : 'Transparent Pricing Plans — Free, Pro & Studio | RALOA',
+      ? 'خطط الأسعار الشفافة - مجانية واحترافية وبدون عمولات | رالوا'
+      : 'Transparent Pricing Plans - Free, Pro & Studio | RALOA',
     description: isRtl
       ? 'ابدأ مجاناً مدى الحياة أو اختر باقة المحترفين للنطاقات المخصصة، بدون عمولات مبيعات، وتحليلات متقدمة ودعم أولوية.'
       : 'Start free forever or unlock custom domains, premium templates, and actionable analytics with RALOA Pro.',
     ogTitle: isRtl
-      ? 'باقات وأسعار رالوا — انطلق مجاناً بدون رسوم خفية'
-      : 'Transparent Pricing with No Hidden Fees — Free & Pro Plans | RALOA',
+      ? 'باقات وأسعار رالوا - انطلق مجاناً بدون رسوم خفية'
+      : 'Transparent Pricing with No Hidden Fees - Free & Pro Plans | RALOA',
     ogDescription: isRtl
       ? 'أسعار واضحة بدون عمولات بيع مخفية. باقة مجانية وباقات احترافية للنطاقات المخصصة وتسييل المحتوى.'
       : 'Transparent pricing for creators who want a polished page today and room to grow tomorrow.',
@@ -120,7 +120,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
         </div>
 
         {/* 3 Pricing Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 items-stretch pt-2 sm:pt-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[0.85fr_1.15fr_1fr] gap-4 sm:gap-6 lg:gap-8 items-stretch pt-2 sm:pt-4">
           {pricingPlans.map((plan) => {
             const isPopular = plan.popular;
             const price = plan.priceMonthly === 0 ? 0 : isYearly ? plan.priceYearly : plan.priceMonthly;
@@ -137,7 +137,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
               >
                 {/* Popular Pill */}
                 {isPopular && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[11px] font-extrabold tracking-wide uppercase shadow-sm">
+                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-indigo-600 text-white text-[11px] font-extrabold tracking-wide uppercase shadow-sm">
                     {t.popularBadge}
                   </div>
                 )}
@@ -157,7 +157,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
                       {formattedPrice}
                     </span>
                     <span className="text-[14px] text-slate-500 dark:text-slate-400 font-medium">
-                      / {isRtl ? plan.periodAr : plan.period}
+                      / {isYearly && plan.priceMonthly > 0 ? (isRtl ? 'سنوياً' : 'year') : (isRtl ? plan.periodAr : plan.period)}
                     </span>
                   </div>
 

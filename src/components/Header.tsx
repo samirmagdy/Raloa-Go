@@ -25,6 +25,7 @@ import { Locale } from '../types';
 import { Theme } from '../utils/theme';
 import { dictionary } from '../data/content';
 import { useAuth } from '../hooks/useAuth';
+import { useMotionValueEvent, useScroll } from 'motion/react';
 
 interface HeaderProps {
   locale: Locale;
@@ -63,6 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [activeSection, setActiveSection] = useState<string>('dashboard');
   const [copiedLink, setCopiedLink] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const { scrollY } = useScroll();
 
   const isRtl = locale === 'ar';
   const isDark = theme === 'dark';
@@ -100,13 +102,9 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 20);
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  useMotionValueEvent(scrollY, 'change', (value) => {
+    setScrolled(value > 20);
+  });
 
   // Track active dashboard section for authenticated user
   useEffect(() => {
@@ -118,24 +116,23 @@ export const Header: React.FC<HeaderProps> = ({
       { id: 'quick-actions', key: 'quick-actions' }
     ];
 
-    const handleScrollSpy = () => {
-      const scrollPosition = window.scrollY + 140;
-      for (let i = sectionIds.length - 1; i >= 0; i--) {
-        const item = sectionIds[i];
-        const el = document.getElementById(item.id);
-        if (el) {
-          const top = el.offsetTop;
-          if (scrollPosition >= top) {
-            setActiveSection(item.key);
-            return;
-          }
-        }
-      }
-      setActiveSection('dashboard');
-    };
-
-    window.addEventListener('scroll', handleScrollSpy, { passive: true });
-    return () => window.removeEventListener('scroll', handleScrollSpy);
+    if (typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (!visible) return;
+        const section = sectionIds.find((item) => item.id === visible.target.id);
+        if (section) setActiveSection(section.key);
+      },
+      { rootMargin: '-20% 0px -65% 0px', threshold: [0.15, 0.5, 0.85] }
+    );
+    sectionIds.forEach(({ id }) => {
+      const element = document.getElementById(id);
+      if (element) observer.observe(element);
+    });
+    return () => observer.disconnect();
   }, [user]);
 
   const authenticatedNavLinks = [
@@ -153,7 +150,7 @@ export const Header: React.FC<HeaderProps> = ({
           if (el) {
             const topOffset = 80;
             const elementPosition = el.getBoundingClientRect().top;
-            window.scrollTo({ top: elementPosition + window.pageYOffset - topOffset, behavior: 'smooth' });
+            window.scrollTo({ top: elementPosition + document.documentElement.scrollTop - topOffset, behavior: 'smooth' });
           } else {
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }
@@ -174,7 +171,7 @@ export const Header: React.FC<HeaderProps> = ({
           if (el) {
             const topOffset = 80;
             const elementPosition = el.getBoundingClientRect().top;
-            window.scrollTo({ top: elementPosition + window.pageYOffset - topOffset, behavior: 'smooth' });
+            window.scrollTo({ top: elementPosition + document.documentElement.scrollTop - topOffset, behavior: 'smooth' });
           }
         }
       }
@@ -193,7 +190,7 @@ export const Header: React.FC<HeaderProps> = ({
           if (el) {
             const topOffset = 80;
             const elementPosition = el.getBoundingClientRect().top;
-            window.scrollTo({ top: elementPosition + window.pageYOffset - topOffset, behavior: 'smooth' });
+            window.scrollTo({ top: elementPosition + document.documentElement.scrollTop - topOffset, behavior: 'smooth' });
           }
         }
       }
@@ -212,7 +209,7 @@ export const Header: React.FC<HeaderProps> = ({
           if (el) {
             const topOffset = 80;
             const elementPosition = el.getBoundingClientRect().top;
-            window.scrollTo({ top: elementPosition + window.pageYOffset - topOffset, behavior: 'smooth' });
+            window.scrollTo({ top: elementPosition + document.documentElement.scrollTop - topOffset, behavior: 'smooth' });
           }
         }
       }
@@ -253,7 +250,7 @@ export const Header: React.FC<HeaderProps> = ({
     if (element) {
       const topOffset = 80;
       const elementPosition = element.getBoundingClientRect().top;
-      const offsetPosition = elementPosition + window.pageYOffset - topOffset;
+      const offsetPosition = elementPosition + document.documentElement.scrollTop - topOffset;
       window.scrollTo({
         top: offsetPosition,
         behavior: 'smooth'

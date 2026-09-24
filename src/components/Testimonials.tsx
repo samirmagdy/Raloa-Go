@@ -2,6 +2,7 @@ import React from 'react';
 import { Star, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { Locale } from '../types';
 import { testimonialsData, dictionary } from '../data/content';
+import { SafeImage } from './SafeImage';
 
 interface TestimonialsProps {
   locale: Locale;
@@ -60,7 +61,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ locale, onSeeMoreSto
               {/* Author Info */}
               <div className="flex items-center justify-center lg:justify-start gap-3 mt-4 sm:mt-6 pt-4 sm:pt-5 border-t border-slate-100 dark:border-slate-800 w-full">
                 <div className="relative">
-                  <img
+                  <SafeImage
                     src={item.avatar}
                     alt={item.author}
                     className="w-11 h-11 rounded-full object-cover border border-slate-200 dark:border-slate-700"

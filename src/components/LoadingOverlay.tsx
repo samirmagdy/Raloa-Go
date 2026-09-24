@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { Locale } from '../types';
 import { Theme } from '../utils/theme';
 
@@ -16,6 +16,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
 }) => {
   const isDark = theme === 'dark';
   const isRtl = locale === 'ar';
+  const prefersReducedMotion = useReducedMotion();
 
   return (
     <AnimatePresence>
@@ -59,13 +60,10 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
             <div className="relative flex items-center justify-center mb-6">
               {/* Pulsing Aura Ring */}
               <motion.div
-                animate={{
-                  scale: [1, 1.25, 1],
-                  opacity: [0.35, 0.7, 0.35]
-                }}
+                animate={prefersReducedMotion ? { scale: 1, opacity: 0.5 } : { scale: [1, 1.25, 1], opacity: [0.35, 0.7, 0.35] }}
                 transition={{
                   duration: 2.2,
-                  repeat: Infinity,
+                  repeat: prefersReducedMotion ? 0 : Infinity,
                   ease: 'easeInOut'
                 }}
                 className="absolute w-24 h-24 rounded-full bg-gradient-to-tr from-indigo-500/30 to-purple-500/20 blur-md pointer-events-none"
@@ -73,12 +71,10 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
 
               {/* Central Raloa Monogram Mark */}
               <motion.div
-                animate={{
-                  scale: [0.97, 1.03, 0.97]
-                }}
+                animate={prefersReducedMotion ? { scale: 1 } : { scale: [0.97, 1.03, 0.97] }}
                 transition={{
                   duration: 2.2,
-                  repeat: Infinity,
+                  repeat: prefersReducedMotion ? 0 : Infinity,
                   ease: 'easeInOut'
                 }}
                 className="relative z-10 drop-shadow-[0_8px_24px_rgba(99,102,241,0.25)]"
@@ -103,12 +99,10 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
               {/* Shimmer Progress Track */}
               <div className="w-48 sm:w-56 h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mx-auto mt-4">
                 <motion.div
-                  animate={{
-                    x: ['-100%', '100%']
-                  }}
+                  animate={prefersReducedMotion ? { x: '0%' } : { x: ['-100%', '100%'] }}
                   transition={{
                     duration: 1.4,
-                    repeat: Infinity,
+                    repeat: prefersReducedMotion ? 0 : Infinity,
                     ease: 'easeInOut'
                   }}
                   className="w-1/2 h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600 rounded-full"

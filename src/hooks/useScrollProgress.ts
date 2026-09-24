@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { useScroll, useTransform, useSpring, MotionValue } from 'motion/react';
+import { useState } from 'react';
+import { useMotionValueEvent, useScroll, useSpring } from 'motion/react';
 
 export interface ScrollProgressState {
   progress: number; // 0 to 1 normalized
@@ -30,8 +30,6 @@ export function useScrollProgress(options: UseScrollProgressOptions = {}) {
     isPastThreshold: false
   });
 
-  const lastScrollYRef = useRef(0);
-
   // Framer Motion native useScroll integration
   const { scrollYProgress, scrollY } = useScroll(
     targetRef ? { target: targetRef, offset } : {}
@@ -44,42 +42,20 @@ export function useScrollProgress(options: UseScrollProgressOptions = {}) {
     restDelta: 0.001
   });
 
-  useEffect(() => {
-    let ticking = false;
+  useMotionValueEvent(scrollY, 'change', (currentY) => {
+    const previousY = scrollY.getPrevious() ?? currentY;
+    const direction = currentY > previousY ? 'down' : currentY < previousY ? 'up' : 'idle';
+    setScrollState((previous) => ({
+      ...previous,
+      scrollY: currentY,
+      direction,
+      isPastThreshold: currentY > threshold
+    }));
+  });
 
-    const handleScroll = () => {
-      if (!ticking) {
-        window.requestAnimationFrame(() => {
-          const currentY = window.scrollY;
-          const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
-          const progress = maxScroll > 0 ? Math.min(Math.max(currentY / maxScroll, 0), 1) : 0;
-          const direction =
-            currentY > lastScrollYRef.current
-              ? 'down'
-              : currentY < lastScrollYRef.current
-              ? 'up'
-              : 'idle';
-
-          lastScrollYRef.current = currentY;
-
-          setScrollState({
-            progress,
-            scrollY: currentY,
-            direction,
-            isPastThreshold: currentY > threshold
-          });
-
-          ticking = false;
-        });
-
-        ticking = true;
-      }
-    };
-
-    handleScroll();
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [threshold]);
+  useMotionValueEvent(scrollYProgress, 'change', (progress) => {
+    setScrollState((previous) => ({ ...previous, progress }));
+  });
 
   return {
     ...scrollState,

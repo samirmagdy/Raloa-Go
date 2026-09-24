@@ -36,7 +36,7 @@ export const ScrollSpyDots: React.FC<ScrollSpyDotsProps> = ({ locale }) => {
 
     const headerOffset = 76;
     const elementPosition = el.getBoundingClientRect().top;
-    const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+    const offsetPosition = elementPosition + document.documentElement.scrollTop - headerOffset;
 
     window.scrollTo({
       top: offsetPosition,
@@ -80,13 +80,6 @@ export const ScrollSpyDots: React.FC<ScrollSpyDotsProps> = ({ locale }) => {
           }
         });
 
-        // Corner boundaries: Top of page locks to hero, bottom locks to newsletter
-        if (window.scrollY < 120) {
-          bestId = SECTIONS[0].id;
-        } else if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80) {
-          bestId = SECTIONS[SECTIONS.length - 1].id;
-        }
-
         if (bestId && maxScore > 0) {
           setActiveSection((prev) => (prev !== bestId ? bestId : prev));
         }
@@ -102,19 +95,8 @@ export const ScrollSpyDots: React.FC<ScrollSpyDotsProps> = ({ locale }) => {
       if (el) observer.observe(el);
     });
 
-    // Fallback scroll listener for rapid flick scrolling
-    const onScrollFallback = () => {
-      if (window.scrollY < 80) {
-        setActiveSection((prev) => (prev !== SECTIONS[0].id ? SECTIONS[0].id : prev));
-      } else if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 60) {
-        setActiveSection((prev) => (prev !== SECTIONS[SECTIONS.length - 1].id ? SECTIONS[SECTIONS.length - 1].id : prev));
-      }
-    };
-    window.addEventListener('scroll', onScrollFallback, { passive: true });
-
     return () => {
       observer.disconnect();
-      window.removeEventListener('scroll', onScrollFallback);
     };
   }, []);
 

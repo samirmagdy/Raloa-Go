@@ -4,6 +4,7 @@ import { Locale } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { useAuth } from '../../hooks/useAuth';
 import { saveBookingAppointment, saveStoreOrder } from '../../lib/firebase';
+import { SafeImage } from '../SafeImage';
 
 interface MiniSiteDemoModalProps {
   type: 'portfolio' | 'booking' | 'shop' | 'gear' | null;
@@ -104,10 +105,10 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
             </div>
             <div>
               <h3 id="mini-site-dialog-title" className="font-bold text-[15px] text-slate-900 dark:text-white leading-tight">
-                {type === 'portfolio' && (isRtl ? 'معرض الأعمال — إيلينا روستوفا' : 'Portfolio — Elena Rostova')}
-                {type === 'booking' && (isRtl ? 'حجز جلسة استشارية أو تصوير' : 'Book a Session — Elena Rostova')}
+                {type === 'portfolio' && (isRtl ? 'معرض الأعمال - إيلينا روستوفا' : 'Portfolio - Elena Rostova')}
+                {type === 'booking' && (isRtl ? 'حجز جلسة استشارية أو تصوير' : 'Book a Session - Elena Rostova')}
                 {type === 'shop' && (isRtl ? 'متجر المطبوعات الفنية' : 'Shop Limited Edition Prints')}
-                {type === 'gear' && (isRtl ? 'معدات التصوير والإنتاج' : 'Elena’s Architectural Kit')}
+                {type === 'gear' && (isRtl ? 'معدات التصوير والإنتاج' : "Elena's Architectural Kit")}
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">raloa.app/@elena</p>
             </div>
@@ -162,7 +163,7 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
                   }
                 ].map((item, idx) => (
                   <div key={idx} className="group relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
-                    <img src={item.url} alt={item.title} className="w-full h-36 object-cover group-hover:scale-105 transition-transform duration-300" />
+                    <SafeImage src={item.url} alt={item.title} className="w-full h-36 object-cover group-hover:scale-105 transition-transform duration-300" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-2.5">
                       <span className="text-[11px] font-medium text-white">{item.title}</span>
                     </div>
@@ -289,7 +290,7 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
           {type === 'shop' && (
             <div className="space-y-4">
               <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative">
-                <img
+                <SafeImage
                   src="https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=600&q=80"
                   alt="Minimal Shadow Study"
                   className="w-full h-44 object-cover"

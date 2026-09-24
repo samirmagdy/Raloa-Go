@@ -20,6 +20,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { SafeImage } from '../SafeImage';
 import {
   GripVertical,
   Trash2,
@@ -139,7 +140,7 @@ const BlockCardView: React.FC<BlockCardViewProps> = ({
       {/* Visual Thumbnail or Type Icon Avatar */}
       <div className="relative w-10 h-10 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 flex items-center justify-center">
         {item.thumbnail ? (
-          <img
+          <SafeImage
             src={item.thumbnail}
             alt={item.title}
             className="w-full h-full object-cover"

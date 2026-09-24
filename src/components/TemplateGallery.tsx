@@ -4,6 +4,7 @@ import { Locale, TemplateItem } from '../types';
 import { templatesData, dictionary } from '../data/content';
 import { TemplateSnapshotPopover } from './TemplateSnapshotPopover';
 import { usePageSEO } from '../hooks/usePageSEO';
+import { SafeImage } from './SafeImage';
 
 interface TemplateGalleryProps {
   locale: Locale;
@@ -61,14 +62,14 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
     sectionId: 'templates',
     locale,
     title: isRtl
-      ? 'معرض قوالب وتصاميم رالوا — مواقع مصغرة متجاوبة لصناع المحتوى'
-      : 'Curated Mini-Site Templates & Creator Themes — RALOA',
+      ? 'معرض قوالب وتصاميم رالوا - مواقع مصغرة متجاوبة لصناع المحتوى'
+      : 'Curated Mini-Site Templates & Creator Themes - RALOA',
     description: isRtl
       ? 'استعرض قوالب تفاعلية أنيقة مصممة لزيادة التفاعل والمبيعات لصناع المحتوى، المصورين، والمدربين. انطلق في دقائق.'
       : 'Explore curated, conversion-crafted aesthetic templates for digital creators, photographers, educators, coaches and modern businesses.',
     ogTitle: isRtl
-      ? 'استكشف قوالب رالوا للمواقع المصغرة — تصاميم حصرية'
-      : 'Explore Beautiful Mini-Site Templates — RALOA Gallery',
+      ? 'استكشف قوالب رالوا للمواقع المصغرة - تصاميم حصرية'
+      : 'Explore Beautiful Mini-Site Templates - RALOA Gallery',
     ogDescription: isRtl
       ? 'تصفح قوالب رالوا المتوافقة مع كافة الهواتف والأجهزة. تصاميم بصرية مميزة تدعم صفحات وروابط متعددة بدون أي كود برمجي.'
       : 'Browse dozens of hand-crafted starter designs for musicians, creators, coaches, and agencies. Live interactive previews with multi-page support.',
@@ -104,17 +105,12 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
       setHoveredState(null);
     };
 
-    window.addEventListener('scroll', handleScrollOrResize, { passive: true });
-    window.addEventListener('resize', handleScrollOrResize, { passive: true });
-    
     const scroller = scrollRef.current;
     if (scroller) {
       scroller.addEventListener('scroll', handleScrollOrResize, { passive: true });
     }
 
     return () => {
-      window.removeEventListener('scroll', handleScrollOrResize);
-      window.removeEventListener('resize', handleScrollOrResize);
       if (scroller) {
         scroller.removeEventListener('scroll', handleScrollOrResize);
       }
@@ -211,7 +207,7 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
             >
               {/* Thumbnail Container */}
               <div className="relative aspect-[3/4] w-full rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 mb-3">
-                <img
+                <SafeImage
                   src={template.avatar}
                   alt={template.name}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"

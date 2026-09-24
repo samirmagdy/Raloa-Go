@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Check, ArrowRight, AlertCircle, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
-import { motion, useTransform } from 'motion/react';
+import { motion, useReducedMotion, useTransform } from 'motion/react';
 import { Locale, TemplateItem, BackgroundStyle } from '../types';
 import { dictionary } from '../data/content';
 import { PhoneMockup } from './PhoneMockup';
@@ -41,6 +41,7 @@ export const Hero: React.FC<HeroProps> = ({
 
   const isRtl = locale === 'ar';
   const t = dictionary[locale].hero;
+  const prefersReducedMotion = useReducedMotion();
 
   const heroRef = useRef<HTMLElement>(null);
 
@@ -104,9 +105,6 @@ export const Hero: React.FC<HeroProps> = ({
   const phoneRotate = useTransform(smoothProgress, [0, 1], [0, isRtl ? 3.5 : -3.5]);
   const phoneScale = useTransform(smoothProgress, [0, 0.7, 1], [1, 0.98, 0.94]);
 
-  const glowY = useTransform(smoothProgress, [0, 1], [0, 60]);
-  const glowScale = useTransform(smoothProgress, [0, 1], [1, 1.15]);
-
   const validateAndSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanUsername = username.trim().toLowerCase();
@@ -121,7 +119,7 @@ export const Hero: React.FC<HeroProps> = ({
       setError(
         isRtl
           ? 'يجب أن يتكون الاسم من ٣-٣٠ حرفاً إنجليزياً أو أرقام أو شرطات'
-          : 'Username must be 3–30 alphanumeric characters, dashes or underscores'
+          : 'Username must be 3-30 alphanumeric characters, dashes or underscores'
       );
       return;
     }
@@ -159,7 +157,7 @@ export const Hero: React.FC<HeroProps> = ({
     <section
       ref={heroRef}
       id="hero"
-      className="relative isolate pt-[76px] sm:pt-[100px] md:pt-[124px] pb-10 sm:pb-16 md:pb-24 overflow-hidden bg-[#F8FAFC] dark:bg-slate-950 transition-colors duration-200"
+      className="relative isolate pt-16 sm:pt-20 md:pt-24 pb-10 sm:pb-16 md:pb-24 overflow-hidden bg-[#F8FAFC] dark:bg-slate-950 transition-colors duration-200"
     >
       {/* Approved RALOA hero artwork, with a restrained pattern layer for depth. */}
       <div
@@ -169,12 +167,6 @@ export const Hero: React.FC<HeroProps> = ({
       <div
         aria-hidden="true"
         className="absolute inset-0 -z-20 hidden bg-[url('/graphics/hero-background-dark-1920x1080.webp')] bg-cover bg-center dark:block"
-      />
-
-      {/* Decorative ambient subtle glow with scroll parallax */}
-      <motion.div
-        style={{ y: glowY, scale: glowScale }}
-        className="absolute top-10 left-1/2 -translate-x-1/2 w-[700px] h-[500px] bg-gradient-to-tr from-indigo-200/30 to-purple-200/20 dark:from-indigo-600/10 dark:to-purple-600/10 blur-3xl rounded-full pointer-events-none -z-10"
       />
 
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
@@ -317,7 +309,7 @@ export const Hero: React.FC<HeroProps> = ({
           </div>
 
           {/* Right Column: 45% split (lg:col-span-5) */}
-          <div className="lg:col-span-5 relative flex items-center justify-center">
+          <div className="lg:col-span-5 relative isolate w-full max-w-[520px] lg:max-w-none mx-auto flex items-center justify-center py-6 sm:py-10 lg:py-0">
             
             {/* Phone Mockup with scroll-linked parallax, rotation, and gentle float */}
             <motion.div
@@ -331,17 +323,13 @@ export const Hero: React.FC<HeroProps> = ({
               {/* Dynamic entrance glide + infinite subtle breathing oscillation */}
               <motion.div
                 initial={{ opacity: 0, y: 50, scale: 0.9 }}
-                animate={{
-                  opacity: 1,
-                  scale: 1,
-                  y: [0, -10, 0]
-                }}
+                animate={prefersReducedMotion ? { opacity: 1, scale: 1, y: 0 } : { opacity: 1, scale: 1, y: [0, -10, 0] }}
                 transition={{
                   opacity: { duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] },
                   scale: { duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] },
                   y: {
                     duration: 4.8,
-                    repeat: Infinity,
+                    repeat: prefersReducedMotion ? 0 : Infinity,
                     ease: 'easeInOut',
                     delay: 1.0
                   }
@@ -358,7 +346,7 @@ export const Hero: React.FC<HeroProps> = ({
                   />
 
                   {/* FR-2.2 Embedded Client-Side Interactive Canvas Preview Controls (No Auth Required) */}
-                  <div className="mt-3 max-w-full overflow-x-auto no-scrollbar sm:max-w-none sm:overflow-visible inline-flex items-center gap-1 p-1.5 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 shadow-md text-xs font-semibold z-20">
+                  <div className="mt-3 w-full max-w-[320px] sm:max-w-none overflow-x-auto no-scrollbar sm:overflow-visible flex sm:inline-flex items-center justify-start sm:justify-center gap-1 p-1.5 rounded-2xl sm:rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 shadow-md text-xs font-semibold z-20">
                     <span className="px-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider select-none">
                       {isRtl ? 'المعاينة الحية:' : 'Live Canvas:'}
                     </span>
@@ -382,7 +370,7 @@ export const Hero: React.FC<HeroProps> = ({
                       onClick={() => setPreviewThemeMode((prev) => (prev === 'dark' ? 'light' : 'dark'))}
                       className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 transition-colors cursor-pointer"
                     >
-                      {previewThemeMode === 'dark' ? '🌙 Dark' : '☀️ Light'}
+                      {previewThemeMode === 'dark' ? 'Dark' : 'Light'}
                     </button>
                   </div>
                 </div>
@@ -395,7 +383,7 @@ export const Hero: React.FC<HeroProps> = ({
               initial={{ opacity: 0, scale: 0, rotate: -15 }}
               animate={{ opacity: 1, scale: 1, rotate: 0 }}
               transition={{ type: 'spring', stiffness: 260, damping: 20, delay: 0.55 }}
-              className="hidden sm:block absolute top-0 left-0 md:-left-2 z-20 pointer-events-none"
+              className="hidden md:block absolute top-0 left-0 lg:-left-2 z-20 pointer-events-none"
             >
               <div className="flex flex-col items-end">
                 <AnnotationCard rotation="-rotate-3">
@@ -411,7 +399,7 @@ export const Hero: React.FC<HeroProps> = ({
               initial={{ opacity: 0, scale: 0, rotate: 15 }}
               animate={{ opacity: 1, scale: 1, rotate: 0 }}
               transition={{ type: 'spring', stiffness: 260, damping: 20, delay: 0.7 }}
-              className="hidden sm:block absolute bottom-[-4rem] left-0 md:-left-2 z-20 pointer-events-none"
+              className="hidden md:block absolute bottom-[-1.5rem] left-0 lg:-left-2 z-20 pointer-events-none"
             >
               <div className="flex flex-col items-end">
                 <CurvedArrowUpRight className="mb-1 mr-2" />
@@ -427,7 +415,7 @@ export const Hero: React.FC<HeroProps> = ({
               initial={{ opacity: 0, scale: 0, rotate: 20 }}
               animate={{ opacity: 1, scale: 1, rotate: 0 }}
               transition={{ type: 'spring', stiffness: 260, damping: 20, delay: 0.62 }}
-              className="hidden sm:block absolute top-4 right-0 md:-right-2 z-20 pointer-events-none"
+              className="hidden md:block absolute top-4 right-0 lg:-right-2 z-20 pointer-events-none"
             >
               <div className="flex flex-col items-start">
                 <AnnotationCard rotation="rotate-3">
@@ -443,7 +431,7 @@ export const Hero: React.FC<HeroProps> = ({
               initial={{ opacity: 0, scale: 0.4, x: 25 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
               transition={{ type: 'spring', stiffness: 220, damping: 18, delay: 0.8 }}
-              className="hidden sm:block absolute top-[48%] right-0 md:-right-4 -translate-y-1/2 z-20"
+              className="hidden md:block absolute top-[48%] right-0 lg:-right-4 -translate-y-1/2 z-20"
             >
               <FloatingMetricBadge
                 metric={locale === 'ar' ? '+٣٠٠٪' : '+300%'}

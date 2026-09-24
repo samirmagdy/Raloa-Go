@@ -44,14 +44,14 @@ export const FeatureGrid: React.FC<FeatureGridProps> = ({ locale, onExploreFeatu
     sectionId: 'features',
     locale,
     title: isRtl
-      ? 'مميزات وأدوات صناع المحتوى المتكاملة — رالوا'
-      : 'Creator Tools & Integrated Mini-Site Features — RALOA',
+      ? 'مميزات وأدوات صناع المحتوى المتكاملة - رالوا'
+      : 'Creator Tools & Integrated Mini-Site Features - RALOA',
     description: isRtl
       ? 'نطاقات مخصصة، متجر رقمي متكامل، نظام حجز مواعيد، معارض وسائط متقدمة، وتحليلات فورية في منصة موحدة.'
       : 'Custom domains, polished portfolio pages, real-time analytics, and SEO essentials in one place.',
     ogTitle: isRtl
-      ? 'أدوات ومميزات متطورة لصناع المحتوى والمهنيين — رالوا'
-      : 'All-in-One Creator Toolkit — Modern Mini-Sites by RALOA',
+      ? 'أدوات ومميزات متطورة لصناع المحتوى والمهنيين - رالوا'
+      : 'All-in-One Creator Toolkit - Modern Mini-Sites by RALOA',
     ogDescription: isRtl
       ? 'كل ما يحتاجه المبدع في منصة واحدة: نطاقات خاصة، مبيعات بدون عمولة، حجوزات مباشرة وتحليلات فورية.'
       : 'Everything you need: custom domains, premium templates, and actionable visitor analytics.',
@@ -64,22 +64,22 @@ export const FeatureGrid: React.FC<FeatureGridProps> = ({ locale, onExploreFeatu
 
     switch (name) {
       case 'globe':
-        return <Globe className="w-5 h-5 text-blue-600" />;
+        return <Globe className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />;
       case 'calendar':
-        return <Calendar className="w-5 h-5 text-pink-600" />;
+        return <Calendar className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />;
       case 'shopping-bag':
-        return <ShoppingBag className="w-5 h-5 text-purple-600" />;
+        return <ShoppingBag className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />;
       case 'bar-chart-3':
-        return <BarChart3 className="w-5 h-5 text-blue-600" />;
+        return <BarChart3 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />;
       case 'image':
-        return <Image className="w-5 h-5 text-sky-600" />;
+        return <Image className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />;
       case 'share-2':
-        return <Share2 className="w-5 h-5 text-emerald-600" />;
+        return <Share2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />;
       case 'search':
-        return <Search className="w-5 h-5 text-teal-600" />;
+        return <Search className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />;
       case 'sliders':
       default:
-        return <Sliders className="w-5 h-5 text-amber-600" />;
+        return <Sliders className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />;
     }
   };
 
@@ -110,16 +110,17 @@ export const FeatureGrid: React.FC<FeatureGridProps> = ({ locale, onExploreFeatu
           </button>
         </div>
 
-        {/* 8-Card Grid (4x2 on desktop, 2x4 on tablet, 1x8 on mobile) */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
-          {featuresList.map((item) => (
+        {/* Grouped capability grid: one lead capability, then supporting capabilities. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 sm:gap-5">
+          {featuresList.map((item, index) => (
             <div
               key={item.id}
-              className="bg-white dark:bg-slate-900 rounded-[20px] p-4 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-[0_4px_16px_rgba(15,23,42,0.03)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_28px_rgba(0,0,0,0.5)] transition-all duration-300 group hover:-translate-y-1 flex flex-col items-center text-center lg:items-start lg:text-start"
+              className={`bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-[0_4px_16px_rgba(15,23,42,0.03)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_28px_rgba(0,0,0,0.5)] transition-all duration-300 group hover:-translate-y-1 flex flex-col items-center text-center lg:items-start lg:text-start ${
+                index === 0 ? 'lg:col-span-6' : index < 4 ? 'lg:col-span-2' : 'lg:col-span-3'
+              }`}
             >
               <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center mb-5 transition-transform group-hover:scale-110 duration-200"
-                style={{ backgroundColor: item.bgColor }}
+                className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center mb-5 transition-transform group-hover:scale-110 duration-200"
               >
                 {renderIcon(item.icon)}
               </div>

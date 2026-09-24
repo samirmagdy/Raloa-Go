@@ -62,14 +62,14 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
 
       {/* Bottom Sticky Navigation Bar */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-30 lg:hidden h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 flex items-center justify-around px-2 select-none"
+        className="fixed bottom-0 left-0 right-0 z-30 lg:hidden min-h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 flex items-center justify-around px-2 pb-[env(safe-area-inset-bottom)] select-none"
         dir={isRtl ? 'rtl' : 'ltr'}
       >
         {/* 1. Content */}
         <button
           type="button"
           onClick={() => handleTabClick('content')}
-          className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors cursor-pointer ${
+          className={`flex min-h-11 flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors cursor-pointer ${
             activeTab === 'content'
               ? 'text-indigo-600 dark:text-indigo-400 font-bold'
               : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
@@ -83,7 +83,7 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
         <button
           type="button"
           onClick={() => handleTabClick('design')}
-          className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors cursor-pointer ${
+          className={`flex min-h-11 flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors cursor-pointer ${
             activeTab === 'design'
               ? 'text-indigo-600 dark:text-indigo-400 font-bold'
               : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
@@ -97,7 +97,7 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
         <button
           type="button"
           onClick={() => handleTabClick('analytics')}
-          className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors cursor-pointer ${
+          className={`flex min-h-11 flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors cursor-pointer ${
             activeTab === 'analytics'
               ? 'text-indigo-600 dark:text-indigo-400 font-bold'
               : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
@@ -111,7 +111,7 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
         <button
           type="button"
           onClick={() => setMoreDrawerOpen(true)}
-          className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors cursor-pointer ${
+          className={`flex min-h-11 flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors cursor-pointer ${
             activeTab === 'audience' || activeTab === 'settings'
               ? 'text-indigo-600 dark:text-indigo-400 font-bold'
               : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'

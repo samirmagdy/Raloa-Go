@@ -43,30 +43,30 @@ export interface UseSEOReturn {
 export const SECTION_SEO_REGISTRY: Record<string, Record<Locale, SectionSEOMetadata>> = {
   hero: {
     en: {
-      title: 'RALOA — Beautiful Mini-Sites for Creators, Freelancers & Businesses',
-      description: 'Create a polished mini-site for your links, content, bookings and products. Launch in minutes with RALOA — no coding required.',
-      ogTitle: 'RALOA — Beautiful Mini-Sites for Creators & Brands',
+      title: 'RALOA - Beautiful Mini-Sites for Creators, Freelancers & Businesses',
+      description: 'Create a polished mini-site for your links, content, bookings and products. Launch in minutes with RALOA - no coding required.',
+      ogTitle: 'RALOA - Beautiful Mini-Sites for Creators & Brands',
       ogDescription: 'Launch your high-converting mini-site in under 3 minutes. Total design freedom, multi-page layout, and zero code required.',
       twitterCard: 'summary_large_image'
     },
     ar: {
-      title: 'رالوا — مواقع مصغرة استثنائية لصناع المحتوى والمهنيين والأنشطة التجارية',
-      description: 'أنشئ موقعك المصغر الاحترافي لروابطك، منتجاتك، محتواك وحجوزاتك في دقائق معدودة مع رالوا — بدون الحاجة لأي خبرة برمجية.',
-      ogTitle: 'رالوا — المنصة المتكاملة للمواقع المصغرة وبايو الحسابات',
+      title: 'رالوا - مواقع مصغرة استثنائية لصناع المحتوى والمهنيين والأنشطة التجارية',
+      description: 'أنشئ موقعك المصغر الاحترافي لروابطك، منتجاتك، محتواك وحجوزاتك في دقائق معدودة مع رالوا - بدون الحاجة لأي خبرة برمجية.',
+      ogTitle: 'رالوا - المنصة المتكاملة للمواقع المصغرة وبايو الحسابات',
       ogDescription: 'أطلق موقعك المصغر الاحترافي في دقائق معدودة. حرية كاملة بالتصميم ودعم صفحات متعددة بدون أي خبرة برمجية.',
       twitterCard: 'summary_large_image'
     }
   },
   benefits: {
     en: {
-      title: 'Creator Benefits & Platform Trust — RALOA',
+      title: 'Creator Benefits & Platform Trust - RALOA',
       description: 'Zero setup friction, 99.9% uptime global edge CDN, lightning-fast mobile loading, and total design freedom for your brand.',
-      ogTitle: 'Why Top Creators Choose RALOA — Performance & Trust',
+      ogTitle: 'Why Top Creators Choose RALOA - Performance & Trust',
       ogDescription: 'Zero setup friction, global edge CDN speeds, and full design freedom. Elevate your online presence with RALOA.',
       twitterCard: 'summary_large_image'
     },
     ar: {
-      title: 'مزايا المبدعين وثقة المنصة — رالوا',
+      title: 'مزايا المبدعين وثقة المنصة - رالوا',
       description: 'إطلاق فوري وسلس، شبكة توزيع محتوى فائقة السرعة، أداء مثالي على الهواتف وحرية كاملة لتخصيص علامتك التجارية.',
       ogTitle: 'لماذا يفضل المبدعون منصة رالوا؟ سرعة وأمان وحرية تصميم',
       ogDescription: 'سرعة فائقة على شبكات التوزيع العالمية، حماية متقدمة، وأداء لا يضاهى على الهواتف الذكية.',
@@ -75,14 +75,14 @@ export const SECTION_SEO_REGISTRY: Record<string, Record<Locale, SectionSEOMetad
   },
   templates: {
     en: {
-      title: 'Templates & Curated Themes — RALOA Mini-Sites',
+      title: 'Templates & Curated Themes - RALOA Mini-Sites',
       description: 'Explore curated, conversion-crafted aesthetic templates for digital creators, photographers, educators, coaches and modern businesses.',
-      ogTitle: 'Explore Beautiful Mini-Site Templates — RALOA Gallery',
+      ogTitle: 'Explore Beautiful Mini-Site Templates - RALOA Gallery',
       ogDescription: 'Browse dozens of hand-crafted starter designs for musicians, creators, coaches, and agencies. Live interactive previews available.',
       twitterCard: 'summary_large_image'
     },
     ar: {
-      title: 'قوالب وتصاميم مميزة — رالوا',
+      title: 'قوالب وتصاميم مميزة - رالوا',
       description: 'استعرض قوالب تفاعلية أنيقة مصممة لزيادة التفاعل والمبيعات لصناع المحتوى، المصورين، المدربين ورواد الأعمال.',
       ogTitle: 'معرض قوالب وتصاميم رالوا الجاهزة للإطلاق',
       ogDescription: 'قوالب جاهزة ومصممة بأعلى معايير الجمالية والأداء لتحويل الزوار إلى عملاء ومتابعين حقيقيين.',
@@ -91,14 +91,14 @@ export const SECTION_SEO_REGISTRY: Record<string, Record<Locale, SectionSEOMetad
   },
   'how-it-works': {
     en: {
-      title: 'How It Works — Launch in 3 Simple Steps | RALOA',
+      title: 'How It Works - Launch in 3 Simple Steps | RALOA',
       description: 'Pick a template, customize your bio and interactive links, and publish your custom raloa.app link to your bio in under 3 minutes.',
-      ogTitle: 'Build & Publish Your Mini-Site in 3 Steps — RALOA',
-      ogDescription: 'From selecting a starter template to publishing your custom link — see how easy it is to stand out online.',
+      ogTitle: 'Build & Publish Your Mini-Site in 3 Steps - RALOA',
+      ogDescription: 'From selecting a starter template to publishing your custom link - see how easy it is to stand out online.',
       twitterCard: 'summary_large_image'
     },
     ar: {
-      title: 'كيف تعمل المنصة — أطلق موقعك في ٣ خطوات | رالوا',
+      title: 'كيف تعمل المنصة - أطلق موقعك في ٣ خطوات | رالوا',
       description: 'اختر قالبك المفضل، خصص ملفك وروابطك التفاعلية، وانشر رابطك المباشر في بايو حساباتك بكل سهولة.',
       ogTitle: 'كيف تنشئ موقعك المصغر مع رالوا في ٣ خطوات بسيطة',
       ogDescription: 'اختر القالب، خصص الروابط والمحتوى، وانشر رابطك الاحترافي فوراً في جميع منصاتك.',
@@ -107,14 +107,14 @@ export const SECTION_SEO_REGISTRY: Record<string, Record<Locale, SectionSEOMetad
   },
   features: {
     en: {
-      title: 'Creator Tools & Integrated Features — RALOA',
+      title: 'Creator Tools & Integrated Features - RALOA',
       description: 'Custom domains, instant digital storefronts, calendar bookings, portfolio galleries, real-time analytics, and SEO optimization in one place.',
-      ogTitle: 'All-in-One Creator Toolkit — Modern Mini-Sites by RALOA',
+      ogTitle: 'All-in-One Creator Toolkit - Modern Mini-Sites by RALOA',
       ogDescription: 'Everything you need: custom domains, zero commission digital sales, booking schedules, and real-time UTM analytics.',
       twitterCard: 'summary_large_image'
     },
     ar: {
-      title: 'مميزات وأدوات صناع المحتوى — رالوا',
+      title: 'مميزات وأدوات صناع المحتوى - رالوا',
       description: 'نطاقات مخصصة، متجر رقمي متكامل، نظام حجز مواعيد، معارض وسائط متقدمة، وتحليلات فورية في منصة موحدة.',
       ogTitle: 'أدوات ومميزات استثنائية لصناع المحتوى على رالوا',
       ogDescription: 'نطاقات خاصة، مبيعات بدون عمولة، حجوزات مباشرة وتحليلات تفصيلية للزيارات والتحويلات.',
@@ -123,14 +123,14 @@ export const SECTION_SEO_REGISTRY: Record<string, Record<Locale, SectionSEOMetad
   },
   testimonials: {
     en: {
-      title: 'Creator Stories & Reviews — RALOA',
+      title: 'Creator Stories & Reviews - RALOA',
       description: 'See how thousands of creators, artists, educators and founders elevated their link-in-bio into high-converting personal hubs.',
-      ogTitle: 'Creator Stories & Real Reviews — Trusted by Thousands on RALOA',
+      ogTitle: 'Creator Stories & Real Reviews - Trusted by Thousands on RALOA',
       ogDescription: 'Read how modern creators doubled their engagement and monetized their audience with RALOA mini-sites.',
       twitterCard: 'summary_large_image'
     },
     ar: {
-      title: 'قصص وتقييمات المبدعين — رالوا',
+      title: 'قصص وتقييمات المبدعين - رالوا',
       description: 'تعرف على تجارب آلاف المبدعين والفنانين والمدربين الذين طوروا حضورهم الرقمي عبر منصة رالوا.',
       ogTitle: 'تجارب وقصص نجاح صناع المحتوى مع منصة رالوا',
       ogDescription: 'اكتشف كيف ساعدت رالوا آلاف المبدعين على مضاعفة التفاعل وتحقيق عوائد مجزية من محتواهم.',
@@ -139,30 +139,30 @@ export const SECTION_SEO_REGISTRY: Record<string, Record<Locale, SectionSEOMetad
   },
   pricing: {
     en: {
-    title: 'Transparent Pricing Plans — Free, Pro & Studio | RALOA',
+    title: 'Transparent Pricing Plans - Free, Pro & Studio | RALOA',
       description: 'Start free forever or unlock custom domains, zero transaction fees, deep analytics and VIP priority support with RALOA Pro.',
-      ogTitle: 'Transparent Pricing with No Hidden Fees — Free & Pro Plans | RALOA',
+      ogTitle: 'Transparent Pricing with No Hidden Fees - Free & Pro Plans | RALOA',
       ogDescription: 'Start free forever. Upgrade to Pro whenever you want custom domains, zero commission sales, and advanced integrations.',
       twitterCard: 'summary_large_image'
     },
     ar: {
-      title: 'خطط الأسعار الشفافة — مجانية، احترافية وأعمال | رالوا',
+      title: 'خطط الأسعار الشفافة - مجانية، احترافية وأعمال | رالوا',
       description: 'ابدأ مجاناً مدى الحياة أو اختر باقة المحترفين للنطاقات المخصصة، بدون عمولات مبيعات، وتحليلات متقدمة ودعم أولوية.',
-      ogTitle: 'خطط اشتراك شفافة بدون رسوم خفية — رالوا',
+      ogTitle: 'خطط اشتراك شفافة بدون رسوم خفية - رالوا',
       ogDescription: 'ابدأ مجاناً مدى الحياة، أو قم بالترقية للحصول على نطاق خاص وعمولة صفرية على مبيعاتك.',
       twitterCard: 'summary_large_image'
     }
   },
   faq: {
     en: {
-      title: 'Frequently Asked Questions & Support — RALOA',
+      title: 'Frequently Asked Questions & Support - RALOA',
       description: 'Find answers about custom domains, zero commission digital sales, calendar integrations, and switching from other link services.',
-      ogTitle: 'RALOA Help & FAQ — Everything You Need to Know',
+      ogTitle: 'RALOA Help & FAQ - Everything You Need to Know',
       ogDescription: 'Got questions about custom domains, zero fees, or migrating from other platforms? We have all the answers here.',
       twitterCard: 'summary_large_image'
     },
     ar: {
-      title: 'الأسئلة الشائعة والدعم الفني — رالوا',
+      title: 'الأسئلة الشائعة والدعم الفني - رالوا',
       description: 'إجابات شاملة حول النطاقات المخصصة، البيع الرقمي بدون عمولة، ربط التقويم، والتحويل السلس من المنصات الأخرى.',
       ogTitle: 'الأسئلة الأكثر شيوعاً والدعم الفني لمنصة رالوا',
       ogDescription: 'إجابات واضحة ومفصلة حول النطاقات الخاصة، بوابات الدفع، وإعداد حسابك خطوة بخطوة.',

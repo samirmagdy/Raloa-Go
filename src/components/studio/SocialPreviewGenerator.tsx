@@ -51,7 +51,7 @@ export const SocialPreviewGenerator: React.FC<SocialPreviewGeneratorProps> = ({
 }) => {
   const isRtl = locale === 'ar';
 
-  const defaultTitle = `${displayName || 'Creator'} — ${role || 'Portfolio'} | RALOA`;
+  const defaultTitle = `${displayName || 'Creator'} - ${role || 'Portfolio'} | RALOA`;
   const defaultDesc =
     bio ||
     (isRtl
@@ -73,7 +73,7 @@ export const SocialPreviewGenerator: React.FC<SocialPreviewGeneratorProps> = ({
 
   // Sync from profile
   const handleResetToProfile = () => {
-    setOgTitle(`${displayName || 'Creator'} — ${role || 'Portfolio'} | RALOA`);
+    setOgTitle(`${displayName || 'Creator'} - ${role || 'Portfolio'} | RALOA`);
     setOgDesc(
       bio ||
         (isRtl
@@ -88,7 +88,7 @@ export const SocialPreviewGenerator: React.FC<SocialPreviewGeneratorProps> = ({
   // profile edits while preserving manual social-card edits in the full view.
   useEffect(() => {
     if (!isCompact) return;
-    setOgTitle(`${displayName || 'Creator'} — ${role || 'Portfolio'} | RALOA`);
+    setOgTitle(`${displayName || 'Creator'} - ${role || 'Portfolio'} | RALOA`);
     setOgDesc(
       bio ||
         (isRtl
@@ -502,14 +502,14 @@ export const SocialPreviewGenerator: React.FC<SocialPreviewGeneratorProps> = ({
                     <span className="font-bold text-slate-900 text-xs sm:text-sm">
                       {displayName}
                     </span>
-                    <span className="text-[10px] text-slate-400 font-semibold">• 1st</span>
+                    <span className="text-[10px] text-slate-400 font-semibold">- 1st</span>
                   </div>
                   <p className="text-[11px] text-slate-600 truncate max-w-[280px]">
-                    {role} • Creator & Specialist
+                    {role} - Creator & Specialist
                   </p>
                   <p className="text-[10px] text-slate-400 flex items-center gap-1">
                     <span>2h</span>
-                    <span>•</span>
+                    <span>-</span>
                     <Globe className="w-2.5 h-2.5" />
                   </p>
                 </div>
@@ -596,7 +596,7 @@ export const SocialPreviewGenerator: React.FC<SocialPreviewGeneratorProps> = ({
             </div>
 
             <p className="text-center text-[10px] text-slate-400">
-              {isRtl ? 'تم التسليم • معاينة iMessage' : 'Delivered • iMessage Rich Link Preview'}
+              {isRtl ? 'تم التسليم - معاينة iMessage' : 'Delivered - iMessage Rich Link Preview'}
             </p>
           </div>
         )}

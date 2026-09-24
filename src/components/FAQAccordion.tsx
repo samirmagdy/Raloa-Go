@@ -57,14 +57,14 @@ export const FAQAccordion: React.FC<FAQAccordionProps> = ({ locale, onContactSup
     sectionId: 'faq',
     locale,
     title: isRtl
-      ? 'الأسئلة الشائعة والدعم الفني — منصة رالوا'
-      : 'Frequently Asked Questions & Help Center — RALOA',
+      ? 'الأسئلة الشائعة والدعم الفني - منصة رالوا'
+      : 'Frequently Asked Questions & Help Center - RALOA',
     description: isRtl
       ? 'إجابات شاملة ومفصلة حول النطاقات المخصصة، البيع الرقمي بدون عمولة، وربط بوابات الدفع على رالوا.'
       : 'Find answers about custom domains, zero commission digital sales, calendar integrations, and switching from other link services.',
     ogTitle: isRtl
-      ? 'مركز المساعدة والأسئلة الشائعة — رالوا'
-      : 'RALOA Help & FAQ — Everything You Need to Know',
+      ? 'مركز المساعدة والأسئلة الشائعة - رالوا'
+      : 'RALOA Help & FAQ - Everything You Need to Know',
     ogDescription: isRtl
       ? 'إجابات واضحة ومفصلة حول النطاقات الخاصة، بوابات الدفع، وإعداد حسابك خطوة بخطوة.'
       : 'Got questions about custom domains, zero fees, or migrating from other platforms? We have all the answers here.',
@@ -103,7 +103,7 @@ export const FAQAccordion: React.FC<FAQAccordionProps> = ({ locale, onContactSup
               <span className="text-[12px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
                 {t.eyebrow}
               </span>
-              <span className="text-slate-300 dark:text-slate-700 select-none">•</span>
+              <span className="text-slate-300 dark:text-slate-700 select-none">-</span>
               <ReadTimeBadge
                 formatted={readTime.formatted}
                 wordCount={readTime.wordCount}

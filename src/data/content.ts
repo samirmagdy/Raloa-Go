@@ -470,7 +470,7 @@ export const pricingPlans: PricingPlan[] = [
     name: 'Pro',
     nameAr: 'المحترفين (برو)',
     priceMonthly: 6,
-    priceYearly: 4.8, // 20% off
+    priceYearly: 57.6,
     period: 'month',
     periodAr: 'شهرياً',
     description: 'Turn more visits into trust, leads, and sales.',
@@ -499,7 +499,7 @@ export const pricingPlans: PricingPlan[] = [
     name: 'Studio',
     nameAr: 'استوديو',
     priceMonthly: 12,
-    priceYearly: 9.6, // 20% off
+    priceYearly: 115.2,
     period: 'month',
     periodAr: 'شهرياً',
     description: 'For creators who want the complete RALOA toolkit.',
@@ -727,8 +727,8 @@ export const featuresList = [
     id: 'f-custom',
     title: 'Fully customizable',
     titleAr: 'تخصيص كامل وشامل',
-    body: 'Colors, fonts, sections — make it yours',
-    bodyAr: 'الألوان والخطوط والأقسام — خصصها كما تحب',
+    body: 'Colors, fonts, sections - make it yours',
+    bodyAr: 'الألوان والخطوط والأقسام - خصصها كما تحب',
     icon: 'sliders',
     color: '#F59E0B',
     bgColor: '#FEF3C7'
@@ -786,7 +786,7 @@ export const dictionary = {
         {
           num: 2,
           title: 'Add your content',
-          body: 'Links, media, bookings, products and more — all in one place.'
+          body: 'Links, media, bookings, products and more - all in one place.'
         },
         {
           num: 3,
@@ -887,7 +887,7 @@ export const dictionary = {
         {
           num: 2,
           title: 'أضف محتواك وروابطك',
-          body: 'روابط، وسائط، مواعيد، منتجات والمزيد — كلها في مكان واحد.'
+          body: 'روابط، وسائط، مواعيد، منتجات والمزيد - كلها في مكان واحد.'
         },
         {
           num: 3,

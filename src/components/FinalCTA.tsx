@@ -27,7 +27,7 @@ export const FinalCTA: React.FC<FinalCTAProps> = ({ locale, onOpenStudio }) => {
       setError(
         isRtl
           ? 'يجب أن يتكون الاسم من ٢-٣٠ حرفاً إنجليزياً أو أرقام'
-          : 'Username must be 2–30 alphanumeric characters'
+          : 'Username must be 2-30 alphanumeric characters'
       );
       return;
     }

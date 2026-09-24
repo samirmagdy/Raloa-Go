@@ -2,6 +2,7 @@ import React from 'react';
 import { ExternalLink, Globe } from 'lucide-react';
 import { PremiumMark } from './brand/PremiumMark';
 import { Locale, TemplateItem } from '../types';
+import { SafeImage } from './SafeImage';
 
 interface TemplateSnapshotPopoverProps {
   template: TemplateItem | null;
@@ -67,7 +68,7 @@ export const TemplateSnapshotPopover: React.FC<TemplateSnapshotPopoverProps> = (
           
           {/* Header Banner */}
           <div className="relative h-14 w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 overflow-hidden">
-            <img
+            <SafeImage
               src={template.coverImage || template.avatar}
               alt=""
               className="w-full h-full object-cover opacity-60"
@@ -77,7 +78,7 @@ export const TemplateSnapshotPopover: React.FC<TemplateSnapshotPopoverProps> = (
 
           {/* Centered Avatar */}
           <div className="relative -mt-6 mx-auto w-11 h-11 rounded-full border-2 border-slate-900 overflow-hidden shadow-md bg-slate-800">
-            <img
+            <SafeImage
               src={template.avatar}
               alt=""
               className="w-full h-full object-cover"

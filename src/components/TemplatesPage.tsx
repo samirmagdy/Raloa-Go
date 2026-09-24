@@ -5,6 +5,7 @@ import { templatesData } from '../data/content';
 import { RaloaLogo } from './brand/RaloaLogo';
 import { usePageSEO } from '../hooks/usePageSEO';
 import { FadeInSection } from './FadeInSection';
+import { SafeImage } from './SafeImage';
 
 interface TemplatesPageProps {
   locale: Locale;
@@ -18,7 +19,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({ locale, onReturnHo
   usePageSEO({
     sectionId: 'templates-page',
     locale,
-    title: isRtl ? 'كل قوالب رالوا — معرض التصاميم' : 'All Templates — RALOA Design Gallery',
+    title: isRtl ? 'كل قوالب رالوا - معرض التصاميم' : 'All Templates - RALOA Design Gallery',
     description: isRtl ? 'استعرض جميع قوالب رالوا المتجاوبة واختر التصميم المناسب لموقعك المصغر.' : 'Browse every responsive RALOA template and choose the right design for your mini-site.',
     ogTitle: isRtl ? 'معرض قوالب رالوا' : 'RALOA Template Gallery',
     ogDescription: isRtl ? 'كل القوالب في مكان واحد.' : 'Explore every RALOA template in one place.',
@@ -43,7 +44,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({ locale, onReturnHo
   const ForwardIcon = isRtl ? ArrowLeft : ArrowRight;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white">
+    <div className="min-h-[100dvh] bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white">
       <header className="sticky top-0 z-30 border-b border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-950/90 backdrop-blur-xl">
         <div className="max-w-[1240px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           <button type="button" onClick={onReturnHome} aria-label={isRtl ? 'العودة إلى الرئيسية' : 'Return home'} className="rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
@@ -67,7 +68,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({ locale, onReturnHo
         </FadeInSection>
 
         <FadeInSection id="templates-page-grid" delayClass="delay-100">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5">
             {templatesData.map((template) => (
               <button
                 key={template.id}
@@ -76,7 +77,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({ locale, onReturnHo
                 className="group text-left rtl:text-right rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 sm:p-3.5 shadow-[0_4px_18px_rgba(15,23,42,0.04)] hover:-translate-y-1 hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-[0_16px_32px_rgba(15,23,42,0.1)] transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
                 <div className="relative aspect-[3/4] overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800">
-                  <img src={template.avatar} alt={template.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+                  <SafeImage src={template.avatar} alt={template.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
                   <span className="absolute bottom-2 left-2 right-2 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-950/75 px-2 py-2 text-[11px] font-bold text-white backdrop-blur-sm">
                     <Eye className="w-3.5 h-3.5" />
                     {isRtl ? 'معاينة القالب' : 'Preview template'}

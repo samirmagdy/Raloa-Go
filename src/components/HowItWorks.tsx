@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { LayoutGrid, PenTool, Send, Check, CheckCircle2 } from 'lucide-react';
+import { LayoutGrid, PenTool, Send, Check } from 'lucide-react';
 import { Locale } from '../types';
 import { dictionary } from '../data/content';
 import { calculateReadingTime } from '../utils/readingTime';
@@ -54,44 +54,24 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
     }
   ];
 
-  // Dynamic reading position and active step tracking
+  // IntersectionObserver keeps the narrative state aligned without measuring every card on scroll.
   useEffect(() => {
-    const section = sectionRef.current;
-    if (!section || typeof window === 'undefined') return;
-
-    const handleScroll = () => {
-      const windowHeight = window.innerHeight;
-      const readingLine = windowHeight * 0.45;
-
-      let closestStep = 1;
-      let minDistance = Infinity;
-
-      stepCardRefs.current.forEach((card, idx) => {
-        if (!card) return;
-        const rect = card.getBoundingClientRect();
-        const cardCenter = rect.top + rect.height / 2;
-        const dist = Math.abs(cardCenter - readingLine);
-
-        if (rect.top <= readingLine && rect.bottom >= readingLine) {
-          closestStep = idx + 1;
-          minDistance = -1;
-        } else if (dist < minDistance && minDistance !== -1) {
-          minDistance = dist;
-          closestStep = idx + 1;
+    if (typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (visible) {
+          const index = stepCardRefs.current.findIndex((card) => card === visible.target);
+          if (index >= 0) setActiveStep(index + 1);
         }
-      });
+      },
+      { rootMargin: '-35% 0px -45% 0px', threshold: [0.15, 0.5, 0.85] }
+    );
 
-      setActiveStep(closestStep);
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    window.addEventListener('resize', handleScroll, { passive: true });
-    handleScroll();
-
-    return () => {
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', handleScroll);
-    };
+    stepCardRefs.current.forEach((card) => card && observer.observe(card));
+    return () => observer.disconnect();
   }, []);
 
   // Smooth scroll to a selected step when user clicks on the indicator
@@ -101,7 +81,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
 
     const headerOffset = 100;
     const elementPosition = targetCard.getBoundingClientRect().top;
-    const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+    const offsetPosition = elementPosition + document.documentElement.scrollTop - headerOffset;
 
     window.scrollTo({
       top: offsetPosition,
@@ -147,7 +127,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
           {/* Connecting line (Desktop) */}
           <div className="hidden md:block absolute top-[49px] left-[14%] right-[14%] h-px bg-slate-200 dark:bg-slate-800 z-0 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-indigo-500 via-blue-500 to-violet-500 transition-all duration-500"
+              className="h-full bg-indigo-500 transition-all duration-500"
               style={{
                 width: activeStep === 1 ? '20%' : activeStep === 2 ? '65%' : '100%'
               }}
@@ -173,27 +153,8 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
                     : 'bg-white/50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-850 opacity-80 hover:opacity-100 hover:border-slate-200'
                 }`}
               >
-                {/* Step Status Badge */}
-                <div className="mb-4">
-                  {isCurrent ? (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800 shadow-2xs">
-                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />
-                      <span>{isRtl ? 'الخطوة النشطة الآن' : 'Currently Reading'}</span>
-                    </span>
-                  ) : isPast ? (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 shadow-2xs">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>{isRtl ? 'تمت القراءة' : 'Completed'}</span>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-850/60 border border-slate-200/60 dark:border-slate-800">
-                      <span>{isRtl ? 'الخطوة القادمة' : 'Upcoming Step'}</span>
-                    </span>
-                  )}
-                </div>
-
                 {/* Step Number + Icon Badge */}
-                <div className="flex items-center gap-3 mb-5">
+                <div className="flex items-center gap-3 mb-5 mt-1">
                   <div className={`w-12 h-12 rounded-full ${step.color} font-extrabold text-[18px] flex items-center justify-center shadow-md ring-4 ring-white dark:ring-slate-950 transition-transform ${isCurrent ? 'scale-110' : ''}`}>
                     {isPast ? <Check className="w-5 h-5 stroke-[3]" /> : step.num}
                   </div>
