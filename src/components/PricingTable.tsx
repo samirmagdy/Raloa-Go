@@ -72,7 +72,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
 
   return (
 
-    <section id="pricing" className="relative isolate overflow-hidden pt-8 sm:pt-12 md:pt-16 pb-14 sm:pb-20 md:pb-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
+    <section id="pricing" className="relative isolate overflow-hidden pt-8 sm:pt-12 md:pt-16 pb-10 sm:pb-20 md:pb-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
       <div
         aria-hidden="true"
         className="absolute inset-0 -z-10 bg-[url('/graphics/raloa-pattern-light-512.png')] bg-[length:512px_512px] bg-repeat opacity-45 dark:hidden"
@@ -80,19 +80,19 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
       <div className="relative z-10 max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
-        <div className="text-center max-w-[640px] mx-auto mb-12">
+        <div className="text-center max-w-[640px] mx-auto mb-8 sm:mb-12">
           <span className="text-[12px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block mb-2">
             {t.eyebrow}
           </span>
-          <h2 className="text-[34px] sm:text-[42px] md:text-[48px] font-extrabold text-[#0F172A] dark:text-white tracking-tight leading-tight">
+          <h2 className="text-[28px] sm:text-[42px] md:text-[48px] font-extrabold text-[#0F172A] dark:text-white tracking-tight leading-tight">
             {t.headline}
           </h2>
-          <p className="text-[16px] sm:text-[18px] text-slate-600 dark:text-slate-300 mt-2 font-normal">
+          <p className="text-[14px] sm:text-[18px] text-slate-600 dark:text-slate-300 mt-2 font-normal">
             {t.subheadline}
           </p>
 
           {/* Billing Cycle Toggle */}
-          <div className="inline-flex items-center gap-1 p-1 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-2xs mt-8">
+          <div className="inline-flex items-center gap-1 p-1 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-2xs mt-6 sm:mt-8">
             <button
               onClick={() => setIsYearly(false)}
               className={`px-5 py-2 rounded-full text-xs font-bold transition-all cursor-pointer ${
@@ -120,7 +120,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
         </div>
 
         {/* 3 Pricing Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 items-stretch pt-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 items-stretch pt-2 sm:pt-4">
           {pricingPlans.map((plan) => {
             const isPopular = plan.popular;
             const price = plan.priceMonthly === 0 ? 0 : isYearly ? plan.priceYearly : plan.priceMonthly;
@@ -129,7 +129,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
             return (
               <div
                 key={plan.id}
-                className={`relative bg-white dark:bg-slate-900 rounded-[24px] p-8 border transition-all duration-300 flex flex-col items-start text-start justify-between ${
+                className={`relative bg-white dark:bg-slate-900 rounded-[24px] p-5 sm:p-8 border transition-all duration-300 flex flex-col items-start text-start justify-between ${
                   isPopular
                     ? 'border-indigo-500 dark:border-indigo-500 ring-2 ring-indigo-500/20 dark:ring-indigo-500/40 shadow-[0_16px_40px_rgba(91,92,246,0.12)] dark:shadow-[0_16px_40px_rgba(91,92,246,0.25)] lg:-translate-y-2'
                     : 'border-slate-200 dark:border-slate-800 shadow-[0_6px_20px_rgba(15,23,42,0.04)] dark:shadow-[0_6px_20px_rgba(0,0,0,0.3)] hover:shadow-lg dark:hover:shadow-2xl'

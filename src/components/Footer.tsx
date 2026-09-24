@@ -132,14 +132,14 @@ export const Footer: React.FC<FooterProps> = ({
   };
 
   return (
-    <footer className="bg-white dark:bg-slate-950 border-t border-slate-200/90 dark:border-slate-850 pt-14 sm:pt-20 pb-12 sm:pb-16 text-slate-600 dark:text-slate-400 transition-colors duration-200">
+    <footer className="bg-white dark:bg-slate-950 border-t border-slate-200/90 dark:border-slate-850 pt-10 sm:pt-20 pb-10 sm:pb-16 text-slate-600 dark:text-slate-400 transition-colors duration-200">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Main Footer Row */}
-        <div className="grid grid-cols-2 md:grid-cols-12 gap-8 lg:gap-12 pb-12 border-b border-slate-100 dark:border-slate-800/80">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-8 lg:gap-12 pb-10 sm:pb-12 border-b border-slate-100 dark:border-slate-800/80">
           
           {/* Brand Info (4 cols) */}
-          <div className="col-span-2 md:col-span-4 flex flex-col items-start">
+          <div className="col-span-1 sm:col-span-2 md:col-span-4 flex flex-col items-start">
             <img
               src="/graphics/navbar-logo.png"
               alt="RALOA"
@@ -242,19 +242,19 @@ export const Footer: React.FC<FooterProps> = ({
           </div>
 
           {/* Navigation Links Columns (8 cols) */}
-          <div className="col-span-2 md:col-span-8 grid grid-cols-2 sm:grid-cols-4 gap-8">
+          <div className="col-span-1 sm:col-span-2 md:col-span-8 grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-8 sm:gap-8">
             {Object.entries(footerLinks).map(([key, group]) => (
               <div key={key}>
                 <h4 className="font-extrabold text-[13px] text-[#0F172A] dark:text-white uppercase tracking-wider mb-4">
                   {group.title}
                 </h4>
-                <ul className="space-y-2.5">
+                <ul className="space-y-2">
                   {group.links.map((link) => (
                     <li key={link.label}>
                       <a
                         href={link.href}
                         onClick={(e) => handleLinkClick(e, link.label, link.href)}
-                        className="text-[13px] text-slate-500 dark:text-slate-400 hover:text-[#0F172A] dark:hover:text-white transition-colors"
+                        className="text-[12px] sm:text-[13px] text-slate-500 dark:text-slate-400 hover:text-[#0F172A] dark:hover:text-white transition-colors"
                       >
                         {link.label}
                       </a>

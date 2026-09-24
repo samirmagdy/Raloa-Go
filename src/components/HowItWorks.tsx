@@ -114,12 +114,12 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
     <section
       ref={sectionRef}
       id="how-it-works"
-      className="scroll-mt-20 py-14 sm:py-20 md:py-24 bg-slate-50/70 dark:bg-slate-950 border-b border-slate-200/70 dark:border-slate-800/80 relative overflow-hidden transition-colors duration-200"
+      className="scroll-mt-20 py-10 sm:py-20 md:py-24 bg-slate-50/70 dark:bg-slate-950 border-b border-slate-200/70 dark:border-slate-800/80 relative overflow-hidden transition-colors duration-200"
     >
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}
-        <div className="max-w-3xl mb-9 sm:mb-11">
+        <div className="max-w-3xl mb-7 sm:mb-11">
           <div>
             <div className="flex items-center gap-2.5 mb-3 flex-wrap">
               <span className="text-[12px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
@@ -132,7 +132,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
                 locale={locale}
               />
             </div>
-            <h2 className="text-[34px] sm:text-[42px] md:text-[48px] font-extrabold text-[#0F172A] dark:text-white tracking-tight leading-[1.08]">
+            <h2 className="text-[28px] sm:text-[42px] md:text-[48px] font-extrabold text-[#0F172A] dark:text-white tracking-tight leading-[1.08]">
               {t.headline}
             </h2>
             <p className="text-[16px] sm:text-[18px] text-slate-600 dark:text-slate-300 mt-3 font-normal leading-relaxed max-w-2xl">
@@ -142,7 +142,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
         </div>
 
         {/* 3 Steps Row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6 relative">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-5 lg:gap-6 relative">
           
           {/* Connecting line (Desktop) */}
           <div className="hidden md:block absolute top-[49px] left-[14%] right-[14%] h-px bg-slate-200 dark:bg-slate-800 z-0 rounded-full overflow-hidden">
@@ -165,7 +165,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ locale }) => {
                 ref={(el) => { stepCardRefs.current[idx] = el; }}
                 id={`how-it-works-step-${step.num}`}
                 onClick={() => scrollToStep(step.num)}
-                className={`relative z-10 w-full min-h-[250px] flex flex-col items-center md:items-start text-center md:text-left rtl:md:text-right p-5 sm:p-6 rounded-3xl transition-all duration-300 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${
+                className={`relative z-10 w-full min-h-0 md:min-h-[250px] flex flex-col items-center md:items-start text-center md:text-left rtl:md:text-right p-4 sm:p-6 rounded-3xl transition-all duration-300 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${
                   isCurrent
                     ? 'bg-white dark:bg-slate-900 border-2 border-indigo-500/80 dark:border-indigo-400/80 shadow-lg shadow-indigo-500/10 ring-4 ring-indigo-500/10'
                     : isPast

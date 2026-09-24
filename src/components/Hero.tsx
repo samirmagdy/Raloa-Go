@@ -159,7 +159,7 @@ export const Hero: React.FC<HeroProps> = ({
     <section
       ref={heroRef}
       id="hero"
-      className="relative isolate pt-[92px] sm:pt-[100px] md:pt-[124px] pb-12 sm:pb-16 md:pb-24 overflow-hidden bg-[#F8FAFC] dark:bg-slate-950 transition-colors duration-200"
+      className="relative isolate pt-[76px] sm:pt-[100px] md:pt-[124px] pb-10 sm:pb-16 md:pb-24 overflow-hidden bg-[#F8FAFC] dark:bg-slate-950 transition-colors duration-200"
     >
       {/* Approved RALOA hero artwork, with a restrained pattern layer for depth. */}
       <div
@@ -178,7 +178,7 @@ export const Hero: React.FC<HeroProps> = ({
       />
 
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 sm:gap-12 lg:gap-8 items-center lg:min-h-[660px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 sm:gap-12 lg:gap-8 items-center lg:min-h-[660px]">
           
           {/* Left Column: 55% split (lg:col-span-7) */}
           <div className="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-left rtl:lg:text-right">
@@ -188,7 +188,7 @@ export const Hero: React.FC<HeroProps> = ({
               initial={{ opacity: 0, y: 22 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-              className="text-[36px] sm:text-[54px] md:text-[62px] lg:text-[70px] font-extrabold text-[#0F172A] dark:text-white tracking-[-0.03em] leading-[1.04] mb-5 sm:mb-6"
+              className="text-[34px] sm:text-[54px] md:text-[62px] lg:text-[70px] font-extrabold text-[#0F172A] dark:text-white tracking-[-0.03em] leading-[1.06] mb-4 sm:mb-6"
             >
               <span>{t.headlineStart}</span>
               <br />
@@ -202,7 +202,7 @@ export const Hero: React.FC<HeroProps> = ({
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.16, ease: [0.16, 1, 0.3, 1] }}
-              className="text-[17px] sm:text-[19px] lg:text-[20px] text-slate-600 dark:text-slate-300 leading-[1.55] max-w-[560px] mb-8 font-normal"
+              className="text-[16px] sm:text-[19px] lg:text-[20px] text-slate-600 dark:text-slate-300 leading-[1.55] max-w-[560px] mb-6 sm:mb-8 font-normal"
             >
               {t.subheadline}
             </motion.p>
@@ -296,7 +296,7 @@ export const Hero: React.FC<HeroProps> = ({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.5, delay: 0.32 }}
-              className="w-full max-w-[530px] flex flex-wrap items-center justify-center lg:justify-between gap-y-2 gap-x-4 text-[13px] font-medium text-slate-600 dark:text-slate-400 mt-4"
+              className="w-full max-w-[530px] flex flex-wrap items-center justify-center lg:justify-between gap-y-2 gap-x-3 text-[11px] sm:text-[13px] font-medium text-slate-600 dark:text-slate-400 mt-3 sm:mt-4"
             >
               {t.proof.map((item, idx) => (
                 <motion.div
@@ -326,7 +326,7 @@ export const Hero: React.FC<HeroProps> = ({
                 rotate: phoneRotate,
                 scale: phoneScale
               }}
-              className="relative z-10 w-full max-w-[340px] flex justify-center"
+                className="relative z-10 w-full max-w-[292px] sm:max-w-[340px] flex justify-center"
             >
               {/* Dynamic entrance glide + infinite subtle breathing oscillation */}
               <motion.div
@@ -358,7 +358,7 @@ export const Hero: React.FC<HeroProps> = ({
                   />
 
                   {/* FR-2.2 Embedded Client-Side Interactive Canvas Preview Controls (No Auth Required) */}
-                  <div className="mt-4 inline-flex items-center gap-1.5 p-1.5 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 shadow-md text-xs font-semibold z-20">
+                  <div className="mt-3 max-w-full overflow-x-auto no-scrollbar inline-flex items-center gap-1 p-1.5 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 shadow-md text-xs font-semibold z-20">
                     <span className="px-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider select-none">
                       {isRtl ? 'المعاينة الحية:' : 'Live Canvas:'}
                     </span>

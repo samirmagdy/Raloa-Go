@@ -63,11 +63,11 @@ export const Newsletter: React.FC<NewsletterProps> = ({ locale }) => {
   return (
     <section
       id="newsletter"
-      className="py-14 sm:py-20 md:py-28 relative overflow-hidden transition-colors duration-200"
+      className="py-10 sm:py-20 md:py-28 relative overflow-hidden transition-colors duration-200"
       aria-label={isRtl ? 'النشرة البريدية' : 'Product Updates Newsletter'}
     >
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="relative rounded-3xl bg-slate-900 dark:bg-slate-900/90 text-white border border-slate-800 shadow-xl overflow-hidden p-8 sm:p-12 md:p-16">
+        <div className="relative rounded-3xl bg-slate-900 dark:bg-slate-900/90 text-white border border-slate-800 shadow-xl overflow-hidden p-6 sm:p-12 md:p-16">
           
           {/* Subtle Ambient Background Gradients */}
           <div className="absolute top-0 right-0 -mr-20 -mt-20 w-80 h-80 rounded-full bg-indigo-500/15 blur-3xl pointer-events-none" />

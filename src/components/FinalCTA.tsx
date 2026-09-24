@@ -42,11 +42,11 @@ export const FinalCTA: React.FC<FinalCTAProps> = ({ locale, onOpenStudio }) => {
   };
 
   return (
-    <section className="py-14 sm:py-20 md:py-28 bg-white dark:bg-slate-950 transition-colors duration-200">
+    <section className="py-10 sm:py-20 md:py-28 bg-white dark:bg-slate-950 transition-colors duration-200">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Banner with gradient matching tokens: linear-gradient(90deg, #5B5CF6 0%, #8B5CF6 100%) */}
-        <div className="relative rounded-[32px] overflow-hidden p-8 sm:p-12 lg:p-16 text-white shadow-[0_20px_50px_rgba(91,92,246,0.25)] dark:shadow-[0_20px_50px_rgba(91,92,246,0.15)] bg-gradient-to-r from-[#5B5CF6] via-[#6366F1] to-[#8B5CF6]">
+        <div className="relative rounded-[28px] sm:rounded-[32px] overflow-hidden p-6 sm:p-12 lg:p-16 text-white shadow-[0_20px_50px_rgba(91,92,246,0.25)] dark:shadow-[0_20px_50px_rgba(91,92,246,0.15)] bg-gradient-to-r from-[#5B5CF6] via-[#6366F1] to-[#8B5CF6]">
           
           {/* Decorative spark elements */}
           <div className="absolute top-4 left-6 opacity-30 select-none pointer-events-none">
@@ -64,7 +64,7 @@ export const FinalCTA: React.FC<FinalCTAProps> = ({ locale, onOpenStudio }) => {
             </span>
 
             {/* Headline */}
-            <h2 className="text-[34px] sm:text-[44px] md:text-[52px] font-extrabold tracking-tight leading-[1.08] mb-4 text-white">
+            <h2 className="text-[28px] sm:text-[44px] md:text-[52px] font-extrabold tracking-tight leading-[1.08] mb-4 text-white">
               {t.headline}
             </h2>
 

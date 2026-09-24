@@ -133,22 +133,22 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
   };
 
   return (
-    <section id="templates" className="py-14 sm:py-20 md:py-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
+    <section id="templates" className="py-10 sm:py-20 md:py-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 sm:mb-12 gap-5 sm:gap-6">
           <div className="max-w-[640px]">
             <span className="text-[12px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block mb-2">
               {t.eyebrow}
             </span>
-            <h2 className="text-[32px] sm:text-[40px] md:text-[46px] font-extrabold text-[#0F172A] dark:text-white tracking-tight leading-[1.1]">
+            <h2 className="text-[28px] sm:text-[40px] md:text-[46px] font-extrabold text-[#0F172A] dark:text-white tracking-tight leading-[1.1]">
               <span>{t.headline} </span>
               <span className="bg-gradient-to-r from-[#7C3AED] to-[#2563EB] dark:from-[#9061F9] dark:to-[#3B82F6] bg-clip-text text-transparent">
                 {t.headlineGradient}
               </span>
             </h2>
-            <p className="text-[16px] sm:text-[18px] text-slate-600 dark:text-slate-300 mt-3 font-normal leading-relaxed">
+            <p className="text-[14px] sm:text-[18px] text-slate-600 dark:text-slate-300 mt-2 sm:mt-3 font-normal leading-relaxed">
               {t.subheadline}
             </p>
           </div>
@@ -197,7 +197,7 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
               }}
               onMouseEnter={(e) => handleMouseEnter(template, e)}
               onMouseLeave={handleMouseLeave}
-              className="w-[180px] sm:w-[200px] shrink-0 snap-start bg-white dark:bg-slate-900 rounded-[22px] p-3 border border-slate-200 dark:border-slate-800 shadow-[0_4px_16px_rgba(15,23,42,0.04)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_16px_36px_rgba(15,23,42,0.12)] dark:hover:shadow-[0_16px_36px_rgba(0,0,0,0.6)] hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group flex flex-col text-center"
+              className="w-[158px] sm:w-[200px] shrink-0 snap-start bg-white dark:bg-slate-900 rounded-[22px] p-2.5 sm:p-3 border border-slate-200 dark:border-slate-800 shadow-[0_4px_16px_rgba(15,23,42,0.04)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_16px_36px_rgba(15,23,42,0.12)] dark:hover:shadow-[0_16px_36px_rgba(0,0,0,0.6)] hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group flex flex-col text-center"
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {

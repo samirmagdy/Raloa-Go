@@ -84,16 +84,16 @@ export const FeatureGrid: React.FC<FeatureGridProps> = ({ locale, onExploreFeatu
   };
 
   return (
-    <section id="features" className="py-14 sm:py-20 md:py-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
+    <section id="features" className="py-10 sm:py-20 md:py-28 bg-[#F8FAFC] dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800 transition-colors duration-200">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-14 gap-6">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 sm:mb-14 gap-5 sm:gap-6">
           <div className="max-w-[640px]">
             <span className="text-[12px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block mb-2">
               {t.eyebrow}
             </span>
-            <h2 className="text-[32px] sm:text-[40px] md:text-[46px] font-extrabold text-[#0F172A] dark:text-white tracking-tight leading-[1.1]">
+            <h2 className="text-[28px] sm:text-[40px] md:text-[46px] font-extrabold text-[#0F172A] dark:text-white tracking-tight leading-[1.1]">
               {t.headline}
             </h2>
             <p className="text-[16px] sm:text-[18px] text-slate-600 dark:text-slate-300 mt-2 font-normal">
@@ -111,11 +111,11 @@ export const FeatureGrid: React.FC<FeatureGridProps> = ({ locale, onExploreFeatu
         </div>
 
         {/* 8-Card Grid (4x2 on desktop, 2x4 on tablet, 1x8 on mobile) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
           {featuresList.map((item) => (
             <div
               key={item.id}
-              className="bg-white dark:bg-slate-900 rounded-[20px] p-6 border border-slate-200 dark:border-slate-800 shadow-[0_4px_16px_rgba(15,23,42,0.03)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_28px_rgba(0,0,0,0.5)] transition-all duration-300 group hover:-translate-y-1 flex flex-col items-center text-center lg:items-start lg:text-start"
+              className="bg-white dark:bg-slate-900 rounded-[20px] p-4 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-[0_4px_16px_rgba(15,23,42,0.03)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_28px_rgba(0,0,0,0.5)] transition-all duration-300 group hover:-translate-y-1 flex flex-col items-center text-center lg:items-start lg:text-start"
             >
               <div
                 className="w-12 h-12 rounded-2xl flex items-center justify-center mb-5 transition-transform group-hover:scale-110 duration-200"
