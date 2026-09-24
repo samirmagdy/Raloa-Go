@@ -20,10 +20,12 @@ import {
   getDocs,
   query,
   where,
-  limit
+  limit,
+  runTransaction
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { UserProfile, UserMiniSite, ContactInquiry } from '../types';
+import { captureReferralCode } from '../utils/attribution';
 
 // Initialize Firebase App instance safely (prevent duplicate initialization)
 export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -97,6 +99,20 @@ export function createLocalUser(email: string, handle?: string): User {
     reload: async () => {},
     toJSON: () => ({ email: cleanEmail, uid })
   } as unknown as User;
+}
+
+async function publishReferralCode(code: string | undefined, userId: string): Promise<void> {
+  const cleanCode = code?.trim().toLowerCase();
+  if (!cleanCode) return;
+  try {
+    await setDoc(doc(db, 'referral_codes', cleanCode), {
+      userId,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (error) {
+    // Referral mapping must never prevent account creation.
+    console.error('Could not publish referral code mapping:', error);
+  }
 }
 
 /**
@@ -187,6 +203,7 @@ export async function signUpWithEmail(email: string, pass: string, handle?: stri
         }));
       }
       await syncUserProfile(localUser, handle ? { handle } : {});
+      await completeReferralSignup(localUser.uid, captureReferralCode());
       return localUser;
     }
   } catch (_) {
@@ -197,6 +214,7 @@ export async function signUpWithEmail(email: string, pass: string, handle?: stri
   try {
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
     await syncUserProfile(cred.user, handle ? { handle } : {});
+    await completeReferralSignup(cred.user.uid, captureReferralCode());
     return cred.user;
   } catch (err: any) {
     if (
@@ -215,6 +233,7 @@ export async function signUpWithEmail(email: string, pass: string, handle?: stri
         }));
       }
       await syncUserProfile(localUser, handle ? { handle } : {});
+      await completeReferralSignup(localUser.uid, captureReferralCode());
       return localUser;
     }
     throw err;
@@ -287,23 +306,35 @@ export async function syncUserProfile(
         photoURL: user.photoURL || null,
         plan: 'free',
         isYearly: false,
+        referralsCount: 0,
+        referralRewards: {
+          verifiedBadgeUnlocked: false,
+          freeProMonthsEarned: 0,
+          customDomainUnlocked: false
+        },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         ...customData
       };
       await setDoc(userDocRef, newProfile);
+      await publishReferralCode(newProfile.handle || user.uid, user.uid);
       return newProfile;
     } else {
       const existing = snap.data() as UserProfile;
+      const referralExpired = existing.plan === 'pro'
+        && existing.referralProUntil
+        && Date.parse(existing.referralProUntil) <= Date.now();
       const updatedProfile: UserProfile = {
         ...existing,
         email: user.email ?? existing.email,
         displayName: user.displayName ?? existing.displayName,
         photoURL: user.photoURL ?? existing.photoURL,
+        plan: referralExpired ? 'free' : existing.plan,
         updatedAt: new Date().toISOString(),
         ...customData
       };
       await setDoc(userDocRef, updatedProfile, { merge: true });
+      await publishReferralCode(updatedProfile.handle || user.uid, user.uid);
       return updatedProfile;
     }
   } catch (err) {
@@ -315,10 +346,90 @@ export async function syncUserProfile(
       photoURL: user.photoURL || null,
       plan: 'free',
       isYearly: false,
+      referralsCount: 0,
+      referralRewards: {
+        verifiedBadgeUnlocked: false,
+        freeProMonthsEarned: 0,
+        customDomainUnlocked: false
+      },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       ...customData
     };
+  }
+}
+
+/**
+ * Qualify one referral after a real account has been created.
+ * The referred user's uid is used as the idempotency key, so refreshes and
+ * repeated auth callbacks cannot award the same referral twice.
+ */
+export async function completeReferralSignup(
+  referredUserId: string,
+  referralCode: string | null | undefined
+): Promise<boolean> {
+  const cleanCode = referralCode?.trim().toLowerCase();
+  if (!cleanCode || !referredUserId) return false;
+
+  try {
+    const codeSnap = await getDoc(doc(db, 'referral_codes', cleanCode));
+    const referrerId = codeSnap.exists() ? codeSnap.data().userId : cleanCode;
+    if (referrerId === referredUserId) return false;
+
+    const referrerRef = doc(db, 'users', referrerId);
+    const referralRef = doc(db, 'users', referrerId, 'referrals', referredUserId);
+    const referredUserRef = doc(db, 'users', referredUserId);
+
+    return await runTransaction(db, async (transaction) => {
+      const referrerSnap = await transaction.get(referrerRef);
+      const referralSnap = await transaction.get(referralRef);
+      if (!referrerSnap.exists() || referralSnap.exists()) return false;
+
+      const referrer = referrerSnap.data();
+      const currentCount = typeof referrer.referralsCount === 'number' ? referrer.referralsCount : 0;
+      const nextCount = currentCount + 1;
+      const earnedBefore = Math.floor(currentCount / 3);
+      const earnedAfter = Math.floor(nextCount / 3);
+      const newFreeMonths = earnedAfter - earnedBefore;
+      const currentProUntil = referrer.referralProUntil ? Date.parse(referrer.referralProUntil) : 0;
+      const baseDate = Math.max(Date.now(), Number.isFinite(currentProUntil) ? currentProUntil : 0);
+      const nextProUntil = newFreeMonths > 0
+        ? new Date(baseDate + newFreeMonths * 30 * 24 * 60 * 60 * 1000).toISOString()
+        : referrer.referralProUntil;
+      const rewards = {
+        verifiedBadgeUnlocked: nextCount >= 1,
+        freeProMonthsEarned: earnedAfter,
+        customDomainUnlocked: nextCount >= 5
+      };
+
+      transaction.set(referrerRef, {
+        referralsCount: nextCount,
+        plan: newFreeMonths > 0 && referrer.plan === 'free' ? 'pro' : referrer.plan || 'free',
+        isYearly: referrer.isYearly || false,
+        referralRewards: rewards,
+        referralProUntil: nextProUntil || null,
+        verifiedCreator: rewards.verifiedBadgeUnlocked,
+        customDomainPerkUnlocked: rewards.customDomainUnlocked,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      transaction.set(referralRef, {
+        referredUserId,
+        status: 'qualified',
+        qualifiedAt: new Date().toISOString()
+      });
+
+      transaction.set(referredUserRef, {
+        referredBy: referrerId,
+        referralStatus: 'qualified',
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      return true;
+    });
+  } catch (error) {
+    console.error('Error qualifying referral signup:', error);
+    return false;
   }
 }
 
@@ -479,7 +590,7 @@ export async function fetchUserReferralStats(userId?: string): Promise<ReferralS
     if (snap.exists()) {
       const data = snap.data();
       const count = typeof data.referralsCount === 'number' ? data.referralsCount : 0;
-      const code = (data.username || userId.slice(0, 8)).toLowerCase();
+      const code = (data.handle || data.username || userId).toLowerCase();
       return {
         completedCount: count,
         targetInvites: 3,
@@ -491,7 +602,7 @@ export async function fetchUserReferralStats(userId?: string): Promise<ReferralS
     console.error('Error fetching user referral stats:', error);
   }
 
-  const fallbackCode = userId.slice(0, 8).toLowerCase();
+  const fallbackCode = userId.toLowerCase();
   return {
     completedCount: 0,
     targetInvites: 3,
@@ -507,10 +618,24 @@ export async function recordReferralInvite(
   userId: string,
   invitedEmail: string
 ): Promise<string> {
+  if (!userId || userId === 'guest_user') throw new Error('AUTH_REQUIRED');
+  const normalizedEmail = invitedEmail.trim().toLowerCase();
+  if (!normalizedEmail || !normalizedEmail.includes('@')) throw new Error('INVALID_EMAIL');
+
+  const ownerSnap = await getDoc(doc(db, 'users', userId));
+  if (ownerSnap.exists() && ownerSnap.data().email?.toLowerCase() === normalizedEmail) {
+    throw new Error('SELF_REFERRAL');
+  }
+
   const colRef = collection(db, 'users', userId, 'referrals');
+  const duplicateSnap = await getDocs(
+    query(colRef, where('invitedEmail', '==', normalizedEmail), limit(1))
+  );
+  if (duplicateSnap.docs[0]) return duplicateSnap.docs[0].id;
+
   const docRef = await addDoc(colRef, {
-    invitedEmail: invitedEmail.trim().toLowerCase(),
-    status: 'joined',
+    invitedEmail: normalizedEmail,
+    status: 'invited',
     createdAt: new Date().toISOString()
   });
   return docRef.id;
@@ -581,4 +706,3 @@ export async function fetchPlatformMetrics(): Promise<{
     };
   }
 }
-

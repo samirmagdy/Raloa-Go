@@ -358,7 +358,7 @@ export const Hero: React.FC<HeroProps> = ({
                   />
 
                   {/* FR-2.2 Embedded Client-Side Interactive Canvas Preview Controls (No Auth Required) */}
-                  <div className="mt-3 max-w-full overflow-x-auto no-scrollbar inline-flex items-center gap-1 p-1.5 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 shadow-md text-xs font-semibold z-20">
+                  <div className="mt-3 max-w-full overflow-x-auto no-scrollbar sm:max-w-none sm:overflow-visible inline-flex items-center gap-1 p-1.5 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 shadow-md text-xs font-semibold z-20">
                     <span className="px-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider select-none">
                       {isRtl ? 'المعاينة الحية:' : 'Live Canvas:'}
                     </span>

@@ -139,6 +139,17 @@ export interface UserProfile {
   plan: 'free' | 'pro' | 'studio';
   isYearly?: boolean;
   handle?: string;
+  referralsCount?: number;
+  referredBy?: string;
+  referralStatus?: 'pending' | 'qualified';
+  referralRewards?: {
+    verifiedBadgeUnlocked?: boolean;
+    freeProMonthsEarned?: number;
+    customDomainUnlocked?: boolean;
+  };
+  referralProUntil?: string;
+  verifiedCreator?: boolean;
+  customDomainPerkUnlocked?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -199,4 +210,3 @@ export interface AttributionUtmPayload {
   referrer_host: string | null;
   timestamp: number;
 }
-

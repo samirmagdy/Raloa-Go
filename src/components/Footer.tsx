@@ -207,7 +207,7 @@ export const Footer: React.FC<FooterProps> = ({
                 <button
                   type="button"
                   onClick={onOpenReferral}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[12px] font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/70 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200/90 dark:border-indigo-800/90 transition-all cursor-pointer shadow-2xs group"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/70 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200/90 dark:border-indigo-800/90 transition-all cursor-pointer shadow-2xs group"
                   title={isRtl ? 'اكسب رصيداً - برنامج الإحالة' : 'Earn Credits - Referral Program'}
                   aria-label={isRtl ? 'اكسب رصيداً' : 'Earn Credits'}
                 >

@@ -447,19 +447,19 @@ export const pricingPlans: PricingPlan[] = [
     priceYearly: 0,
     period: 'forever',
     periodAr: 'مدى الحياة',
-    description: 'Everything you need to get started.',
-    descriptionAr: 'كل ما تحتاجه للبدء وإطلاق صفحتك الشخصية الأولى.',
+    description: 'Launch your first polished page at zero cost.',
+    descriptionAr: 'أطلق صفحتك الأولى بشكل احترافي وبدون تكلفة.',
     features: [
-      'RALOA subdomain (raloa.app/@name)',
-      'Basic templates',
-      'Up to 10 links',
-      'Basic analytics'
+      'A polished page you can launch today',
+      'RALOA address (raloa.app/@name)',
+      '10 links to share your essentials',
+      'Simple visitor insights to learn what works'
     ],
     featuresAr: [
-      'نطاق فرعي مجاني (raloa.app/@اسمك)',
-      'قوالب تصميم أساسية',
-      'ما يصل إلى ١٠ روابط',
-      'إحصائيات زيارات أساسية'
+      'صفحة أنيقة جاهزة للإطلاق اليوم',
+      'عنوان رالوا المجاني (raloa.app/@اسمك)',
+      'حتى ١٠ روابط لمشاركة أهم ما لديك',
+      'إحصائيات بسيطة لمعرفة ما ينجح'
     ],
     ctaText: 'Get started free',
     ctaTextAr: 'ابدأ مجاناً الآن',
@@ -473,24 +473,24 @@ export const pricingPlans: PricingPlan[] = [
     priceYearly: 4.8, // 20% off
     period: 'month',
     periodAr: 'شهرياً',
-    description: 'For serious creators and professionals.',
-    descriptionAr: 'لصناع المحتوى والمستقلين الجادين في تنمية أعمالهم.',
+    description: 'Turn more visits into trust, leads, and sales.',
+    descriptionAr: 'حوّل الزيارات إلى ثقة وعملاء ومبيعات أكثر.',
     popular: true,
     features: [
-      'Custom domain (yourname.com)',
-      'All premium templates',
-      'Unlimited links & media',
-      'Bookings & payments checkout',
-      'Advanced real-time analytics',
-      'Remove RALOA branding'
+      'Your own domain for instant credibility (yourname.com)',
+      'Premium templates that make your brand memorable',
+      'Unlimited links and media as your audience grows',
+      'Bookings and checkout in one frictionless page',
+      'Real-time insights to double down on what converts',
+      'A distraction-free page without RALOA branding'
     ],
     featuresAr: [
-      'ربط نطاق خاص بك (yourname.com)',
-      'جميع القوالب الاحترافية المتميزة',
-      'روابط ومحتوى وسائط غير محدود',
-      'نظام حجز مواعيد ودفع إلكتروني مباشر',
-      'تحليلات دقيقة ولحظية للزوار والنقرات',
-      'إزالة شعار رالوا بالكامل'
+      'نطاقك الخاص لمصداقية فورية (yourname.com)',
+      'قوالب متميزة تجعل علامتك لا تُنسى',
+      'روابط ووسائط غير محدودة مع نمو جمهورك',
+      'حجز ودفع في صفحة واحدة بدون خطوات معقدة',
+      'رؤى لحظية لمعرفة ما يحوّل الزوار إلى عملاء',
+      'صفحة بلا تشتيت وبدون شعار رالوا'
     ],
     ctaText: 'Start Pro',
     ctaTextAr: 'ابدأ باقة المحترفين',
@@ -504,21 +504,21 @@ export const pricingPlans: PricingPlan[] = [
     priceYearly: 9.6, // 20% off
     period: 'month',
     periodAr: 'شهرياً',
-    description: 'For teams and growing businesses.',
-    descriptionAr: 'للفرق والشركات الناشئة والمؤسسات المتنامية.',
+    description: 'Give your team the control to scale every campaign.',
+    descriptionAr: 'امنح فريقك الأدوات اللازمة لتوسيع كل حملة بثقة.',
     features: [
-      'Everything in Pro plan',
-      'Multiple team members & roles',
-      'Advanced API & CRM integrations',
-      'Dedicated priority VIP support',
-      'Early access to new features & beta'
+      'Everything in Pro, ready for your next stage',
+      'Team roles that keep every update organized',
+      'API and CRM connections that eliminate manual work',
+      'Priority support when a campaign cannot wait',
+      'Early access to tools that keep you ahead'
     ],
     featuresAr: [
-      'جميع مزايا باقة المحترفين بالكامل',
-      'صلاحيات متعددة لأعضاء الفريق',
-      'ربط متقدم مع أنظمة CRM والواجهات البرمجية',
-      'دعم فني مخصص ذو أولوية على مدار الساعة',
-      'أسبقية الوصول للميزات الجديدة والتحديثات'
+      'كل مزايا برو جاهزة لمرحلتك التالية',
+      'صلاحيات للفريق تحافظ على تنظيم كل تحديث',
+      'ربط API وCRM يلغي الأعمال اليدوية',
+      'دعم ذو أولوية عندما لا تحتمل حملتك الانتظار',
+      'وصول مبكر لأدوات تبقيك في المقدمة'
     ],
     ctaText: 'Start Business',
     ctaTextAr: 'ابدأ باقة الشركات',

@@ -56,21 +56,30 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, locale, on
   const handleSendInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail.trim()) return;
+    if (!user) {
+      setInviteError(isRtl ? 'سجّل الدخول لإرسال دعوات الإحالة.' : 'Sign in to send referral invites.');
+      return;
+    }
     setSendingInvite(true);
     setInviteError('');
     setInviteSuccess(false);
 
     try {
-      const activeUid = user?.uid || 'guest_user';
-      await recordReferralInvite(activeUid, inviteEmail.trim());
+      await recordReferralInvite(user.uid, inviteEmail.trim());
       setInviteSuccess(true);
-      setCompletedCount((prev) => prev + 1);
+      const refreshedStats = await fetchUserReferralStats(user.uid);
+      setCompletedCount(refreshedStats.completedCount);
       setInviteEmail('');
       setTimeout(() => setInviteSuccess(false), 4000);
     } catch (err) {
       console.error('Error sending referral invite:', err);
+      const code = err instanceof Error ? err.message : '';
       setInviteError(
-        isRtl
+        code === 'SELF_REFERRAL'
+          ? (isRtl ? 'لا يمكنك دعوة بريدك الإلكتروني.' : 'You cannot refer your own email.')
+          : code === 'INVALID_EMAIL'
+          ? (isRtl ? 'أدخل بريداً إلكترونياً صالحاً.' : 'Enter a valid email address.')
+          : isRtl
           ? 'تعذر تسجيل الدعوة. يرجى المحاولة مرة أخرى.'
           : 'Could not record invite. Please try again.'
       );
@@ -151,7 +160,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, locale, on
             <Gift className="w-6 h-6" />
           </div>
           <div>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 mb-1">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 mb-1">
               <PremiumMark className="w-3 h-3" />
               <span>{isRtl ? 'برنامج مكافآت رالوا' : 'RALOA Rewards Program'}</span>
             </div>
@@ -273,7 +282,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, locale, on
           {inviteSuccess && (
             <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5">
               <Check className="w-3.5 h-3.5" />
-              {isRtl ? 'تم تسجيل الدعوة بنجاح في قاعدة البيانات وتحديث رصيد الإحالة!' : 'Invite recorded in Firestore! Referral progress updated.'}
+              {isRtl ? 'تم تسجيل الدعوة. سيُحتسب الرصيد بعد إكمال الصديق التسجيل.' : 'Invite recorded. It counts after your friend completes signup.'}
             </p>
           )}
           {inviteError && (
@@ -290,7 +299,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, locale, on
             <span>
               {isRtl
                 ? 'برنامج الإحالة متصل مباشرة بقاعدة بيانات رالوا. يتم تتبع كل دعوة وحفظها تلقائياً مع تفعيل مزايا الباقات.'
-                : 'Referral tracking is live in Firestore. Completed invites and unlocked perks are synced directly to your account.'}
+                : 'Verified signups are tracked in Firestore. Rewards unlock automatically after qualifying referrals.'}
             </span>
           </div>
         </div>

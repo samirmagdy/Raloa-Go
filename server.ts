@@ -162,6 +162,14 @@ export interface UserAccount {
   salt: string;
   primary_handle: string;
   email_verified: boolean;
+  referralsCount?: number;
+  referredBy?: string;
+  referralRewards?: {
+    verifiedBadgeUnlocked: boolean;
+    freeProMonthsEarned: number;
+    customDomainUnlocked: boolean;
+  };
+  referralProUntil?: string;
 }
 
 export const DEFAULT_SALT = 'raloa_salt_secure_2026';
@@ -195,6 +203,35 @@ export interface ActiveSession {
 
 // Active session store (FR-4.1)
 export const ACTIVE_SESSIONS = new Map<string, ActiveSession>();
+
+function qualifyLocalReferral(newUser: UserAccount, referralCode?: string): void {
+  const cleanCode = referralCode?.trim().toLowerCase();
+  if (!cleanCode) return;
+
+  const referrer = Object.values(USERS_DB).find(
+    (candidate) => candidate.primary_handle.toLowerCase() === cleanCode && candidate.id !== newUser.id
+  );
+  if (!referrer) return;
+
+  const currentCount = referrer.referralsCount || 0;
+  const nextCount = currentCount + 1;
+  const earnedBefore = Math.floor(currentCount / 3);
+  const earnedAfter = Math.floor(nextCount / 3);
+  const newFreeMonths = earnedAfter - earnedBefore;
+  const currentProUntil = referrer.referralProUntil ? Date.parse(referrer.referralProUntil) : 0;
+  const baseDate = Math.max(Date.now(), Number.isFinite(currentProUntil) ? currentProUntil : 0);
+
+  referrer.referralsCount = nextCount;
+  referrer.referralRewards = {
+    verifiedBadgeUnlocked: nextCount >= 1,
+    freeProMonthsEarned: earnedAfter,
+    customDomainUnlocked: nextCount >= 5
+  };
+  if (newFreeMonths > 0) {
+    referrer.referralProUntil = new Date(baseDate + newFreeMonths * 30 * 24 * 60 * 60 * 1000).toISOString();
+  }
+  newUser.referredBy = referrer.id;
+}
 
 // Failed login tracker for SEC-2 Brute Force Throttling
 // Key: `${ip}:${email.toLowerCase()}`
@@ -625,6 +662,8 @@ app.post('/api/v1/auth/register', (req: Request, res: Response) => {
     email_verified: false
   };
 
+  const referralCode = parseCookies(req.headers.cookie)['_raloa_ref'];
+  qualifyLocalReferral(newUser, referralCode);
   USERS_DB[normalizedEmail] = newUser;
 
   const now = Date.now();
@@ -1118,4 +1157,3 @@ if (isDirectExecution && process.env.NODE_ENV !== 'test') {
 }
 
 export default app;
-
