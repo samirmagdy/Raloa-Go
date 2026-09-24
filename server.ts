@@ -591,6 +591,72 @@ app.post('/api/v1/public/contact', (req: Request, res: Response) => {
 });
 
 /**
+ * FR-4.1 User Registration Endpoint (Localhost & Server Auth)
+ * Supports localhost registration when Firebase Cloud provider is restricted.
+ */
+app.post('/api/v1/auth/register', (req: Request, res: Response) => {
+  const { email, password, handle } = req.body || {};
+
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ status: 'error', message: 'Email is required' });
+  }
+  if (!password || typeof password !== 'string' || password.length < 6) {
+    return res.status(400).json({ status: 'error', message: 'Password must be at least 6 characters' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  if (USERS_DB[normalizedEmail]) {
+    return res.status(409).json({ status: 'error', message: 'This email is already registered. Please sign in.' });
+  }
+
+  const rawHandle = (handle || normalizedEmail.split('@')[0] || 'creator').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const cleanHandle = rawHandle.slice(0, 30);
+
+  const newUserId = `usr_${crypto.randomBytes(8).toString('hex')}`;
+  const salt = crypto.randomBytes(16).toString('hex');
+  const passwordHash = hashPassword(password, salt);
+
+  const newUser: UserAccount = {
+    id: newUserId,
+    email: normalizedEmail,
+    passwordHash,
+    salt,
+    primary_handle: cleanHandle,
+    email_verified: false
+  };
+
+  USERS_DB[normalizedEmail] = newUser;
+
+  const now = Date.now();
+  const sessionToken = crypto.randomBytes(32).toString('hex');
+  const maxAgeSeconds = 604800; // 7 days (FR-4.1)
+  ACTIVE_SESSIONS.set(sessionToken, {
+    userId: newUser.id,
+    email: newUser.email,
+    primary_handle: newUser.primary_handle,
+    createdAt: now,
+    expiresAt: now + maxAgeSeconds * 1000
+  });
+
+  res.setHeader(
+    'Set-Cookie',
+    `raloa_session=${sessionToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`
+  );
+
+  return res.status(201).json({
+    status: 'success',
+    data: {
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        primary_handle: newUser.primary_handle
+      },
+      redirect_to: '/studio'
+    }
+  });
+});
+
+/**
  * FR-4.1 Credential-Based Authentication (Login)
  * SEC-2 Brute Force Throttling: Max 5 failed attempts per IP + Email per 10 minutes (returns 429).
  * Issues short-lived access / long-lived raloa_session cookie.

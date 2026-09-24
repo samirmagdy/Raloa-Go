@@ -98,6 +98,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (code === 'auth/invalid-email') {
       return isRtl ? 'عنوان البريد الإلكتروني غير صالح.' : 'Invalid email address format.';
     }
+    if (code === 'auth/operation-not-allowed') {
+      return isRtl
+        ? 'تسجيل الدخول بالبريد الإلكتروني غير مفعّل في لوحة Firebase Console. يرجى تفعيله من قسم Authentication.'
+        : 'Email/Password is disabled in Firebase Console. Enable it in Firebase Console > Authentication > Sign-in method.';
+    }
     return err?.message || (isRtl ? 'حدث خطأ أثناء المصادقة. يرجى المحاولة ثانية.' : 'Authentication error. Please try again.');
   };
 
@@ -282,9 +287,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       // Registration Flow (mode === 'signup')
       let user;
       try {
-        user = await signUpWithEmail(email, password);
+        try {
+          const resp = await fetch('/api/v1/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password, handle: claimedHandle })
+          });
+          if (resp.status === 409) {
+            setError(isRtl ? 'هذا البريد الإلكتروني مسجل بالفعل. يرجى تسجيل الدخول.' : 'This email is already registered. Please sign in.');
+            setLoading(false);
+            return;
+          }
+        } catch (_) {}
+
+        user = await signUpWithEmail(email, password, claimedHandle);
       } catch (err: any) {
-        // If client Firebase registration throws, check if demo account exists
         setError(formatAuthError(err));
         setLoading(false);
         return;

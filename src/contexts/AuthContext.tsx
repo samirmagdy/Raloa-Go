@@ -11,7 +11,8 @@ import {
   syncUserProfile,
   updateUserPlan,
   saveUserMiniSiteToFirestore,
-  loadUserMiniSiteFromFirestore
+  loadUserMiniSiteFromFirestore,
+  createLocalUser
 } from '../lib/firebase';
 import { UserProfile, UserMiniSite } from '../types';
 
@@ -21,7 +22,7 @@ interface AuthContextType {
   loading: boolean;
   signInWithGoogle: () => Promise<User>;
   signInWithEmail: (email: string, pass: string) => Promise<User>;
-  signUpWithEmail: (email: string, pass: string) => Promise<User>;
+  signUpWithEmail: (email: string, pass: string, handle?: string) => Promise<User>;
   sendPasswordReset: (email: string) => Promise<void>;
   logOut: () => Promise<void>;
   updatePlan: (plan: 'free' | 'pro' | 'studio', isYearly?: boolean) => Promise<void>;
@@ -47,11 +48,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    const getCachedLocalUser = (): User | null => {
+      if (typeof window === 'undefined') return null;
+      const raw = localStorage.getItem('raloa_local_user');
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.email) {
+          return createLocalUser(parsed.email, parsed.displayName);
+        }
+      } catch (_) {}
+      return null;
+    };
+
+    const localUser = getCachedLocalUser();
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
+      const activeUser = currentUser || localUser;
+      setUser(activeUser);
+      if (activeUser) {
         try {
-          const userProf = await syncUserProfile(currentUser);
+          const userProf = await syncUserProfile(activeUser);
           setProfile(userProf);
         } catch (err) {
           console.error('Error synchronizing user profile on auth change:', err);
@@ -61,6 +78,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       setLoading(false);
     });
+
+    if (localUser && !auth.currentUser) {
+      setUser(localUser);
+      syncUserProfile(localUser)
+        .then(setProfile)
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
 
     return () => unsubscribe();
   }, []);
@@ -81,9 +106,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return loggedUser;
   }, []);
 
-  const signUpWithEmail = useCallback(async (email: string, pass: string) => {
-    const loggedUser = await fbSignUpWithEmail(email, pass);
-    const prof = await syncUserProfile(loggedUser);
+  const signUpWithEmail = useCallback(async (email: string, pass: string, handle?: string) => {
+    const loggedUser = await fbSignUpWithEmail(email, pass, handle);
+    const prof = await syncUserProfile(loggedUser, handle ? { handle } : {});
     setUser(loggedUser);
     setProfile(prof);
     return loggedUser;

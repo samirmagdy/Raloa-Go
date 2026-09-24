@@ -311,8 +311,49 @@ async function runTests() {
     assert(appleCookie.includes('raloa_session='), 'Apple OAuth sets raloa_session cookie');
     console.log('✅ FR-4.6 PASSED!\n');
 
+    // -------------------------------------------------------------
+    // Test Case: TC-M4-05 (Localhost User Registration & Login)
+    // -------------------------------------------------------------
+    console.log('Testing TC-M4-05: Localhost Registration & Login Flow...');
+    const newRegEmail = 'newlocaluser@raloa.app';
+    const newRegPassword = 'LocalPassword123!';
+    const newRegHandle = 'localking';
+
+    // 1. Register new account
+    const resReg = await fetch(`${BASE_URL}/api/v1/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: newRegEmail, password: newRegPassword, handle: newRegHandle })
+    });
+    assert(resReg.status === 201, 'POST /api/v1/auth/register returns 201 Created');
+    const regCookie = resReg.headers.get('set-cookie') || '';
+    assert(regCookie.includes('raloa_session='), 'Register sets raloa_session cookie');
+    const regData = await resReg.json();
+    assert(regData.status === 'success', 'Register status is success');
+    assert(regData.data?.user?.email === newRegEmail, 'User email matches registered email');
+    assert(regData.data?.user?.primary_handle === newRegHandle, 'User handle matches registered handle');
+
+    // 2. Duplicate registration returns 409 Conflict
+    const resDup = await fetch(`${BASE_URL}/api/v1/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: newRegEmail, password: newRegPassword })
+    });
+    assert(resDup.status === 409, 'Duplicate email registration returns 409 Conflict');
+
+    // 3. Login with newly registered credentials
+    const resNewLogin = await fetch(`${BASE_URL}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: newRegEmail, password: newRegPassword })
+    });
+    assert(resNewLogin.status === 200, 'Login with new registered user returns 200 OK');
+    const loginData = await resNewLogin.json();
+    assert(loginData.data?.user?.primary_handle === newRegHandle, 'Logged in user has registered handle');
+    console.log('✅ TC-M4-05 PASSED!\n');
+
     console.log('================================================================');
-    console.log('🎉 ALL VERIFICATION TEST CASES (TC-M2-01..03, TC-M4-01..04) PASSED!');
+    console.log('🎉 ALL VERIFICATION TEST CASES (TC-M2-01..03, TC-M4-01..05) PASSED!');
     console.log('================================================================');
   } finally {
     server.close();

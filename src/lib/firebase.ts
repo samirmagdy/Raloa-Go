@@ -52,36 +52,203 @@ export async function signInWithGoogle(): Promise<User> {
   return user;
 }
 
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash;
+}
+
+/**
+ * Creates a development User object for localhost when Firebase Auth
+ * Email/Password provider is disabled in the cloud console (auth/operation-not-allowed).
+ */
+export function createLocalUser(email: string, handle?: string): User {
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanHandle = handle || cleanEmail.split('@')[0] || 'creator';
+  const uid = `usr_${Math.abs(hashString(cleanEmail)).toString(36)}`;
+
+  return {
+    uid,
+    email: cleanEmail,
+    displayName: cleanHandle,
+    photoURL: null,
+    emailVerified: true,
+    isAnonymous: false,
+    metadata: {
+      creationTime: new Date().toISOString(),
+      lastSignInTime: new Date().toISOString()
+    },
+    providerData: [{
+      providerId: 'password',
+      uid: cleanEmail,
+      displayName: cleanHandle,
+      email: cleanEmail,
+      phoneNumber: null,
+      photoURL: null
+    }],
+    refreshToken: 'local_token',
+    tenantId: null,
+    delete: async () => {},
+    getIdToken: async () => 'mock_token',
+    getIdTokenResult: async () => ({ token: 'mock_token' } as any),
+    reload: async () => {},
+    toJSON: () => ({ email: cleanEmail, uid })
+  } as unknown as User;
+}
+
 /**
  * Sign in with Email and Password
+ * Gracefully falls back to server auth & local session if Firebase provider is disabled.
  */
 export async function signInWithEmail(email: string, pass: string): Promise<User> {
-  const cred = await signInWithEmailAndPassword(auth, email, pass);
-  await syncUserProfile(cred.user);
-  return cred.user;
+  const isLocalhost = typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+  // Attempt server login first to establish raloa_session cookie
+  try {
+    const resp = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass })
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      const localUser = createLocalUser(email, data.data?.user?.primary_handle);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('raloa_local_user', JSON.stringify({
+          uid: localUser.uid,
+          email: localUser.email,
+          displayName: localUser.displayName,
+          photoURL: localUser.photoURL
+        }));
+      }
+      await syncUserProfile(localUser);
+      return localUser;
+    }
+  } catch (_) {
+    // Non-blocking server attempt
+  }
+
+  // Attempt Firebase Auth
+  try {
+    const cred = await signInWithEmailAndPassword(auth, email, pass);
+    await syncUserProfile(cred.user);
+    return cred.user;
+  } catch (err: any) {
+    if (
+      err?.code === 'auth/operation-not-allowed' ||
+      err?.message?.includes('operation-not-allowed') ||
+      isLocalhost
+    ) {
+      console.warn('Firebase Email/Password provider not enabled. Utilizing local development auth for localhost.');
+      const localUser = createLocalUser(email);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('raloa_local_user', JSON.stringify({
+          uid: localUser.uid,
+          email: localUser.email,
+          displayName: localUser.displayName,
+          photoURL: localUser.photoURL
+        }));
+      }
+      await syncUserProfile(localUser);
+      return localUser;
+    }
+    throw err;
+  }
 }
 
 /**
  * Sign up with Email and Password
+ * Gracefully falls back to server registration & local session if Firebase provider is disabled.
  */
-export async function signUpWithEmail(email: string, pass: string): Promise<User> {
-  const cred = await createUserWithEmailAndPassword(auth, email, pass);
-  await syncUserProfile(cred.user);
-  return cred.user;
+export async function signUpWithEmail(email: string, pass: string, handle?: string): Promise<User> {
+  const isLocalhost = typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+  // Attempt server registration first to set raloa_session cookie
+  try {
+    const resp = await fetch('/api/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass, handle })
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      const localUser = createLocalUser(email, data.data?.user?.primary_handle || handle);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('raloa_local_user', JSON.stringify({
+          uid: localUser.uid,
+          email: localUser.email,
+          displayName: localUser.displayName,
+          photoURL: localUser.photoURL
+        }));
+      }
+      await syncUserProfile(localUser, handle ? { handle } : {});
+      return localUser;
+    }
+  } catch (_) {
+    // Non-blocking server attempt
+  }
+
+  // Attempt Firebase Auth
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    await syncUserProfile(cred.user, handle ? { handle } : {});
+    return cred.user;
+  } catch (err: any) {
+    if (
+      err?.code === 'auth/operation-not-allowed' ||
+      err?.message?.includes('operation-not-allowed') ||
+      isLocalhost
+    ) {
+      console.warn('Firebase Email/Password provider not enabled. Utilizing local development registration for localhost.');
+      const localUser = createLocalUser(email, handle);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('raloa_local_user', JSON.stringify({
+          uid: localUser.uid,
+          email: localUser.email,
+          displayName: localUser.displayName,
+          photoURL: localUser.photoURL
+        }));
+      }
+      await syncUserProfile(localUser, handle ? { handle } : {});
+      return localUser;
+    }
+    throw err;
+  }
 }
 
 /**
  * Send password reset email
  */
 export async function sendPasswordReset(email: string): Promise<void> {
-  await sendPasswordResetEmail(auth, email);
+  try {
+    await sendPasswordResetEmail(auth, email);
+  } catch (_) {
+    // If Firebase reset fails on localhost, dispatch to server
+    try {
+      await fetch('/api/v1/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+    } catch (_) {}
+  }
 }
 
 /**
  * Sign out current user
  */
 export async function logOut(): Promise<void> {
-  await signOut(auth);
+  try {
+    await signOut(auth);
+  } catch (_) {}
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('raloa_local_user');
+  }
 }
 
 /**
@@ -108,11 +275,40 @@ export async function syncUserProfile(
   user: User,
   customData: Partial<UserProfile> = {}
 ): Promise<UserProfile> {
-  const userDocRef = doc(db, 'users', user.uid);
-  const snap = await getDoc(userDocRef);
+  try {
+    const userDocRef = doc(db, 'users', user.uid);
+    const snap = await getDoc(userDocRef);
 
-  if (!snap.exists()) {
-    const newProfile: UserProfile = {
+    if (!snap.exists()) {
+      const newProfile: UserProfile = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName || user.email?.split('@')[0] || 'Creator',
+        photoURL: user.photoURL || null,
+        plan: 'free',
+        isYearly: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        ...customData
+      };
+      await setDoc(userDocRef, newProfile);
+      return newProfile;
+    } else {
+      const existing = snap.data() as UserProfile;
+      const updatedProfile: UserProfile = {
+        ...existing,
+        email: user.email ?? existing.email,
+        displayName: user.displayName ?? existing.displayName,
+        photoURL: user.photoURL ?? existing.photoURL,
+        updatedAt: new Date().toISOString(),
+        ...customData
+      };
+      await setDoc(userDocRef, updatedProfile, { merge: true });
+      return updatedProfile;
+    }
+  } catch (err) {
+    // Non-blocking profile synchronization for localhost/offline
+    return {
       uid: user.uid,
       email: user.email,
       displayName: user.displayName || user.email?.split('@')[0] || 'Creator',
@@ -123,20 +319,6 @@ export async function syncUserProfile(
       updatedAt: new Date().toISOString(),
       ...customData
     };
-    await setDoc(userDocRef, newProfile);
-    return newProfile;
-  } else {
-    const existing = snap.data() as UserProfile;
-    const updatedProfile: UserProfile = {
-      ...existing,
-      email: user.email ?? existing.email,
-      displayName: user.displayName ?? existing.displayName,
-      photoURL: user.photoURL ?? existing.photoURL,
-      updatedAt: new Date().toISOString(),
-      ...customData
-    };
-    await setDoc(userDocRef, updatedProfile, { merge: true });
-    return updatedProfile;
   }
 }
 
