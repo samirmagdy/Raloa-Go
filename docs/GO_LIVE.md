@@ -61,6 +61,17 @@ Attach the secrets with `--set-secrets` in the real deployment command. Use a ne
 
 ## Stripe activation
 
+The test-mode catalog currently created for RALOA is:
+
+```text
+RALOA Pro monthly:  price_1UJCNXJLQtDaoIg39sZl7nbc
+RALOA Pro yearly:   price_1UJCNbJLQtDaoIg33tBI6sot
+RALOA Studio monthly: price_1UJCNfJLQtDaoIg31erqWcyh
+RALOA Studio yearly:  price_1UJCNiJLQtDaoIg3DwLEzCvu
+```
+
+These IDs are test-mode only. Do not use them with live Stripe credentials.
+
 1. Create the live Pro and Studio monthly/yearly recurring prices.
 2. Put their IDs in the four `STRIPE_PRICE_*` secrets.
 3. Register `https://raloa.app/api/webhooks/stripe` as a live webhook endpoint.
