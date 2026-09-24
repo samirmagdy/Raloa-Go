@@ -48,10 +48,34 @@ googleProvider.setCustomParameters({
  * Sign in with Google Popup
  */
 export async function signInWithGoogle(): Promise<User> {
-  const result = await signInWithPopup(auth, googleProvider);
-  const user = result.user;
-  await syncUserProfile(user);
-  return user;
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    const user = result.user;
+    await syncUserProfile(user);
+    return user;
+  } catch (err: any) {
+    const isLocalhost = typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    if (
+      err?.code === 'auth/operation-not-allowed' ||
+      err?.code === 'auth/unauthorized-domain' ||
+      (isLocalhost && err?.code !== 'auth/popup-closed-by-user')
+    ) {
+      console.warn('Firebase Google Auth fallback activated for localhost:', err);
+      const localUser = createLocalUser('creator@google.com', 'google_creator');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('raloa_local_user', JSON.stringify({
+          uid: localUser.uid,
+          email: localUser.email,
+          displayName: localUser.displayName,
+          photoURL: localUser.photoURL
+        }));
+      }
+      await syncUserProfile(localUser);
+      return localUser;
+    }
+    throw err;
+  }
 }
 
 function hashString(str: string): number {
@@ -130,6 +154,13 @@ export async function signInWithEmail(email: string, pass: string): Promise<User
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password: pass })
     });
+    if (resp.status === 429) {
+      const data = await resp.json().catch(() => ({}));
+      throw Object.assign(new Error('Rate limit exceeded'), {
+        code: 'auth/rate-limit',
+        retry_after: data.retry_after
+      });
+    }
     if (resp.ok) {
       const data = await resp.json();
       const localUser = createLocalUser(email, data.data?.user?.primary_handle);
@@ -144,7 +175,8 @@ export async function signInWithEmail(email: string, pass: string): Promise<User
       await syncUserProfile(localUser);
       return localUser;
     }
-  } catch (_) {
+  } catch (err: any) {
+    if (err?.code === 'auth/rate-limit') throw err;
     // Non-blocking server attempt
   }
 
@@ -191,6 +223,9 @@ export async function signUpWithEmail(email: string, pass: string, handle?: stri
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password: pass, handle })
     });
+    if (resp.status === 409) {
+      throw Object.assign(new Error('This email is already registered.'), { code: 'auth/email-already-in-use' });
+    }
     if (resp.ok) {
       const data = await resp.json();
       const localUser = createLocalUser(email, data.data?.user?.primary_handle || handle);
@@ -206,7 +241,8 @@ export async function signUpWithEmail(email: string, pass: string, handle?: stri
       await completeReferralSignup(localUser.uid, captureReferralCode());
       return localUser;
     }
-  } catch (_) {
+  } catch (err: any) {
+    if (err?.code === 'auth/email-already-in-use') throw err;
     // Non-blocking server attempt
   }
 

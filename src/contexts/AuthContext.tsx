@@ -64,7 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const localUser = getCachedLocalUser();
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      const activeUser = currentUser || localUser;
+      const activeUser = currentUser || getCachedLocalUser();
       setUser(activeUser);
       if (activeUser) {
         try {
@@ -128,6 +128,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setProfile(null);
     if (typeof window !== 'undefined') {
+      localStorage.removeItem('raloa_local_user');
       window.location.href = '/';
     }
   }, []);

@@ -120,7 +120,7 @@ function resolveInitialRoute(): {
 }
 
 function MainApp() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [locale, setLocale] = useState<Locale>(() => getInitialLocale());
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => getInitialSoundEnabled());
@@ -634,10 +634,11 @@ function MainApp() {
       {currentRoute === 'studio' ? (
         <Suspense fallback={<LoadingOverlay isLoading locale={locale} theme={theme} />}>
           <StudioModal
-            initialUsername={studioUsername}
+            initialUsername={profile?.handle || studioUsername}
             initialTemplate={studioTemplate}
             locale={locale}
             onClose={handleCloseStudio}
+            onOpenAuth={(mode) => setAuthModal({ open: true, mode: mode || 'signin' })}
           />
         </Suspense>
       ) : currentRoute === 'templates' ? (
