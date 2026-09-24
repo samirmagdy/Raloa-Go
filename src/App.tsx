@@ -44,6 +44,7 @@ import { useSEO } from './hooks/useSEO';
 import { useVoiceTour } from './hooks/useVoiceTour';
 import { VoiceTourToggle } from './components/VoiceTourToggle';
 import { AuthProvider } from './contexts/AuthContext';
+import { recordPageView, recordLinkClick } from './lib/firebase';
 
 function MainApp() {
   const [locale, setLocale] = useState<Locale>(() => getInitialLocale());
@@ -62,6 +63,12 @@ function MainApp() {
     if (path !== '/' && path !== '' && path !== '/index.html') return '404';
     return 'home';
   });
+
+  useEffect(() => {
+    const activePath = typeof window !== 'undefined' ? window.location.pathname : '/';
+    recordPageView(activePath || '/');
+  }, [currentRoute]);
+
   const [attemptedPath, setAttemptedPath] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
     const path = window.location.pathname;
@@ -329,6 +336,7 @@ function MainApp() {
   };
 
   const handleSelectTemplate = (template: TemplateItem) => {
+    recordLinkClick(template.id, template.name, 'template_gallery');
     setPreviewTemplate(template);
     const params = new URLSearchParams(window.location.search);
     params.set('template', template.id);

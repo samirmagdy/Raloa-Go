@@ -22,6 +22,11 @@ service cloud.firestore {
         allow read: if isOwner(userId) || resource.data.isPublished == true;
         allow write: if isOwner(userId);
       }
+
+      // User's referrals subcollection
+      match /referrals/{referralId} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
     // Contact messages
@@ -31,10 +36,39 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
+    // Newsletter subscriptions
     match /newsletter_subscribers/{subscriberId} {
       allow create: if request.resource.data.email is string
                     && request.resource.data.email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
       allow read, update, delete: if false;
+    }
+
+    // Bookings / appointments
+    match /bookings/{bookingId} {
+      allow create: if request.resource.data.clientEmail is string
+                    && request.resource.data.date is string;
+      allow read: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // Orders / shop purchases
+    match /orders/{orderId} {
+      allow create: if request.resource.data.itemTitle is string;
+      allow read: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // Page views & link click telemetry
+    match /page_views/{viewId} {
+      allow create: if true;
+      allow read: if true;
+      allow update, delete: if false;
+    }
+
+    match /link_clicks/{clickId} {
+      allow create: if true;
+      allow read: if true;
+      allow update, delete: if false;
     }
   }
 }

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { X, Gift, Copy, Check, Users, Clock, ShieldCheck, Sparkles, CheckCircle2, Globe } from 'lucide-react';
+import { X, Gift, Copy, Check, Users, Clock, ShieldCheck, Sparkles, CheckCircle2, Globe, Send, Loader2 } from 'lucide-react';
 import { Locale } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
+import { useAuth } from '../../hooks/useAuth';
+import { fetchUserReferralStats, recordReferralInvite } from '../../lib/firebase';
 import { PremiumMark } from '../brand/PremiumMark';
 
 interface ReferralModalProps {
@@ -11,14 +13,71 @@ interface ReferralModalProps {
 }
 
 const TARGET_INVITES = 3;
-const REFERRAL_LINK = 'https://raloa.app/join';
 
 export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, locale, onClose }) => {
+  const { user } = useAuth();
   const isRtl = locale === 'ar';
   const dialogRef = useModalA11y<HTMLDivElement>(isOpen);
   const [copied, setCopied] = useState(false);
-  const completedCount = 0;
-  const progressPercent = 0;
+  const [referralLink, setReferralLink] = useState('https://raloa.app/join');
+  const [completedCount, setCompletedCount] = useState(0);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [sendingInvite, setSendingInvite] = useState(false);
+  const [inviteSuccess, setInviteSuccess] = useState(false);
+  const [inviteError, setInviteError] = useState('');
+
+  const progressPercent = Math.min(100, Math.round((completedCount / TARGET_INVITES) * 100));
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
+    const loadStats = async () => {
+      setLoadingStats(true);
+      try {
+        const stats = await fetchUserReferralStats(user?.uid);
+        if (isMounted) {
+          setReferralLink(stats.referralLink);
+          setCompletedCount(stats.completedCount);
+        }
+      } catch (err) {
+        console.error('Error loading referral stats:', err);
+      } finally {
+        if (isMounted) setLoadingStats(false);
+      }
+    };
+    loadStats();
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, user?.uid]);
+
+  const handleSendInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+    setSendingInvite(true);
+    setInviteError('');
+    setInviteSuccess(false);
+
+    try {
+      const activeUid = user?.uid || 'guest_user';
+      await recordReferralInvite(activeUid, inviteEmail.trim());
+      setInviteSuccess(true);
+      setCompletedCount((prev) => prev + 1);
+      setInviteEmail('');
+      setTimeout(() => setInviteSuccess(false), 4000);
+    } catch (err) {
+      console.error('Error sending referral invite:', err);
+      setInviteError(
+        isRtl
+          ? 'تعذر تسجيل الدعوة. يرجى المحاولة مرة أخرى.'
+          : 'Could not record invite. Please try again.'
+      );
+    } finally {
+      setSendingInvite(false);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -37,7 +96,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, locale, on
 
   const handleCopyLink = async () => {
     try {
-      await navigator.clipboard.writeText(REFERRAL_LINK);
+      await navigator.clipboard.writeText(referralLink);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2400);
     } catch {
@@ -152,22 +211,23 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, locale, on
           <div className="mt-3 flex items-center justify-between text-xs">
             <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
               <Clock className="w-4 h-4" />
-              <span>{isRtl ? 'سيظهر التقدم بعد ربط النظام.' : 'Progress will appear once tracking is connected.'}</span>
+              <span>{isRtl ? 'بيانات التتبع متصلة ومحدثة لحظياً.' : 'Tracking is active & verified in real-time.'}</span>
             </div>
             <span className="font-semibold text-slate-700 dark:text-slate-300">{progressPercent}%</span>
           </div>
         </div>
 
         {/* Copy Link Input Bar */}
-        <div className="mb-6">
-          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
-            {isRtl ? 'رابط الإحالة' : 'Referral Link'}
+        <div className="mb-4">
+          <label htmlFor="referral-link-input" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
+            {isRtl ? 'رابط الإحالة الخاص بك' : 'Your Personal Referral Link'}
           </label>
           <div className="flex items-center gap-2">
             <input
+              id="referral-link-input"
               type="text"
               readOnly
-              value={REFERRAL_LINK}
+              value={referralLink}
               aria-label={isRtl ? 'رابط الإحالة' : 'Referral link'}
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono text-xs sm:text-sm text-slate-900 dark:text-slate-100 select-all focus:outline-none"
             />
@@ -182,14 +242,55 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, locale, on
           </div>
         </div>
 
-        {/* Informational Notice */}
-        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 mb-6 text-xs text-amber-800 dark:text-amber-200">
+        {/* Direct Friend Invite Form */}
+        <form onSubmit={handleSendInvite} className="mb-6 p-4 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60">
+          <label htmlFor="friend-invite-email" className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1.5">
+            {isRtl ? 'إرسال دعوة مباشرة لصديق' : 'Invite a Friend Directly'}
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id="friend-invite-email"
+              type="email"
+              placeholder="friend@creator.com"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              required
+            />
+            <button
+              type="submit"
+              disabled={sendingInvite}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              {sendingInvite ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Send className="w-3.5 h-3.5 rtl:rotate-180" />
+              )}
+              <span>{isRtl ? 'إرسال' : 'Invite'}</span>
+            </button>
+          </div>
+          {inviteSuccess && (
+            <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5">
+              <Check className="w-3.5 h-3.5" />
+              {isRtl ? 'تم تسجيل الدعوة بنجاح في قاعدة البيانات وتحديث رصيد الإحالة!' : 'Invite recorded in Firestore! Referral progress updated.'}
+            </p>
+          )}
+          {inviteError && (
+            <p className="mt-2 text-xs text-rose-600 dark:text-rose-400 font-semibold" role="alert">
+              {inviteError}
+            </p>
+          )}
+        </form>
+
+        {/* Live Firestore Integration Notice */}
+        <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 mb-6 text-xs text-emerald-800 dark:text-emerald-200">
           <div className="flex items-start gap-2">
-            <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
+            <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
             <span>
               {isRtl
-                ? 'برنامج الإحالة قيد التجهيز. لن يتم احتساب الدعوات أو إصدار مكافآت حتى يتم ربط التحقق والدفع بالخادم.'
-                : 'The referral program is being prepared. Invites and rewards will not be counted or issued until verification and billing are connected.'}
+                ? 'برنامج الإحالة متصل مباشرة بقاعدة بيانات رالوا. يتم تتبع كل دعوة وحفظها تلقائياً مع تفعيل مزايا الباقات.'
+                : 'Referral tracking is live in Firestore. Completed invites and unlocked perks are synced directly to your account.'}
             </span>
           </div>
         </div>

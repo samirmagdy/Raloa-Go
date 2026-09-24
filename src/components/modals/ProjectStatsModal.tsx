@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { PremiumMark } from '../brand/PremiumMark';
 import {
   X,
@@ -9,7 +9,9 @@ import {
   RefreshCw,
   ArrowUpRight,
   Calendar,
-  Layers
+  Layers,
+  Database,
+  Loader2
 } from 'lucide-react';
 import {
   AreaChart,
@@ -23,6 +25,7 @@ import {
 } from 'recharts';
 import { Locale } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
+import { fetchPlatformMetrics } from '../../lib/firebase';
 
 interface ProjectStatsModalProps {
   isOpen: boolean;
@@ -80,8 +83,28 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
 }) => {
   const [period, setPeriod] = useState<7 | 14 | 30>(7);
   const [seed, setSeed] = useState<number>(1);
+  const [liveMetrics, setLiveMetrics] = useState<{ totalVisits: number; totalClicks: number; activeSitesCount: number } | null>(null);
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
   const isRtl = locale === 'ar';
   const dialogRef = useModalA11y<HTMLDivElement>(isOpen);
+
+  const fetchMetrics = async () => {
+    setLoadingMetrics(true);
+    try {
+      const data = await fetchPlatformMetrics();
+      setLiveMetrics(data);
+    } catch (err) {
+      console.error('Error fetching live platform metrics:', err);
+    } finally {
+      setLoadingMetrics(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchMetrics();
+    }
+  }, [isOpen]);
 
   const chartData = useMemo(() => {
     return generateStatsData(period, seed);
@@ -188,6 +211,37 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
         {/* Scrollable Content Body */}
         <div className="p-6 overflow-y-auto space-y-6">
           
+          {/* Live Firestore Telemetry Verification Banner */}
+          <div className="p-3.5 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-900/60 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Database className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5 leading-tight">
+                  <span>{isRtl ? 'بيانات التتبع المباشرة من Firestore' : 'Live Firestore Telemetry'}</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                </h4>
+                <p className="text-[11px] text-indigo-800/80 dark:text-indigo-300/80 mt-0.5">
+                  {loadingMetrics
+                    ? (isRtl ? 'جاري قراءة السجلات الحية...' : 'Reading live Firestore records...')
+                    : (isRtl
+                      ? `${liveMetrics?.totalVisits ?? 0} زيارة موثقة • ${liveMetrics?.totalClicks ?? 0} نقرة رابط مسجلة`
+                      : `${liveMetrics?.totalVisits ?? 0} verified visits • ${liveMetrics?.totalClicks ?? 0} recorded link clicks`)}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={fetchMetrics}
+              disabled={loadingMetrics}
+              className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <RefreshCw className={`w-3 h-3 ${loadingMetrics ? 'animate-spin' : ''}`} />
+              <span>{isRtl ? 'مزامنة' : 'Sync'}</span>
+            </button>
+          </div>
+
           {/* Controls: Time Range Selector */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">

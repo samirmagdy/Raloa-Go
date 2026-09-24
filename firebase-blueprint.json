@@ -12,6 +12,7 @@
         "photoURL": { "type": "string", "description": "Avatar image URL" },
         "plan": { "type": "string", "description": "Subscription tier: free, pro, or studio" },
         "isYearly": { "type": "boolean", "description": "Whether the plan is billed yearly" },
+        "referralsCount": { "type": "number", "description": "Number of successful referral signups" },
         "createdAt": { "type": "timestamp", "description": "Account registration timestamp" },
         "updatedAt": { "type": "timestamp", "description": "Last profile update timestamp" }
       },
@@ -34,6 +35,17 @@
             "isPublished": { "type": "boolean", "description": "Whether site is live" },
             "updatedAt": { "type": "timestamp", "description": "Last edit timestamp" }
           }
+        },
+        "referrals": {
+          "collectionName": "referrals",
+          "path": "users/{userId}/referrals/{referralId}",
+          "description": "Referral invites and reward milestones",
+          "fields": {
+            "id": { "type": "string", "description": "Referral record ID" },
+            "invitedEmail": { "type": "string", "description": "Referred user email" },
+            "status": { "type": "string", "description": "joined, verified, rewarded" },
+            "createdAt": { "type": "timestamp", "description": "Referral date" }
+          }
         }
       }
     },
@@ -47,6 +59,62 @@
         "subject": { "type": "string", "description": "Inquiry subject" },
         "message": { "type": "string", "description": "Inquiry message body" },
         "createdAt": { "type": "timestamp", "description": "Submission timestamp" }
+      }
+    },
+    "newsletter_subscribers": {
+      "collectionName": "newsletter_subscribers",
+      "path": "newsletter_subscribers/{subscriberId}",
+      "description": "Product newsletter email subscriber list",
+      "fields": {
+        "email": { "type": "string", "description": "Subscriber email" },
+        "createdAt": { "type": "timestamp", "description": "Subscription timestamp" }
+      }
+    },
+    "bookings": {
+      "collectionName": "bookings",
+      "path": "bookings/{bookingId}",
+      "description": "Appointment bookings scheduled with creators",
+      "fields": {
+        "hostHandle": { "type": "string", "description": "Host creator handle" },
+        "clientEmail": { "type": "string", "description": "Client email" },
+        "date": { "type": "string", "description": "Scheduled date" },
+        "timeSlot": { "type": "string", "description": "Scheduled time slot" },
+        "status": { "type": "string", "description": "confirmed, pending, cancelled" },
+        "createdAt": { "type": "timestamp", "description": "Booking timestamp" }
+      }
+    },
+    "orders": {
+      "collectionName": "orders",
+      "path": "orders/{orderId}",
+      "description": "Store purchases, digital downloads, and merchandise",
+      "fields": {
+        "itemTitle": { "type": "string", "description": "Product or print title" },
+        "price": { "type": "number", "description": "Price in USD" },
+        "currency": { "type": "string", "description": "Currency code" },
+        "buyerEmail": { "type": "string", "description": "Buyer email" },
+        "status": { "type": "string", "description": "paid, pending" },
+        "createdAt": { "type": "timestamp", "description": "Order timestamp" }
+      }
+    },
+    "page_views": {
+      "collectionName": "page_views",
+      "path": "page_views/{viewId}",
+      "description": "Visitor traffic and analytics telemetry",
+      "fields": {
+        "path": { "type": "string", "description": "Visited page path" },
+        "timestamp": { "type": "timestamp", "description": "Visit timestamp" },
+        "userAgent": { "type": "string", "description": "Browser user agent" }
+      }
+    },
+    "link_clicks": {
+      "collectionName": "link_clicks",
+      "path": "link_clicks/{clickId}",
+      "description": "Outbound link clicks and conversions",
+      "fields": {
+        "linkId": { "type": "string", "description": "Clicked link block ID" },
+        "url": { "type": "string", "description": "Target destination URL" },
+        "siteHandle": { "type": "string", "description": "Mini-site creator handle" },
+        "timestamp": { "type": "timestamp", "description": "Click timestamp" }
       }
     }
   }

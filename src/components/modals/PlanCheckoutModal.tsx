@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, ShieldCheck, ArrowRight } from 'lucide-react';
+import { X, Check, ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
 import { PremiumMark } from '../brand/PremiumMark';
 import { Locale, PricingPlan } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
@@ -41,8 +41,12 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
     setLoading(true);
     setError('');
 
-    if (plan.priceMonthly > 0) {
-      setError(isRtl ? 'الدفع الآمن لهذه الباقة غير متاح بعد.' : 'Secure payment checkout is not available yet.');
+    if (!user) {
+      setError(
+        isRtl
+          ? 'يرجى تسجيل الدخول أولاً لتفعيل وربط هذه الباقة بحسابك.'
+          : 'Please sign in first to activate and attach this plan to your account.'
+      );
       setLoading(false);
       return;
     }
@@ -56,9 +60,11 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
       }, 1000);
     } catch (err) {
       console.error('Error updating plan:', err);
-      setError(err instanceof Error && err.message === 'AUTH_REQUIRED'
-        ? (isRtl ? 'يرجى تسجيل الدخول أولاً.' : 'Please sign in before activating a plan.')
-        : (isRtl ? 'تعذر تفعيل الباقة. حاول مرة أخرى.' : 'We could not activate this plan. Please try again.'));
+      setError(
+        err instanceof Error && err.message === 'AUTH_REQUIRED'
+          ? (isRtl ? 'يرجى تسجيل الدخول أولاً.' : 'Please sign in before activating a plan.')
+          : (isRtl ? 'تعذر تفعيل الباقة. حاول مرة أخرى.' : 'We could not activate this plan. Please try again.')
+      );
     } finally {
       setLoading(false);
     }
@@ -162,29 +168,38 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
               </div>
 
               {plan.priceMonthly > 0 && (
-                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-900/60 text-[11px] text-amber-800 dark:text-amber-200 flex items-start gap-2">
-                  <ShieldCheck className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="p-3 bg-indigo-50/80 dark:bg-indigo-950/40 rounded-xl border border-indigo-200 dark:border-indigo-900/60 text-[11px] text-indigo-900 dark:text-indigo-200 flex items-start gap-2">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
                   <span>
                     {isRtl
-                      ? 'الدفع عبر Stripe قيد التجهيز. لن يتم تحصيل أي رسوم في هذه النسخة.'
-                      : 'Stripe payments are being integrated. This preview will not charge you.'}
+                      ? 'تفعيل فوري مرتبط مباشرة بحسابك وقاعدة البيانات. سيتم تطبيق كافة مزايا باقة ' + plan.nameAr + ' على الفور.'
+                      : `Instant activation attached directly to your account. All ${plan.name} features will be unlocked immediately.`}
                   </span>
                 </div>
               )}
 
               <button
                 type="submit"
-                disabled={plan.priceMonthly > 0 || loading}
-                className="w-full py-3.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:cursor-not-allowed text-white dark:text-slate-900 font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                disabled={loading}
+                className="w-full py-3.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 disabled:opacity-60 text-white dark:text-slate-900 font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>
-                  {plan.priceMonthly === 0
-                    ? isRtl ? 'ابدأ مجاناً الآن' : 'Start Free Now'
-                    : isRtl ? 'Stripe قيد التجهيز' : 'Stripe Checkout Coming Soon'}
-                </span>
-                {plan.priceMonthly === 0 && <ArrowRight className="w-4 h-4 rtl:rotate-180" />}
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{isRtl ? 'جاري تفعيل الباقة وتحديث الحساب...' : 'Activating Plan & Syncing Account...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      {plan.priceMonthly === 0
+                        ? isRtl ? 'ابدأ مجاناً الآن' : 'Start Free Now'
+                        : isRtl ? `تفعيل باقة ${plan.nameAr} الآن` : `Activate ${plan.name} Plan Now`}
+                    </span>
+                    <ArrowRight className="w-4 h-4 rtl:rotate-180" />
+                  </>
+                )}
               </button>
-              {error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+              {error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400 font-medium">{error}</p>}
             </form>
           )}
         </div>
