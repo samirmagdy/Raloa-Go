@@ -121,7 +121,6 @@ function resolveInitialRoute(): {
 
 function MainApp() {
   const { user } = useAuth();
-  const [homeView, setHomeView] = useState<'dashboard' | 'marketing'>('dashboard');
   const [locale, setLocale] = useState<Locale>(() => getInitialLocale());
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => getInitialSoundEnabled());
@@ -205,7 +204,31 @@ function MainApp() {
   const [authModal, setAuthModal] = useState<{
     open: boolean;
     mode: 'signin' | 'signup' | 'forgot' | 'reset';
-  }>(() => initialRouteInfo.authModal || { open: false, mode: 'signin' });
+  }>(() => {
+    // If user is already authenticated on initial load, never open auth modal
+    if (user) return { open: false, mode: 'signin' };
+    return initialRouteInfo.authModal || { open: false, mode: 'signin' };
+  });
+
+  // Guard: Authenticated users must never see not-logged-in guest auth modals or routes
+  useEffect(() => {
+    if (user) {
+      if (authModal.open) {
+        setAuthModal({ open: false, mode: 'signin' });
+      }
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname;
+        if (
+          path === '/login' ||
+          path === '/register' ||
+          path === '/forgot-password' ||
+          path === '/reset-password'
+        ) {
+          window.history.replaceState({}, '', '/');
+        }
+      }
+    }
+  }, [user, authModal.open]);
 
   const [contactOpen, setContactOpen] = useState(false);
   const [legalTitle, setLegalTitle] = useState<string | null>(null);
@@ -640,7 +663,7 @@ function MainApp() {
             setAuthModal({ open: true, mode: 'signup' });
           }}
         />
-      ) : user && homeView === 'dashboard' ? (
+      ) : user ? (
         <>
           {/* 01 Sticky Navigation Header */}
           <Header
@@ -648,8 +671,12 @@ function MainApp() {
             onSelectLocale={handleSelectLocale}
             onToggleLocale={toggleLocale}
             onOpenStudio={(user) => handleOpenStudio(user)}
-            onOpenAuth={(mode) => setAuthModal({ open: true, mode: mode || 'signin' })}
+            onOpenTemplates={handleOpenTemplates}
+            onOpenAuth={(mode) => {
+              if (!user) setAuthModal({ open: true, mode: mode || 'signin' });
+            }}
             onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+            onNavigateToSection={handleNavigateToSection}
             theme={theme}
             onToggleTheme={handleToggleTheme}
             soundEnabled={soundEnabled}
@@ -675,7 +702,6 @@ function MainApp() {
                   handleSelectPlan(pricingPlans[1], false);
                 }
               }}
-              onSwitchToMarketing={() => setHomeView('marketing')}
             />
           </main>
 
@@ -694,25 +720,6 @@ function MainApp() {
       ) : (
 
         <>
-          {/* Floating banner when logged in and browsing public marketing page */}
-          {user && (
-            <div className="sticky top-20 z-30 bg-gradient-to-r from-indigo-950/95 via-slate-900/95 to-indigo-950/95 backdrop-blur-md text-white text-xs py-2 px-4 flex items-center justify-between border-b border-indigo-500/20 shadow-md">
-              <span className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>
-                  {locale === 'ar'
-                    ? 'أنت تستعرض الصفحة الترويجية العامة الآن.'
-                    : 'You are currently browsing the public marketing page.'}
-                </span>
-              </span>
-              <button
-                onClick={() => setHomeView('dashboard')}
-                className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-sm transition-all hover:scale-105 active:scale-95"
-              >
-                {locale === 'ar' ? 'العودة إلى لوحة التحكم ←' : 'Return to Dashboard →'}
-              </button>
-            </div>
-          )}
 
           {/* 00 Fixed Viewport Scroll Progress Bar */}
           <ScrollProgressBar isRtl={locale === 'ar'} />
@@ -726,8 +733,10 @@ function MainApp() {
         onSelectLocale={handleSelectLocale}
         onToggleLocale={toggleLocale}
         onOpenStudio={(user) => handleOpenStudio(user)}
+        onOpenTemplates={handleOpenTemplates}
         onOpenAuth={(mode) => setAuthModal({ open: true, mode: mode || 'signin' })}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        onNavigateToSection={handleNavigateToSection}
         theme={theme}
         onToggleTheme={handleToggleTheme}
         soundEnabled={soundEnabled}

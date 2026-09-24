@@ -350,10 +350,47 @@ async function runTests() {
     assert(resNewLogin.status === 200, 'Login with new registered user returns 200 OK');
     const loginData = await resNewLogin.json();
     assert(loginData.data?.user?.primary_handle === newRegHandle, 'Logged in user has registered handle');
+    const newSessionToken = (resNewLogin.headers.get('set-cookie') || '').match(/raloa_session=([^;]+)/)?.[1];
     console.log('✅ TC-M4-05 PASSED!\n');
 
+    // -------------------------------------------------------------
+    // Test Case: TC-M4-06 (Authenticated User Guest Route Isolation)
+    // -------------------------------------------------------------
+    console.log('Testing TC-M4-06: Authenticated User Guest Page Isolation & Redirect...');
+    assert(Boolean(newSessionToken), 'New session token obtained');
+
+    // Authenticated user accessing /login must redirect to /
+    const resAuthLogin = await fetch(`${BASE_URL}/login`, {
+      headers: { Cookie: `raloa_session=${newSessionToken}` },
+      redirect: 'manual'
+    });
+    assert(resAuthLogin.status === 302, 'Authenticated request to /login returns 302 redirect');
+    assert(resAuthLogin.headers.get('location') === '/', 'Redirect location is /');
+
+    // Authenticated user accessing /register must redirect to /
+    const resAuthRegister = await fetch(`${BASE_URL}/register`, {
+      headers: { Cookie: `raloa_session=${newSessionToken}` },
+      redirect: 'manual'
+    });
+    assert(resAuthRegister.status === 302, 'Authenticated request to /register returns 302 redirect');
+    assert(resAuthRegister.headers.get('location') === '/', 'Redirect location is /');
+
+    // Authenticated user accessing /forgot-password must redirect to /
+    const resAuthForgot = await fetch(`${BASE_URL}/forgot-password`, {
+      headers: { Cookie: `raloa_session=${newSessionToken}` },
+      redirect: 'manual'
+    });
+    assert(resAuthForgot.status === 302, 'Authenticated request to /forgot-password returns 302 redirect');
+    assert(resAuthForgot.headers.get('location') === '/', 'Redirect location is /');
+
+    // Unauthenticated request to /login must NOT redirect (returns 200 OK)
+    const resGuestLogin = await fetch(`${BASE_URL}/login`, { redirect: 'manual' });
+    assert(resGuestLogin.status === 200, 'Unauthenticated visitor to /login gets 200 OK');
+
+    console.log('✅ TC-M4-06 PASSED!\n');
+
     console.log('================================================================');
-    console.log('🎉 ALL VERIFICATION TEST CASES (TC-M2-01..03, TC-M4-01..05) PASSED!');
+    console.log('🎉 ALL VERIFICATION TEST CASES (TC-M2-01..03, TC-M4-01..06) PASSED!');
     console.log('================================================================');
   } finally {
     server.close();

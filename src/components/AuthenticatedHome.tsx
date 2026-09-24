@@ -49,7 +49,6 @@ interface AuthenticatedHomeProps {
   onOpenStudio: (username?: string, template?: TemplateItem) => void;
   onOpenTemplates: () => void;
   onOpenPricing: () => void;
-  onSwitchToMarketing?: () => void;
 }
 
 type TimeRange = '7d' | '30d' | 'all';
@@ -59,8 +58,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
   theme,
   onOpenStudio,
   onOpenTemplates,
-  onOpenPricing,
-  onSwitchToMarketing
+  onOpenPricing
 }) => {
   const { user, profile, loadMiniSite, saveMiniSite } = useAuth();
   const isRtl = locale === 'ar';
@@ -331,7 +329,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
     <div className={`min-h-screen pt-24 pb-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto ${isRtl ? 'font-sans' : 'font-sans'}`}>
       
       {/* 1. PERSONAL DASHBOARD HERO / HEADER BAR */}
-      <section className="mb-8">
+      <section id="personal-dashboard" className="mb-8 scroll-mt-24">
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-6 sm:p-8 md:p-10 shadow-2xl border border-indigo-500/20">
           
           {/* Subtle Ambient Background Orbs */}
@@ -453,16 +451,16 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
                 <span className="hidden sm:inline">{isRtl ? 'رمز QR' : 'QR Code'}</span>
               </button>
 
-              {onSwitchToMarketing && (
-                <button
-                  onClick={onSwitchToMarketing}
-                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-sm font-medium border border-white/5 transition-colors"
-                  title={isRtl ? 'عرض الصفحة الترويجية' : 'View landing page'}
-                >
-                  <Compass className="w-4 h-4" />
-                  <span className="hidden sm:inline">{isRtl ? 'الموقع العام' : 'Marketing'}</span>
-                </button>
-              )}
+              <a
+                href={publicUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 hover:text-white text-sm font-medium border border-white/10 transition-colors"
+                title={isRtl ? 'عرض موقعي الحي' : 'View live site'}
+              >
+                <ExternalLink className="w-4 h-4 text-emerald-300" />
+                <span className="hidden sm:inline">{isRtl ? 'معاينة الموقع' : 'View Site'}</span>
+              </a>
             </div>
 
           </div>
@@ -473,7 +471,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
         
         {/* SITE OVERVIEW CARD (1 Col on Desktop) */}
-        <section className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+        <section id="site-overview" className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between scroll-mt-24">
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -611,7 +609,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
         </section>
 
         {/* ONBOARDING PROGRESS (2 Cols on Desktop) */}
-        <section className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+        <section id="onboarding-checklist" className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between scroll-mt-24">
           <div>
             {/* Header & Progress Bar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -720,7 +718,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
       </div>
 
       {/* 3. ANALYTICS SUMMARY */}
-      <section className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm mb-8">
+      <section id="analytics-summary" className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm mb-8 scroll-mt-24">
         
         {/* Section Header with Time Filters */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -912,7 +910,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
       </section>
 
       {/* 4. QUICK ACTIONS GRID */}
-      <section className="mb-8">
+      <section id="quick-actions" className="mb-8 scroll-mt-24">
         <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
           <Zap className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
           <span>{isRtl ? 'إجراءات سريعة' : 'Quick Actions'}</span>

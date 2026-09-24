@@ -1024,6 +1024,23 @@ app.get('*', (req: Request, res: Response) => {
   let html = getIndexHtml();
   const requestPath = req.path;
 
+  // Guard: Authenticated users should never see not-logged-in guest auth routes
+  const cookies = parseCookies(req.headers.cookie);
+  const sessionToken = cookies['raloa_session'];
+  const session = sessionToken ? ACTIVE_SESSIONS.get(sessionToken) : undefined;
+  const isSessionValid = Boolean(session && session.expiresAt > Date.now());
+
+  if (isSessionValid) {
+    if (
+      requestPath === '/login' ||
+      requestPath === '/register' ||
+      requestPath === '/forgot-password' ||
+      requestPath === '/reset-password'
+    ) {
+      return res.redirect(302, '/');
+    }
+  }
+
   // Handle public creator routes: /@handle or /public-render/handle
   const handleMatch = requestPath.match(/^\/(?:@|public-render\/)([a-zA-Z0-9._-]+)$/);
   if (handleMatch) {

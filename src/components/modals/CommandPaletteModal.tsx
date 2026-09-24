@@ -22,12 +22,21 @@ import {
   Keyboard,
   ExternalLink,
   ChevronRight,
-  Compass
+  Compass,
+  LayoutDashboard,
+  Smartphone,
+  BarChart2,
+  CheckCircle2,
+  Zap,
+  Edit3,
+  Copy,
+  LogOut
 } from 'lucide-react';
 import { Locale, TemplateItem } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { templatesData } from '../../data/content';
 import { Theme } from '../../utils/theme';
+import { useAuth } from '../../hooks/useAuth';
 
 export interface CommandPaletteModalProps {
   isOpen: boolean;
@@ -112,112 +121,196 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     }
   }, [isOpen]);
 
+  const { user, profile, logOut } = useAuth();
+  const rawUsername = profile?.handle || (user?.email ? user.email.split('@')[0] : 'creator');
+  const cleanHandle = rawUsername.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const publicProfileUrl = `https://raloa.app/@${cleanHandle}`;
+
   // Build searchable commands list
   const allCommands = useMemo<CommandItem[]>(() => {
     const list: CommandItem[] = [];
 
-    // 1. Landing Page Sections
-    const sections: Array<{
-      id: string;
-      title: string;
-      titleAr: string;
-      subtitle: string;
-      subtitleAr: string;
-      icon: React.ReactNode;
-      keywords: string[];
-    }> = [
-      {
-        id: 'hero',
-        title: 'Home & Hero Overview',
-        titleAr: 'الصفحة الرئيسية والمقدمة',
-        subtitle: 'Back to top overview and creator bio examples',
-        subtitleAr: 'العودة إلى البداية ونماذج مواقع المبدعين',
-        icon: <Home className="w-4 h-4 text-blue-500" />,
-        keywords: ['home', 'hero', 'top', 'overview', 'start', 'بداية', 'رئيسية', 'مقدمة']
-      },
-      {
-        id: 'templates',
-        title: 'Templates Gallery',
-        titleAr: 'معرض القوالب والتصاميم',
-        subtitle: 'Browse 10+ conversion-focused creator themes',
-        subtitleAr: 'استعرض أكثر من ١٠ قوالب احترافية لصناع المحتوى',
-        icon: <LayoutGrid className="w-4 h-4 text-violet-500" />,
-        keywords: ['templates', 'themes', 'gallery', 'designs', 'starter', 'قوالب', 'تصاميم', 'معرض']
-      },
-      {
-        id: 'how-it-works',
-        title: 'How It Works',
-        titleAr: 'كيف تعمل المنصة',
-        subtitle: '3-step setup: choose template, customize, launch',
-        subtitleAr: '٣ خطوات بسيطة: اختر قالباً، خصصه، وانطلق',
-        icon: <Workflow className="w-4 h-4 text-emerald-500" />,
-        keywords: ['how it works', 'steps', 'workflow', 'setup', 'guide', 'كيف', 'خطوات', 'شرح', 'طريقة']
-      },
-      {
-        id: 'features',
-        title: 'Platform Features & Tools',
-        titleAr: 'المميزات والأدوات المتطورة',
-        subtitle: 'Custom domains, instant shop, calendar bookings, analytics',
-        subtitleAr: 'نطاقات مخصصة، متجر رقمي، حجز مواعيد، تحليلات',
-        icon: <PremiumMark className="w-4 h-4 text-amber-500" />,
-        keywords: ['features', 'tools', 'domain', 'store', 'shop', 'calendar', 'booking', 'analytics', 'مميزات', 'أدوات', 'نطاق', 'متجر']
-      },
-      {
-        id: 'testimonials',
-        title: 'Creator Stories & Reviews',
-        titleAr: 'قصص نجاح المبدعين وآراؤهم',
-        subtitle: 'Hear from photographers, educators, and indie founders',
-        subtitleAr: 'تجارب وآراء المصورين والمدربين ورواد الأعمال',
-        icon: <Users className="w-4 h-4 text-sky-500" />,
-        keywords: ['stories', 'testimonials', 'reviews', 'social proof', 'creators', 'قصص', 'تجارب', 'آراء', 'تقييمات']
-      },
-      {
-        id: 'pricing',
-        title: 'Pricing Plans & Transparency',
-        titleAr: 'خطط الأسعار الشفافة',
-        subtitle: 'Free forever plan, Pro ($9/mo), and Studio with zero commission',
-        subtitleAr: 'باقة مجانية مدى الحياة وباقة المحترفين بدون عمولة',
-        icon: <CreditCard className="w-4 h-4 text-indigo-500" />,
-        keywords: ['pricing', 'plans', 'cost', 'free', 'pro', 'subscription', 'fees', 'أسعار', 'باقات', 'مجاني', 'اشتراك']
-      },
-      {
-        id: 'faq',
-        title: 'Help Center & FAQ',
-        titleAr: 'الأسئلة الشائعة والدعم الفني',
-        subtitle: 'Answers about custom domains, payments, and migrations',
-        subtitleAr: 'إجابات حول النطاقات وبوابات الدفع والنقل',
-        icon: <HelpCircle className="w-4 h-4 text-rose-500" />,
-        keywords: ['faq', 'help', 'support', 'questions', 'answers', 'أسئلة', 'دعم', 'مساعدة']
-      },
-      {
-        id: 'newsletter',
-        title: 'Creator Dispatch Newsletter',
-        titleAr: 'النشرة البريدية للمبدعين',
-        subtitle: 'Weekly tips on monetization, bio links, and personal brand growth',
-        subtitleAr: 'نصائح أسبوعية لتنمية علامتك الشخصية ومبيعاتك',
-        icon: <Mail className="w-4 h-4 text-teal-500" />,
-        keywords: ['newsletter', 'subscribe', 'email', 'updates', 'dispatch', 'نشرة', 'بريد', 'اشتراك']
-      }
-    ];
-
-    sections.forEach((s) => {
-      list.push({
-        id: `sec-${s.id}`,
-        category: 'sections',
-        title: s.title,
-        titleAr: s.titleAr,
-        subtitle: s.subtitle,
-        subtitleAr: s.subtitleAr,
-        badge: 'Section',
-        badgeAr: 'قسم',
-        icon: s.icon,
-        keywords: s.keywords,
-        action: () => {
-          onClose();
-          onNavigateToSection(s.id);
+    // 1. Sections
+    if (user) {
+      // Authenticated Dashboard Sections
+      const authSections: Array<{
+        id: string;
+        title: string;
+        titleAr: string;
+        subtitle: string;
+        subtitleAr: string;
+        icon: React.ReactNode;
+        keywords: string[];
+      }> = [
+        {
+          id: 'personal-dashboard',
+          title: 'Personal Dashboard & Profile',
+          titleAr: 'لوحة التحكم الرئيسية والملف الشخصي',
+          subtitle: 'Account handle, plan tier, and greeting overview',
+          subtitleAr: 'اسم المستخدم ونوع الباقة ونظرة عامة على الحساب',
+          icon: <LayoutDashboard className="w-4 h-4 text-indigo-500" />,
+          keywords: ['dashboard', 'home', 'account', 'handle', 'plan', 'لوحة', 'تحكم', 'حساب', 'رئيسية']
+        },
+        {
+          id: 'site-overview',
+          title: 'My Site & Live Status',
+          titleAr: 'موقعي وحالة النشر والمعاينة',
+          subtitle: 'Live status, phone preview card, and QR code download',
+          subtitleAr: 'حالة النشر ومعاينة الهاتف وتحميل رمز الاستجابة السريعة',
+          icon: <Smartphone className="w-4 h-4 text-blue-500" />,
+          keywords: ['site', 'preview', 'phone', 'qr', 'status', 'publish', 'موقع', 'معاينة', 'باركود', 'نشر']
+        },
+        {
+          id: 'analytics-summary',
+          title: 'Analytics & Traffic Insights',
+          titleAr: 'إحصائيات الزيارات ومعدل النقر',
+          subtitle: 'View counts, link clicks, CTR, and interactive traffic chart',
+          subtitleAr: 'عدد الزيارات والنقرات ومعدل التحويل والرسم البياني',
+          icon: <BarChart2 className="w-4 h-4 text-emerald-500" />,
+          keywords: ['analytics', 'stats', 'views', 'clicks', 'ctr', 'traffic', 'chart', 'إحصائيات', 'زيارات', 'نقرات']
+        },
+        {
+          id: 'onboarding-checklist',
+          title: 'Setup & Onboarding Checklist',
+          titleAr: 'قائمة إكمال تهيئة الموقع',
+          subtitle: 'Complete your profile, add links, and claim custom domains',
+          subtitleAr: 'أكمل إعداد ملفك الشخصي وأضف الروابط واربط نطاقك',
+          icon: <CheckCircle2 className="w-4 h-4 text-amber-500" />,
+          keywords: ['onboarding', 'checklist', 'setup', 'progress', 'steps', 'تهيئة', 'خطوات', 'اكتمال']
+        },
+        {
+          id: 'quick-actions',
+          title: 'Quick Actions & Tools',
+          titleAr: 'الإجراءات السريعة والأدوات',
+          subtitle: 'Open editor, add link, custom domain, and share buttons',
+          subtitleAr: 'فتح المحرر، إضافة رابط، ربط نطاق مخصص، ومشاركة',
+          icon: <Zap className="w-4 h-4 text-violet-500" />,
+          keywords: ['quick', 'actions', 'tools', 'domain', 'share', 'إجراءات', 'سريعة', 'أدوات', 'نطاق', 'مشاركة']
         }
+      ];
+
+      authSections.forEach((s) => {
+        list.push({
+          id: `sec-${s.id}`,
+          category: 'sections',
+          title: s.title,
+          titleAr: s.titleAr,
+          subtitle: s.subtitle,
+          subtitleAr: s.subtitleAr,
+          badge: isRtl ? 'لوحة التحكم' : 'Dashboard',
+          badgeAr: 'لوحة التحكم',
+          icon: s.icon,
+          keywords: s.keywords,
+          action: () => {
+            onClose();
+            onNavigateToSection(s.id);
+          }
+        });
       });
-    });
+    } else {
+      // Guest Visitor Landing Page Sections
+      const sections: Array<{
+        id: string;
+        title: string;
+        titleAr: string;
+        subtitle: string;
+        subtitleAr: string;
+        icon: React.ReactNode;
+        keywords: string[];
+      }> = [
+        {
+          id: 'hero',
+          title: 'Home & Hero Overview',
+          titleAr: 'الصفحة الرئيسية والمقدمة',
+          subtitle: 'Back to top overview and creator bio examples',
+          subtitleAr: 'العودة إلى البداية ونماذج مواقع المبدعين',
+          icon: <Home className="w-4 h-4 text-blue-500" />,
+          keywords: ['home', 'hero', 'top', 'overview', 'start', 'بداية', 'رئيسية', 'مقدمة']
+        },
+        {
+          id: 'templates',
+          title: 'Templates Gallery',
+          titleAr: 'معرض القوالب والتصاميم',
+          subtitle: 'Browse 10+ conversion-focused creator themes',
+          subtitleAr: 'استعرض أكثر من ١٠ قوالب احترافية لصناع المحتوى',
+          icon: <LayoutGrid className="w-4 h-4 text-violet-500" />,
+          keywords: ['templates', 'themes', 'gallery', 'designs', 'starter', 'قوالب', 'تصاميم', 'معرض']
+        },
+        {
+          id: 'how-it-works',
+          title: 'How It Works',
+          titleAr: 'كيف تعمل المنصة',
+          subtitle: '3-step setup: choose template, customize, launch',
+          subtitleAr: '٣ خطوات بسيطة: اختر قالباً، خصصه، وانطلق',
+          icon: <Workflow className="w-4 h-4 text-emerald-500" />,
+          keywords: ['how it works', 'steps', 'workflow', 'setup', 'guide', 'كيف', 'خطوات', 'شرح', 'طريقة']
+        },
+        {
+          id: 'features',
+          title: 'Platform Features & Tools',
+          titleAr: 'المميزات والأدوات المتطورة',
+          subtitle: 'Custom domains, instant shop, calendar bookings, analytics',
+          subtitleAr: 'نطاقات مخصصة، متجر رقمي، حجز مواعيد، تحليلات',
+          icon: <PremiumMark className="w-4 h-4 text-amber-500" />,
+          keywords: ['features', 'tools', 'domain', 'store', 'shop', 'calendar', 'booking', 'analytics', 'مميزات', 'أدوات', 'نطاق', 'متجر']
+        },
+        {
+          id: 'testimonials',
+          title: 'Creator Stories & Reviews',
+          titleAr: 'قصص نجاح المبدعين وآراؤهم',
+          subtitle: 'Hear from photographers, educators, and indie founders',
+          subtitleAr: 'تجارب وآراء المصورين والمدربين ورواد الأعمال',
+          icon: <Users className="w-4 h-4 text-sky-500" />,
+          keywords: ['stories', 'testimonials', 'reviews', 'social proof', 'creators', 'قصص', 'تجارب', 'آراء', 'تقييمات']
+        },
+        {
+          id: 'pricing',
+          title: 'Pricing Plans & Transparency',
+          titleAr: 'خطط الأسعار الشفافة',
+          subtitle: 'Free forever plan, Pro ($9/mo), and Studio with zero commission',
+          subtitleAr: 'باقة مجانية مدى الحياة وباقة المحترفين بدون عمولة',
+          icon: <CreditCard className="w-4 h-4 text-indigo-500" />,
+          keywords: ['pricing', 'plans', 'cost', 'free', 'pro', 'subscription', 'fees', 'أسعار', 'باقات', 'مجاني', 'اشتراك']
+        },
+        {
+          id: 'faq',
+          title: 'Help Center & FAQ',
+          titleAr: 'الأسئلة الشائعة والدعم الفني',
+          subtitle: 'Answers about custom domains, payments, and migrations',
+          subtitleAr: 'إجابات حول النطاقات وبوابات الدفع والنقل',
+          icon: <HelpCircle className="w-4 h-4 text-rose-500" />,
+          keywords: ['faq', 'help', 'support', 'questions', 'answers', 'أسئلة', 'دعم', 'مساعدة']
+        },
+        {
+          id: 'newsletter',
+          title: 'Creator Dispatch Newsletter',
+          titleAr: 'النشرة البريدية للمبدعين',
+          subtitle: 'Weekly tips on monetization, bio links, and personal brand growth',
+          subtitleAr: 'نصائح أسبوعية لتنمية علامتك الشخصية ومبيعاتك',
+          icon: <Mail className="w-4 h-4 text-teal-500" />,
+          keywords: ['newsletter', 'subscribe', 'email', 'updates', 'dispatch', 'نشرة', 'بريد', 'اشتراك']
+        }
+      ];
+
+      sections.forEach((s) => {
+        list.push({
+          id: `sec-${s.id}`,
+          category: 'sections',
+          title: s.title,
+          titleAr: s.titleAr,
+          subtitle: s.subtitle,
+          subtitleAr: s.subtitleAr,
+          badge: 'Section',
+          badgeAr: 'قسم',
+          icon: s.icon,
+          keywords: s.keywords,
+          action: () => {
+            onClose();
+            onNavigateToSection(s.id);
+          }
+        });
+      });
+    }
 
     // 2. Templates Catalog
     templatesData.forEach((tmpl) => {
@@ -255,120 +348,241 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     });
 
     // 3. Quick Actions
-    list.push(
-      {
-        id: 'act-studio',
-        category: 'actions',
-        title: 'Create Your Page (Open Studio)',
-        titleAr: 'أنشئ موقعك المصغر (فتح الاستوديو)',
-        subtitle: 'Launch the live interactive editor with immediate preview',
-        subtitleAr: 'ابدأ تحرير وتخصيص موقعك مباشرة مع معاينة حية',
-        badge: 'Action',
-        badgeAr: 'إجراء',
-        icon: <PlusCircle className="w-4 h-4 text-indigo-500" />,
-        keywords: ['create', 'studio', 'builder', 'editor', 'start', 'page', 'بناء', 'استوديو', 'إنشاء', 'تصميم'],
-        action: () => {
-          onClose();
-          onOpenStudio();
+    if (user) {
+      // Authenticated Creator Actions
+      list.push(
+        {
+          id: 'act-studio',
+          category: 'actions',
+          title: 'Open Studio (Site Editor)',
+          titleAr: 'فتح استوديو تصميم الموقع',
+          subtitle: 'Launch the live interactive editor with immediate preview',
+          subtitleAr: 'ابدأ تحرير وتخصيص موقعك مباشرة مع معاينة حية',
+          badge: isRtl ? 'المحرر' : 'Editor',
+          badgeAr: 'المحرر',
+          icon: <Edit3 className="w-4 h-4 text-indigo-500" />,
+          keywords: ['create', 'studio', 'builder', 'editor', 'start', 'page', 'بناء', 'استوديو', 'إنشاء', 'تصميم'],
+          action: () => {
+            onClose();
+            onOpenStudio();
+          }
+        },
+        {
+          id: 'act-view-site',
+          category: 'actions',
+          title: `View Public Site (@${cleanHandle})`,
+          titleAr: `زيارة موقعي المباشر (@${cleanHandle})`,
+          subtitle: 'Open your public live page in a new window',
+          subtitleAr: 'فتح صفحتك العامة المنشورة في نافذة جديدة',
+          badge: isRtl ? 'مباشر' : 'Live',
+          badgeAr: 'مباشر',
+          icon: <ExternalLink className="w-4 h-4 text-blue-500" />,
+          keywords: ['view', 'live', 'site', 'url', 'profile', 'موقع', 'زيارة', 'رابط'],
+          action: () => {
+            onClose();
+            window.open(publicProfileUrl, '_blank');
+          }
+        },
+        {
+          id: 'act-copy-link',
+          category: 'actions',
+          title: 'Copy Public Site URL',
+          titleAr: 'نسخ رابط موقعي المباشر',
+          subtitle: publicProfileUrl,
+          subtitleAr: publicProfileUrl,
+          badge: isRtl ? 'نسخ' : 'Copy',
+          badgeAr: 'نسخ',
+          icon: <Copy className="w-4 h-4 text-emerald-500" />,
+          keywords: ['copy', 'url', 'link', 'share', 'نسخ', 'رابط', 'مشاركة'],
+          action: () => {
+            onClose();
+            if (typeof navigator !== 'undefined') {
+              navigator.clipboard.writeText(publicProfileUrl);
+            }
+          }
+        },
+        {
+          id: 'act-theme',
+          category: 'actions',
+          title: isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
+          titleAr: isDark ? 'التبديل إلى الوضع الفاتح' : 'التبديل إلى الوضع الداكن',
+          subtitle: isDark ? 'Activate crisp daylight theme' : 'Activate eye-safe midnight theme',
+          subtitleAr: isDark ? 'تفعيل مظهر الإضاءة النهاري' : 'تفعيل المظهر الليلي المريح',
+          badge: 'Theme (T)',
+          badgeAr: 'المظهر (T)',
+          icon: isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />,
+          keywords: ['theme', 'dark', 'light', 'mode', 'color', 'مظهر', 'داكن', 'فاتح', 'ليل', 'نهار'],
+          action: () => {
+            onClose();
+            onToggleTheme();
+          }
+        },
+        {
+          id: 'act-locale',
+          category: 'actions',
+          title: isRtl ? 'Switch Interface to English' : 'التبديل إلى الواجهة العربية',
+          titleAr: isRtl ? 'Switch Interface to English' : 'التبديل إلى الواجهة العربية',
+          subtitle: isRtl ? 'Full English UI & LTR direction' : 'واجهة كاملة باللغة العربية مع دعم RTL',
+          subtitleAr: isRtl ? 'Full English UI & LTR direction' : 'واجهة كاملة باللغة العربية مع دعم RTL',
+          badge: 'Lang (L)',
+          badgeAr: 'اللغة (L)',
+          icon: <Globe className="w-4 h-4 text-blue-500" />,
+          keywords: ['language', 'arabic', 'english', 'locale', 'translate', 'عربي', 'انجليزي', 'لغة', 'ترجمة'],
+          action: () => {
+            onClose();
+            onToggleLocale();
+          }
+        },
+        {
+          id: 'act-shortcuts',
+          category: 'actions',
+          title: 'View Keyboard Shortcuts',
+          titleAr: 'عرض دليل اختصارات لوحة المفاتيح',
+          subtitle: 'Master navigation keys: Esc, T, M, V, L, H, ?',
+          subtitleAr: 'تعرف على جميع الاختصارات السريعة للتنقل',
+          badge: 'Shortcuts (?)',
+          badgeAr: 'اختصارات (?)',
+          icon: <Keyboard className="w-4 h-4 text-violet-500" />,
+          keywords: ['keyboard', 'shortcuts', 'hotkeys', 'help', 'keys', 'اختصارات', 'مفاتيح', 'أزرار'],
+          action: () => {
+            onClose();
+            onOpenShortcuts();
+          }
+        },
+        {
+          id: 'act-logout',
+          category: 'actions',
+          title: 'Sign Out of Account',
+          titleAr: 'تسجيل الخروج من الحساب',
+          subtitle: `Currently signed in as ${user.email}`,
+          subtitleAr: `مسجل حالياً بالبريد ${user.email}`,
+          badge: isRtl ? 'خروج' : 'Logout',
+          badgeAr: 'خروج',
+          icon: <LogOut className="w-4 h-4 text-rose-500" />,
+          keywords: ['logout', 'sign out', 'exit', 'خروج', 'تسجيل خروج'],
+          action: () => {
+            onClose();
+            logOut();
+          }
         }
-      },
-      {
-        id: 'act-theme',
-        category: 'actions',
-        title: isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
-        titleAr: isDark ? 'التبديل إلى الوضع الفاتح' : 'التبديل إلى الوضع الداكن',
-        subtitle: isDark ? 'Activate crisp daylight theme' : 'Activate eye-safe midnight theme',
-        subtitleAr: isDark ? 'تفعيل مظهر الإضاءة النهاري' : 'تفعيل المظهر الليلي المريح',
-        badge: 'Theme (T)',
-        badgeAr: 'المظهر (T)',
-        icon: isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />,
-        keywords: ['theme', 'dark', 'light', 'mode', 'color', 'مظهر', 'داكن', 'فاتح', 'ليل', 'نهار'],
-        action: () => {
-          onClose();
-          onToggleTheme();
+      );
+    } else {
+      // Guest Visitor Actions
+      list.push(
+        {
+          id: 'act-studio',
+          category: 'actions',
+          title: 'Create Your Page (Open Studio)',
+          titleAr: 'أنشئ موقعك المصغر (فتح الاستوديو)',
+          subtitle: 'Launch the live interactive editor with immediate preview',
+          subtitleAr: 'ابدأ تحرير وتخصيص موقعك مباشرة مع معاينة حية',
+          badge: 'Action',
+          badgeAr: 'إجراء',
+          icon: <PlusCircle className="w-4 h-4 text-indigo-500" />,
+          keywords: ['create', 'studio', 'builder', 'editor', 'start', 'page', 'بناء', 'استوديو', 'إنشاء', 'تصميم'],
+          action: () => {
+            onClose();
+            onOpenStudio();
+          }
+        },
+        {
+          id: 'act-theme',
+          category: 'actions',
+          title: isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
+          titleAr: isDark ? 'التبديل إلى الوضع الفاتح' : 'التبديل إلى الوضع الداكن',
+          subtitle: isDark ? 'Activate crisp daylight theme' : 'Activate eye-safe midnight theme',
+          subtitleAr: isDark ? 'تفعيل مظهر الإضاءة النهاري' : 'تفعيل المظهر الليلي المريح',
+          badge: 'Theme (T)',
+          badgeAr: 'المظهر (T)',
+          icon: isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />,
+          keywords: ['theme', 'dark', 'light', 'mode', 'color', 'مظهر', 'داكن', 'فاتح', 'ليل', 'نهار'],
+          action: () => {
+            onClose();
+            onToggleTheme();
+          }
+        },
+        {
+          id: 'act-sound',
+          category: 'actions',
+          title: soundEnabled ? 'Mute Ambient Focus Sound' : 'Play Ambient Focus Sound',
+          titleAr: soundEnabled ? 'كتم الصوت المحيطي للتركيز' : 'تشغيل الصوت المحيطي للتركيز',
+          subtitle: soundEnabled ? 'Silence background synthesizers' : 'Generative soothing audio tones',
+          subtitleAr: soundEnabled ? 'إيقاف نغمات التركيز الصوتية' : 'تشغيل نغمات محيطية مهدئة',
+          badge: 'Audio (M)',
+          badgeAr: 'الصوت (M)',
+          icon: soundEnabled ? <VolumeX className="w-4 h-4 text-rose-500" /> : <Volume2 className="w-4 h-4 text-emerald-500" />,
+          keywords: ['sound', 'audio', 'music', 'ambient', 'focus', 'mute', 'صوت', 'موسيقى', 'كتم', 'محيطي'],
+          action: () => {
+            onClose();
+            onToggleSound();
+          }
+        },
+        {
+          id: 'act-voice',
+          category: 'actions',
+          title: voiceTourEnabled ? 'Stop Voice-over Tour' : 'Start Voice-over Tour Walkthrough',
+          titleAr: voiceTourEnabled ? 'إيقاف الجولة الصوتية' : 'بدء الجولة الصوتية التعريفية',
+          subtitle: voiceTourEnabled ? 'End spoken narration' : 'Listen to guided narration as you scroll',
+          subtitleAr: voiceTourEnabled ? 'إنهاء السرد الصوتي' : 'استمع لشرح صوتي متفاعل مع التمرير',
+          badge: 'Voice (V)',
+          badgeAr: 'صوت (V)',
+          icon: <Headphones className="w-4 h-4 text-indigo-500" />,
+          keywords: ['voice', 'tour', 'narration', 'audiobook', 'speech', 'walkthrough', 'جولة', 'صوتية', 'سرد', 'شرح'],
+          action: () => {
+            onClose();
+            if (onToggleVoiceTour) onToggleVoiceTour();
+          }
+        },
+        {
+          id: 'act-locale',
+          category: 'actions',
+          title: isRtl ? 'Switch Interface to English' : 'التبديل إلى الواجهة العربية',
+          titleAr: isRtl ? 'Switch Interface to English' : 'التبديل إلى الواجهة العربية',
+          subtitle: isRtl ? 'Full English UI & LTR direction' : 'واجهة كاملة باللغة العربية مع دعم RTL',
+          subtitleAr: isRtl ? 'Full English UI & LTR direction' : 'واجهة كاملة باللغة العربية مع دعم RTL',
+          badge: 'Lang (L)',
+          badgeAr: 'اللغة (L)',
+          icon: <Globe className="w-4 h-4 text-blue-500" />,
+          keywords: ['language', 'arabic', 'english', 'locale', 'translate', 'عربي', 'انجليزي', 'لغة', 'ترجمة'],
+          action: () => {
+            onClose();
+            onToggleLocale();
+          }
+        },
+        {
+          id: 'act-auth',
+          category: 'actions',
+          title: 'Sign In / Account Access',
+          titleAr: 'تسجيل الدخول / الوصول للحساب',
+          subtitle: 'Manage your mini-site links, domain settings, and earnings',
+          subtitleAr: 'إدارة روابطك ونطاقاتك ومبيعاتك الرقمية',
+          badge: 'Account',
+          badgeAr: 'الحساب',
+          icon: <LogIn className="w-4 h-4 text-slate-700 dark:text-slate-300" />,
+          keywords: ['sign in', 'login', 'account', 'auth', 'register', 'دخول', 'حساب', 'تسجيل'],
+          action: () => {
+            onClose();
+            onOpenAuth('signin');
+          }
+        },
+        {
+          id: 'act-shortcuts',
+          category: 'actions',
+          title: 'View Keyboard Shortcuts',
+          titleAr: 'عرض دليل اختصارات لوحة المفاتيح',
+          subtitle: 'Master navigation keys: Esc, T, M, V, L, H, ?',
+          subtitleAr: 'تعرف على جميع الاختصارات السريعة للتنقل',
+          badge: 'Shortcuts (?)',
+          badgeAr: 'اختصارات (?)',
+          icon: <Keyboard className="w-4 h-4 text-violet-500" />,
+          keywords: ['keyboard', 'shortcuts', 'hotkeys', 'help', 'keys', 'اختصارات', 'مفاتيح', 'أزرار'],
+          action: () => {
+            onClose();
+            onOpenShortcuts();
+          }
         }
-      },
-      {
-        id: 'act-sound',
-        category: 'actions',
-        title: soundEnabled ? 'Mute Ambient Focus Sound' : 'Play Ambient Focus Sound',
-        titleAr: soundEnabled ? 'كتم الصوت المحيطي للتركيز' : 'تشغيل الصوت المحيطي للتركيز',
-        subtitle: soundEnabled ? 'Silence background synthesizers' : 'Generative soothing audio tones',
-        subtitleAr: soundEnabled ? 'إيقاف نغمات التركيز الصوتية' : 'تشغيل نغمات محيطية مهدئة',
-        badge: 'Audio (M)',
-        badgeAr: 'الصوت (M)',
-        icon: soundEnabled ? <VolumeX className="w-4 h-4 text-rose-500" /> : <Volume2 className="w-4 h-4 text-emerald-500" />,
-        keywords: ['sound', 'audio', 'music', 'ambient', 'focus', 'mute', 'صوت', 'موسيقى', 'كتم', 'محيطي'],
-        action: () => {
-          onClose();
-          onToggleSound();
-        }
-      },
-      {
-        id: 'act-voice',
-        category: 'actions',
-        title: voiceTourEnabled ? 'Stop Voice-over Tour' : 'Start Voice-over Tour Walkthrough',
-        titleAr: voiceTourEnabled ? 'إيقاف الجولة الصوتية' : 'بدء الجولة الصوتية التعريفية',
-        subtitle: voiceTourEnabled ? 'End spoken narration' : 'Listen to guided narration as you scroll',
-        subtitleAr: voiceTourEnabled ? 'إنهاء السرد الصوتي' : 'استمع لشرح صوتي متفاعل مع التمرير',
-        badge: 'Voice (V)',
-        badgeAr: 'صوت (V)',
-        icon: <Headphones className="w-4 h-4 text-indigo-500" />,
-        keywords: ['voice', 'tour', 'narration', 'audiobook', 'speech', 'walkthrough', 'جولة', 'صوتية', 'سرد', 'شرح'],
-        action: () => {
-          onClose();
-          if (onToggleVoiceTour) onToggleVoiceTour();
-        }
-      },
-      {
-        id: 'act-locale',
-        category: 'actions',
-        title: isRtl ? 'Switch Interface to English' : 'التبديل إلى الواجهة العربية',
-        titleAr: isRtl ? 'Switch Interface to English' : 'التبديل إلى الواجهة العربية',
-        subtitle: isRtl ? 'Full English UI & LTR direction' : 'واجهة كاملة باللغة العربية مع دعم RTL',
-        subtitleAr: isRtl ? 'Full English UI & LTR direction' : 'واجهة كاملة باللغة العربية مع دعم RTL',
-        badge: 'Lang (L)',
-        badgeAr: 'اللغة (L)',
-        icon: <Globe className="w-4 h-4 text-blue-500" />,
-        keywords: ['language', 'arabic', 'english', 'locale', 'translate', 'عربي', 'انجليزي', 'لغة', 'ترجمة'],
-        action: () => {
-          onClose();
-          onToggleLocale();
-        }
-      },
-      {
-        id: 'act-auth',
-        category: 'actions',
-        title: 'Sign In / Account Access',
-        titleAr: 'تسجيل الدخول / الوصول للحساب',
-        subtitle: 'Manage your mini-site links, domain settings, and earnings',
-        subtitleAr: 'إدارة روابطك ونطاقاتك ومبيعاتك الرقمية',
-        badge: 'Account',
-        badgeAr: 'الحساب',
-        icon: <LogIn className="w-4 h-4 text-slate-700 dark:text-slate-300" />,
-        keywords: ['sign in', 'login', 'account', 'auth', 'register', 'دخول', 'حساب', 'تسجيل'],
-        action: () => {
-          onClose();
-          onOpenAuth('signin');
-        }
-      },
-      {
-        id: 'act-shortcuts',
-        category: 'actions',
-        title: 'View Keyboard Shortcuts',
-        titleAr: 'عرض دليل اختصارات لوحة المفاتيح',
-        subtitle: 'Master navigation keys: Esc, T, M, V, L, H, ?',
-        subtitleAr: 'تعرف على جميع الاختصارات السريعة للتنقل',
-        badge: 'Shortcuts (?)',
-        badgeAr: 'اختصارات (?)',
-        icon: <Keyboard className="w-4 h-4 text-violet-500" />,
-        keywords: ['keyboard', 'shortcuts', 'hotkeys', 'help', 'keys', 'اختصارات', 'مفاتيح', 'أزرار'],
-        action: () => {
-          onClose();
-          onOpenShortcuts();
-        }
-      }
-    );
+      );
+    }
 
     return list;
   }, [
@@ -376,6 +590,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     isDark,
     soundEnabled,
     voiceTourEnabled,
+    user,
+    cleanHandle,
+    publicProfileUrl,
+    logOut,
     onClose,
     onNavigateToSection,
     onSelectTemplate,
