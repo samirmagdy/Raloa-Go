@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import type { DocumentData } from 'firebase-admin/firestore';
 import {
   APP_URL,
   adminDb,
@@ -16,6 +17,7 @@ import {
   getCheckoutSessionStatus,
   getPublishedSiteByHandle,
   getCloudflareConfig,
+  getPriceId,
   handleStripeWebhook,
   isAdminConfigured,
   isStripeConfigured,
@@ -30,7 +32,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = Number(process.env.PORT) || 3000;
+const AUTH_SESSION_SECRET = process.env.AUTH_SESSION_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'local-development-session-secret');
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const requestId = req.headers['x-request-id']?.toString() || crypto.randomUUID();
@@ -78,6 +82,16 @@ function getIndexHtml(): string {
     return fs.readFileSync(rootIndexPath, 'utf-8');
   }
   return '<!doctype html><html><head><title>RALOA</title></head><body><div id="root"></div></body></html>';
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[character] || character);
 }
 
 const PUBLIC_LLM_GUIDE = `# RALOA
@@ -366,6 +380,9 @@ async function getAuthenticatedUser(req: Request): Promise<AuthenticatedUser | n
   }
 
   const sessionToken = parseCookies(req.headers.cookie).raloa_session;
+  if (process.env.NODE_ENV === 'production' && sessionToken) {
+    return verifySignedSessionCookie(sessionToken);
+  }
   const session = sessionToken ? ACTIVE_SESSIONS.get(sessionToken) : undefined;
   return session && session.expiresAt > Date.now()
     ? { uid: session.userId, email: session.email }
@@ -378,6 +395,31 @@ function normalizeHostname(value: unknown): string | null {
   if (!/^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(hostname)) return null;
   if (hostname === 'raloa.app' || hostname.endsWith('.raloa.app')) return null;
   return hostname;
+}
+
+function validEmail(value: string): boolean {
+  return value.length <= 320 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
+}
+
+function hasPaidPlan(profile: DocumentData | undefined): boolean {
+  if (!profile || !['pro', 'studio'].includes(profile.plan)) return false;
+  return !(profile.plan === 'pro' && profile.referralProUntil && Date.parse(profile.referralProUntil) <= Date.now());
+}
+
+async function consumeDistributedRateLimit(key: string, limit: number, windowMs: number): Promise<{ allowed: boolean; retryAfter: number }> {
+  if (!isAdminConfigured()) return { allowed: true, retryAfter: 0 };
+  const bucketId = crypto.createHash('sha256').update(key).digest('hex');
+  const bucketRef = adminDb.collection('rate_limits').doc(bucketId);
+  const now = Date.now();
+  return adminDb.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(bucketRef);
+    const current = snapshot.data() || {};
+    const windowStart = typeof current.windowStart === 'number' && now - current.windowStart < windowMs ? current.windowStart : now;
+    const count = windowStart === current.windowStart ? Number(current.count || 0) : 0;
+    const allowed = count < limit;
+    if (allowed) transaction.set(bucketRef, { windowStart, count: count + 1, updatedAt: new Date().toISOString() });
+    return { allowed, retryAfter: Math.ceil((windowStart + windowMs - now) / 1000) };
+  });
 }
 
 function domainDnsRecords(result: any): CustomDomainDnsRecord[] {
@@ -394,6 +436,47 @@ function domainDnsRecords(result: any): CustomDomainDnsRecord[] {
 // Password reset token store (FR-4.4: 15-minute TTL, 256-bit entropy)
 export const PASSWORD_RESET_TOKENS = new Map<string, { email: string; expiresAt: number }>();
 export const FORGOT_PW_RATE_LIMITS = new Map<string, number[]>();
+
+function signSessionPayload(payload: string): string {
+  return crypto.createHmac('sha256', AUTH_SESSION_SECRET).update(payload).digest('base64url');
+}
+
+function createSignedSessionCookie(user: AuthenticatedUser, primaryHandle: string): string {
+  if (!AUTH_SESSION_SECRET) throw new Error('AUTH_SESSION_SECRET_NOT_CONFIGURED');
+  const payload = Buffer.from(JSON.stringify({
+    uid: user.uid,
+    email: user.email || '',
+    primary_handle: primaryHandle,
+    expiresAt: Date.now() + 604800000
+  })).toString('base64url');
+  return `${payload}.${signSessionPayload(payload)}`;
+}
+
+function verifySignedSessionCookie(token: string): AuthenticatedUser & { primary_handle: string } | null {
+  if (!AUTH_SESSION_SECRET) return null;
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature) return null;
+  const expected = signSessionPayload(payload);
+  const providedBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      uid?: string;
+      email?: string;
+      primary_handle?: string;
+      expiresAt?: number;
+    };
+    if (!parsed.uid || !parsed.expiresAt || parsed.expiresAt <= Date.now()) return null;
+    return {
+      uid: parsed.uid,
+      email: parsed.email,
+      primary_handle: parsed.primary_handle || parsed.email?.split('@')[0] || 'creator'
+    };
+  } catch {
+    return null;
+  }
+}
 
 function getRequestHost(req: Request): string {
   const forwardedHost = req.headers['x-forwarded-host'];
@@ -443,10 +526,12 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   // Content-Security-Policy
   res.setHeader(
     'Content-Security-Policy',
-    "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:; " +
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://apis.google.com; " +
+    "default-src 'self'; " +
+    "script-src 'self' https://js.stripe.com https://apis.google.com; " +
+    "style-src 'self' 'unsafe-inline' https:; " +
     "connect-src 'self' https: wss:; " +
     "frame-src 'self' https://js.stripe.com https://hooks.stripe.com; " +
+    "font-src 'self' https: data:; " +
     "img-src 'self' https: data: blob:;"
   );
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(self)');
@@ -720,13 +805,10 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
  * Any unauthenticated request attempting to reach /studio or /studio/* must be intercepted at the edge/middleware level.
  * Redirects visitor to /login?redirect=/studio (TC-M4-03).
  */
-app.use((req: Request, res: Response, next: NextFunction) => {
+app.use(async (req: Request, res: Response, next: NextFunction) => {
   if (req.path === '/studio' || req.path.startsWith('/studio/')) {
-    const cookies = parseCookies(req.headers.cookie);
-    const sessionToken = cookies['raloa_session'];
-    const session = sessionToken ? ACTIVE_SESSIONS.get(sessionToken) : undefined;
-
-    if (!session || session.expiresAt < Date.now()) {
+    const session = await getAuthenticatedUser(req);
+    if (!session) {
       return res.redirect(302, '/login?redirect=/studio');
     }
   }
@@ -801,48 +883,115 @@ app.post('/api/v1/handles/reserve', async (req: Request, res: Response) => {
   }
 });
 
+app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
+  const hostHandle = typeof req.body?.hostHandle === 'string' ? req.body.hostHandle.trim().toLowerCase() : '';
+  const date = typeof req.body?.date === 'string' ? req.body.date : '';
+  const timeSlot = typeof req.body?.timeSlot === 'string' ? req.body.timeSlot.trim() : '';
+  const clientEmail = typeof req.body?.clientEmail === 'string' ? req.body.clientEmail.trim().toLowerCase() : '';
+  if (!/^[a-z0-9_-]{3,30}$/.test(hostHandle) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !timeSlot || !validEmail(clientEmail)) {
+    return res.status(400).json({ error: 'Valid host, date, time, and email are required' });
+  }
+  try {
+    const booking = { hostHandle, date, timeSlot, clientEmail, status: 'pending', createdAt: new Date().toISOString() };
+    const reference = isAdminConfigured()
+      ? await adminDb.collection('bookings').add(booking)
+      : { id: `booking_${Date.now()}` };
+    return res.status(201).json({ id: reference.id, status: booking.status });
+  } catch (error) {
+    console.error('[Public booking]', error);
+    return res.status(503).json({ error: 'Booking service is temporarily unavailable' });
+  }
+});
+
+app.post('/api/v1/public/orders', async (req: Request, res: Response) => {
+  const itemTitle = typeof req.body?.itemTitle === 'string' ? req.body.itemTitle.trim() : '';
+  const buyerEmail = typeof req.body?.buyerEmail === 'string' ? req.body.buyerEmail.trim().toLowerCase() : '';
+  if (itemTitle !== 'Brutalist Shadow Study #03' || !validEmail(buyerEmail)) {
+    return res.status(400).json({ error: 'A valid product and buyer email are required' });
+  }
+  try {
+    const order = { itemTitle, price: 140, currency: 'USD', buyerEmail, status: 'pending', createdAt: new Date().toISOString() };
+    const reference = isAdminConfigured()
+      ? await adminDb.collection('orders').add(order)
+      : { id: `order_${Date.now()}` };
+    return res.status(201).json({ id: reference.id, status: order.status });
+  } catch (error) {
+    console.error('[Public order]', error);
+    return res.status(503).json({ error: 'Order service is temporarily unavailable' });
+  }
+});
+
+app.post('/api/v1/public/newsletter', async (req: Request, res: Response) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  if (!validEmail(email)) return res.status(400).json({ error: 'A valid email is required' });
+  try {
+    const subscriber = { email, createdAt: new Date().toISOString() };
+    const reference = isAdminConfigured()
+      ? await adminDb.collection('newsletter_subscribers').add(subscriber)
+      : { id: `subscriber_${Date.now()}` };
+    return res.status(201).json({ id: reference.id });
+  } catch (error) {
+    console.error('[Newsletter signup]', error);
+    return res.status(503).json({ error: 'Newsletter service is temporarily unavailable' });
+  }
+});
+
 /**
  * FR-2.4 Contact Form Ingestion Endpoint
  * Rate-limited via IP bucket: Max 5 submissions per hour per IP.
  * Validates required payload fields: fullName, email, subject, message.
  */
-app.post('/api/v1/public/contact', (req: Request, res: Response) => {
-  const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+app.post('/api/v1/public/contact', async (req: Request, res: Response) => {
+  const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
   const now = Date.now();
   const oneHourAgo = now - 3600000;
 
   // Rate limit: Max 5 submissions per hour per IP (FR-2.4)
   const timestamps = (CONTACT_RATE_LIMITS.get(ip) || []).filter((t) => t > oneHourAgo);
-  if (timestamps.length >= 5) {
+  const distributedLimit = await consumeDistributedRateLimit(`contact:${ip}`, 5, 3600000);
+  if ((!isAdminConfigured() && timestamps.length >= 5) || (isAdminConfigured() && !distributedLimit.allowed)) {
     return res.status(429).json({
       status: 'error',
       error: 'Too Many Requests',
-      message: 'Rate limit exceeded: maximum 5 contact inquiries per hour per IP.'
+      message: 'Rate limit exceeded: maximum 5 contact inquiries per hour per IP.',
+      retry_after: distributedLimit.retryAfter || 3600
     });
   }
 
   const { fullName, name, email, subject, message } = req.body || {};
   const contactName = fullName || name;
+  const contactEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-  if (!contactName || !email || !message) {
+  if (!contactName || typeof contactName !== 'string' || contactName.length > 120 || !validEmail(contactEmail) || typeof message !== 'string' || message.length < 1 || message.length > 5000) {
     return res.status(400).json({
       status: 'error',
       message: 'Missing required fields: fullName/name, email, and message are required.'
     });
   }
 
-  timestamps.push(now);
-  CONTACT_RATE_LIMITS.set(ip, timestamps);
+  if (!isAdminConfigured()) {
+    timestamps.push(now);
+    CONTACT_RATE_LIMITS.set(ip, timestamps);
+  }
 
   const submission = {
     id: `contact_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     fullName: contactName,
-    email,
-    subject: subject || 'General Inquiry',
+    email: contactEmail,
+    subject: typeof subject === 'string' && subject.length <= 200 ? subject : 'General Inquiry',
     message,
     createdAt: new Date().toISOString()
   };
-  CONTACT_SUBMISSIONS.push(submission);
+  if (isAdminConfigured()) {
+    try {
+      await adminDb.collection('contacts').add(submission);
+    } catch (error) {
+      console.error('[Contact persistence]', error);
+      return res.status(503).json({ status: 'error', message: 'Contact service is temporarily unavailable' });
+    }
+  } else {
+    CONTACT_SUBMISSIONS.push(submission);
+  }
 
   return res.status(200).json({
     status: 'success',
@@ -933,11 +1082,11 @@ app.post('/api/v1/auth/register', async (req: Request, res: Response) => {
  * SEC-2 Brute Force Throttling: Max 5 failed attempts per IP + Email per 10 minutes (returns 429).
  * Issues short-lived access / long-lived raloa_session cookie.
  */
-app.post('/api/v1/auth/login', (req: Request, res: Response) => {
+app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
   if (process.env.NODE_ENV === 'production') {
     return res.status(410).json({ status: 'error', message: 'Use Firebase email authentication.' });
   }
-  const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+  const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
   const { email, password } = req.body || {};
 
   if (!email || typeof email !== 'string') {
@@ -984,26 +1133,32 @@ app.post('/api/v1/auth/login', (req: Request, res: Response) => {
   const isValid = Boolean(user && hashPassword(password || '', user.salt) === user.passwordHash);
 
   if (!isValid) {
-    const currentFailures = (attemptRecord && attemptRecord.lockedUntil <= now && (now - attemptRecord.firstAttemptAt < 600000))
-      ? attemptRecord.count + 1
-      : 1;
-
-    const lockedUntil = currentFailures >= 5 ? now + 600000 : 0; // 10 min lock
-    LOGIN_ATTEMPTS.set(rateLimitKey, {
-      count: currentFailures,
-      lockedUntil,
-      firstAttemptAt: attemptRecord?.firstAttemptAt && (now - attemptRecord.firstAttemptAt < 600000) ? attemptRecord.firstAttemptAt : now
-    });
-
-    if (lockedUntil > now) {
-      const cooldownSec = 600;
-      res.setHeader('Retry-After', cooldownSec.toString());
-      return res.status(429).json({
-        status: 'error',
-        error: 'Too Many Requests',
-        message: `Account temporarily locked due to consecutive failed attempts. Please try again in ${cooldownSec} seconds.`,
-        retry_after: cooldownSec
+    if (!isAdminConfigured()) {
+      const currentFailures = (attemptRecord && attemptRecord.lockedUntil <= now && (now - attemptRecord.firstAttemptAt < 600000))
+        ? attemptRecord.count + 1
+        : 1;
+      const lockedUntil = currentFailures >= 5 ? now + 600000 : 0;
+      LOGIN_ATTEMPTS.set(rateLimitKey, {
+        count: currentFailures,
+        lockedUntil,
+        firstAttemptAt: attemptRecord?.firstAttemptAt && (now - attemptRecord.firstAttemptAt < 600000) ? attemptRecord.firstAttemptAt : now
       });
+      if (lockedUntil > now) {
+        const cooldownSec = 600;
+        res.setHeader('Retry-After', cooldownSec.toString());
+        return res.status(429).json({
+          status: 'error',
+          error: 'Too Many Requests',
+          message: `Account temporarily locked due to consecutive failed attempts. Please try again in ${cooldownSec} seconds.`,
+          retry_after: cooldownSec
+        });
+      }
+    } else {
+      const distributedLimit = await consumeDistributedRateLimit(`login:${rateLimitKey}`, 5, 600000);
+      if (!distributedLimit.allowed) {
+        res.setHeader('Retry-After', distributedLimit.retryAfter.toString());
+        return res.status(429).json({ status: 'error', error: 'Too Many Requests', retry_after: distributedLimit.retryAfter });
+      }
     }
 
     return res.status(401).json({
@@ -1072,8 +1227,11 @@ app.post('/api/v1/auth/logout', (req: Request, res: Response) => {
  * Rate limited to 3 requests per 15 minutes per IP/email.
  * Issues 256-bit token with 15-minute TTL.
  */
-app.post('/api/v1/auth/forgot-password', (req: Request, res: Response) => {
-  const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+app.post('/api/v1/auth/forgot-password', async (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(410).json({ status: 'error', message: 'Use Firebase password reset email.' });
+  }
+  const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
   const { email } = req.body || {};
   if (!email || typeof email !== 'string') {
     return res.status(400).json({ status: 'error', message: 'Email is required' });
@@ -1085,16 +1243,20 @@ app.post('/api/v1/auth/forgot-password', (req: Request, res: Response) => {
   const fifteenMinutesAgo = now - 900000;
 
   const timestamps = (FORGOT_PW_RATE_LIMITS.get(rateKey) || []).filter((t) => t > fifteenMinutesAgo);
-  if (timestamps.length >= 3) {
+  const distributedLimit = await consumeDistributedRateLimit(`password-reset:${rateKey}`, 3, 900000);
+  if ((!isAdminConfigured() && timestamps.length >= 3) || (isAdminConfigured() && !distributedLimit.allowed)) {
     return res.status(429).json({
       status: 'error',
       error: 'Too Many Requests',
-      message: 'Rate limit exceeded: maximum 3 password reset requests per 15 minutes.'
+      message: 'Rate limit exceeded: maximum 3 password reset requests per 15 minutes.',
+      retry_after: distributedLimit.retryAfter || 900
     });
   }
 
-  timestamps.push(now);
-  FORGOT_PW_RATE_LIMITS.set(rateKey, timestamps);
+  if (!isAdminConfigured()) {
+    timestamps.push(now);
+    FORGOT_PW_RATE_LIMITS.set(rateKey, timestamps);
+  }
 
   const token = crypto.randomBytes(32).toString('hex');
   PASSWORD_RESET_TOKENS.set(token, {
@@ -1114,6 +1276,9 @@ app.post('/api/v1/auth/forgot-password', (req: Request, res: Response) => {
  * Validates token authenticity before updating password.
  */
 app.post('/api/v1/auth/reset-password', (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(410).json({ status: 'error', message: 'Use Firebase password reset email.' });
+  }
   const { token, new_password, newPassword } = req.body || {};
   const password = new_password || newPassword;
 
@@ -1270,29 +1435,29 @@ app.post('/api/v1/auth/oauth/apple', (req: Request, res: Response) => {
  * Current Session Check
  */
 app.get('/api/v1/auth/session', (req: Request, res: Response) => {
-  const cookies = parseCookies(req.headers.cookie);
-  const sessionToken = cookies['raloa_session'];
-  const session = sessionToken ? ACTIVE_SESSIONS.get(sessionToken) : undefined;
-
-  if (!session || session.expiresAt < Date.now()) {
-    return res.status(401).json({ status: 'error', message: 'Not authenticated' });
-  }
-
-  return res.status(200).json({
+  getAuthenticatedUser(req).then((session) => {
+    if (!session) return res.status(401).json({ status: 'error', message: 'Not authenticated' });
+    return res.status(200).json({
     status: 'success',
     data: {
       user: {
-        id: session.userId,
+        id: session.uid,
         email: session.email,
-        primary_handle: session.primary_handle
+        primary_handle: 'primary_handle' in session ? session.primary_handle : session.email?.split('@')[0] || 'creator'
       }
     }
-  });
+    });
+  }).catch(() => res.status(401).json({ status: 'error', message: 'Not authenticated' }));
 });
 
 app.post('/api/v1/auth/session', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return res.status(401).json({ status: 'error', message: 'Invalid Firebase session' });
+  if (process.env.NODE_ENV === 'production') {
+    const cookie = createSignedSessionCookie(user, user.email?.split('@')[0] || 'creator');
+    res.setHeader('Set-Cookie', `raloa_session=${cookie}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`);
+    return res.status(200).json({ status: 'success' });
+  }
   const now = Date.now();
   const sessionToken = crypto.randomBytes(32).toString('hex');
   ACTIVE_SESSIONS.set(sessionToken, {
@@ -1330,14 +1495,34 @@ app.get('/api/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'ok', service: 'raloa', timestamp: new Date().toISOString() });
 });
 
-app.get('/api/readiness', (_req: Request, res: Response) => {
-  const checks = {
+app.get('/api/readiness', async (_req: Request, res: Response) => {
+  if (process.env.NODE_ENV !== 'production') {
+    return res.status(200).json({ status: 'ready', environment: 'development' });
+  }
+
+  const checks: Record<string, boolean> = {
     firebaseAdmin: isAdminConfigured(),
-    stripe: isStripeConfigured(),
-    appUrl: Boolean(APP_URL)
+    stripe: isStripeConfigured()
+      && Boolean(getPriceId('pro', false))
+      && Boolean(getPriceId('pro', true))
+      && Boolean(getPriceId('studio', false))
+      && Boolean(getPriceId('studio', true)),
+    stripeWebhook: Boolean(process.env.STRIPE_WEBHOOK_SECRET),
+    appUrl: /^https:\/\//.test(process.env.APP_URL || ''),
+    authSessionSecret: AUTH_SESSION_SECRET.length >= 32,
+    cloudflare: Boolean(getCloudflareConfig())
   };
-  const ready = process.env.NODE_ENV !== 'production' || Object.values(checks).every(Boolean);
-  res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready' });
+
+  if (checks.firebaseAdmin) {
+    try {
+      await adminDb.collection('users').limit(1).get();
+    } catch {
+      checks.firebaseAdmin = false;
+    }
+  }
+
+  const ready = Object.values(checks).every(Boolean);
+  return res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready', checks });
 });
 
 app.get('/api/public/sites/:handle', async (req: Request, res: Response) => {
@@ -1397,7 +1582,10 @@ app.post('/api/billing/checkout-session', async (req: Request, res: Response) =>
   if (plan !== 'pro' && plan !== 'studio') return res.status(400).json({ error: 'A paid plan is required' });
 
   try {
-    const url = await createCheckoutSession(user, plan, isYearly);
+    const idempotencyKey = typeof req.headers['idempotency-key'] === 'string'
+      ? req.headers['idempotency-key']
+      : undefined;
+    const url = await createCheckoutSession(user, plan, isYearly, idempotencyKey);
     return res.status(200).json({ url });
   } catch (error) {
     console.error('[Billing checkout]', error);
@@ -1514,15 +1702,38 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
   if (!hostname) return res.status(400).json({ error: 'A valid customer-owned hostname is required' });
 
   const userProfile = await adminDb.collection('users').doc(user.uid).get();
-  const plan = userProfile.data()?.plan;
-  if (plan !== 'pro' && plan !== 'studio') return res.status(403).json({ error: 'Custom domains require a paid plan' });
+  if (!hasPaidPlan(userProfile.data())) return res.status(403).json({ error: 'Custom domains require a paid plan' });
+
+  const siteSnapshot = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
+  if (!siteSnapshot.exists) return res.status(404).json({ error: 'Site not found' });
+  if (siteSnapshot.data()?.isPublished !== true) return res.status(409).json({ error: 'Publish the site before attaching a domain' });
 
   const existing = await findDomainByHostname(hostname);
   if (existing && existing.userId !== user.uid) return res.status(409).json({ error: 'Domain is already attached' });
   if (existing) return res.status(200).json({ domain: existing });
 
+  let reservedDomainId = '';
   try {
-    const domainId = crypto.randomUUID();
+    const domainId = crypto.createHash('sha256').update(hostname).digest('hex').slice(0, 32);
+    reservedDomainId = domainId;
+    const domainRef = adminDb.collection('custom_domains').doc(domainId);
+    await adminDb.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(domainRef);
+      if (snapshot.exists && snapshot.data()?.userId !== user.uid) throw new Error('DOMAIN_ALREADY_RESERVED');
+      if (!snapshot.exists) {
+        const now = new Date().toISOString();
+        transaction.create(domainRef, {
+          domainId,
+          hostname,
+          userId: user.uid,
+          siteId,
+          verificationStatus: 'pending',
+          sslStatus: 'pending',
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+    });
     const cloudflare = await cloudflareRequest(
       `/zones/${getCloudflareConfig()!.zoneId}/custom_hostnames`,
       {
@@ -1550,6 +1761,10 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
     await saveDomain({ ...domain, dnsRecords: domainDnsRecords(cloudflare) });
     return res.status(201).json({ domain, dnsRecords: domainDnsRecords(cloudflare) });
   } catch (error) {
+    if (error instanceof Error && error.message === 'DOMAIN_ALREADY_RESERVED') {
+      return res.status(409).json({ error: 'Domain is already attached' });
+    }
+    if (reservedDomainId) await adminDb.collection('custom_domains').doc(reservedDomainId).delete().catch(() => undefined);
     console.error('[Domain provision]', error);
     return res.status(502).json({ error: 'Cloudflare could not provision this domain' });
   }
@@ -1619,10 +1834,8 @@ app.get('*', async (req: Request, res: Response) => {
   const requestPath = req.path;
 
   // Guard: Authenticated users should never see not-logged-in guest auth routes
-  const cookies = parseCookies(req.headers.cookie);
-  const sessionToken = cookies['raloa_session'];
-  const session = sessionToken ? ACTIVE_SESSIONS.get(sessionToken) : undefined;
-  const isSessionValid = Boolean(session && session.expiresAt > Date.now());
+  const session = await getAuthenticatedUser(req);
+  const isSessionValid = Boolean(session);
 
   if (isSessionValid) {
     if (
@@ -1652,9 +1865,9 @@ app.get('*', async (req: Request, res: Response) => {
 
     if (creator) {
       // Dynamic OpenGraph & Twitter hydration (FR-3.2)
-      const ogTitle = `${creator.name} (@${handle}) - RALOA Mini-Site`;
-      const ogDesc = creator.bio;
-      const ogImage = creator.avatar;
+      const ogTitle = escapeHtml(`${creator.name} (@${handle}) - RALOA Mini-Site`);
+      const ogDesc = escapeHtml(creator.bio);
+      const ogImage = escapeHtml(creator.avatar);
 
       html = html
         .replace(/<title>.*?<\/title>/, `<title>${ogTitle}</title>`)

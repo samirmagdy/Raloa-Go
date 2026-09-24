@@ -3,6 +3,9 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function owner(userId) { return signedIn() && request.auth.uid == userId; }
+    function paidPlan(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.plan in ['pro', 'studio'];
+    }
     function validEmail(value) {
       return value is string && value.size() <= 320 && value.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
     }
@@ -20,7 +23,12 @@ service cloud.firestore {
         && data.links is list && data.links.size() <= 100 && data.isPublished is bool
         && data.keys().hasOnly(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'updatedAt'])
         && (!('userId' in data) || data.userId == userId)
-        && (get(/databases/$(database)/documents/users/$(userId)).data.plan != 'free' || data.links.size() <= 10);
+        && (get(/databases/$(database)/documents/users/$(userId)).data.plan != 'free' || data.links.size() <= 10)
+        && (paidPlan(userId) || (!('customDomain' in data) || data.customDomain == ''))
+        && (paidPlan(userId) || (!('hidePoweredBy' in data) || data.hidePoweredBy == false))
+        && (paidPlan(userId) || (!('ga4Id' in data) || data.ga4Id == ''))
+        && (paidPlan(userId) || (!('metaPixelId' in data) || data.metaPixelId == ''))
+        && (paidPlan(userId) || (!('webhookUrl' in data) || data.webhookUrl == ''));
     }
 
     match /users/{userId} {

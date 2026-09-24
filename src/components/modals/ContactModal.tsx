@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { X, Send, Check, MessageSquare } from 'lucide-react';
 import { Locale } from '../../types';
-import { saveContactMessage } from '../../lib/firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { useModalA11y } from '../../hooks/useModalA11y';
 
@@ -46,12 +45,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
       }
 
       if (!resp.ok) {
-        // Fallback to client Firestore save
-        await saveContactMessage({
-          name: name || 'Anonymous',
-          email,
-          message
-        });
+        throw new Error('CONTACT_SUBMISSION_FAILED');
       }
 
       setSent(true);
@@ -60,19 +54,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
       }, 2000);
     } catch (err) {
       console.error('Error saving contact message:', err);
-      try {
-        await saveContactMessage({
-          name: name || 'Anonymous',
-          email,
-          message
-        });
-        setSent(true);
-        setTimeout(() => {
-          onClose();
-        }, 2000);
-      } catch (_) {
-        setError(isRtl ? 'تعذر إرسال الرسالة. حاول مرة أخرى.' : 'We could not send your message. Please try again.');
-      }
+      setError(isRtl ? 'تعذر إرسال الرسالة. حاول مرة أخرى.' : 'We could not send your message. Please try again.');
     } finally {
       setLoading(false);
     }

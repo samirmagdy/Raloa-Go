@@ -140,6 +140,7 @@ export async function cloudflareRequest(path: string, init: RequestInit = {}): P
   if (!config) throw new Error('CLOUDFLARE_NOT_CONFIGURED');
   const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
     ...init,
+    signal: init.signal || AbortSignal.timeout(10000),
     headers: {
       Authorization: `Bearer ${config.apiToken}`,
       'Content-Type': 'application/json',
@@ -156,16 +157,28 @@ export async function cloudflareRequest(path: string, init: RequestInit = {}): P
 export async function createCheckoutSession(
   user: AuthenticatedUser,
   plan: 'pro' | 'studio',
-  isYearly: boolean
+  isYearly: boolean,
+  requestId?: string
 ): Promise<string> {
   if (!stripe) throw new Error('STRIPE_NOT_CONFIGURED');
   const price = getPriceId(plan, isYearly);
   if (!price) throw new Error('STRIPE_PRICE_NOT_CONFIGURED');
 
+  const userSnapshot = await adminDb.collection('users').doc(user.uid).get();
+  let customerId = userSnapshot.data()?.stripeCustomerId as string | undefined;
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: user.email,
+      metadata: { uid: user.uid }
+    }, { idempotencyKey: `customer_${user.uid}` });
+    customerId = customer.id;
+    await updateUserBilling(user.uid, { stripeCustomerId: customerId });
+  }
+
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     line_items: [{ price, quantity: 1 }],
-    customer_email: user.email,
+    customer: customerId,
     success_url: `${APP_URL}/pricing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${APP_URL}/pricing?checkout=cancelled`,
     allow_promotion_codes: true,
@@ -174,7 +187,7 @@ export async function createCheckoutSession(
       metadata: { uid: user.uid, plan, isYearly: String(isYearly) }
     },
     metadata: { uid: user.uid, plan, isYearly: String(isYearly) }
-  });
+  }, { idempotencyKey: requestId || `checkout_${user.uid}_${plan}_${isYearly ? 'yearly' : 'monthly'}_${Math.floor(Date.now() / 60000)}` });
 
   if (!session.url) throw new Error('STRIPE_CHECKOUT_URL_MISSING');
   return session.url;
@@ -201,13 +214,25 @@ export async function handleStripeWebhook(payload: string | Buffer, signature: s
 
   if (isAdminConfigured()) {
     const eventRef = adminDb.collection('stripe_events').doc(event.id);
-    const eventSnapshot = await eventRef.get();
-    if (eventSnapshot.exists && eventSnapshot.data()?.status === 'processed') return;
-    await eventRef.set({
-      type: event.type,
-      status: 'processing',
-      receivedAt: new Date().toISOString()
-    }, { merge: true });
+    let shouldProcess = true;
+    await adminDb.runTransaction(async (transaction) => {
+      const eventSnapshot = await transaction.get(eventRef);
+      const existing = eventSnapshot.data();
+      if (existing?.status === 'processed') {
+        shouldProcess = false;
+        return;
+      }
+      const receivedAt = existing?.receivedAt ? Date.parse(existing.receivedAt) : 0;
+      if (existing?.status === 'processing' && receivedAt > Date.now() - 10 * 60 * 1000) {
+        throw new Error('STRIPE_EVENT_IN_PROGRESS');
+      }
+      transaction.set(eventRef, {
+        type: event.type,
+        status: 'processing',
+        receivedAt: new Date().toISOString()
+      }, { merge: true });
+    });
+    if (!shouldProcess) return;
   }
 
   if (event.type === 'checkout.session.completed') {

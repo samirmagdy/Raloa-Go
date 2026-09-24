@@ -7,6 +7,7 @@ Configure these in Cloud Run Secret Manager or the deployment environment. Never
 ```text
 GEMINI_API_KEY
 APP_URL=https://raloa.app
+AUTH_SESSION_SECRET=<random 32+ character secret>
 FIREBASE_PROJECT_ID=gen-lang-client-0319129908
 FIRESTORE_DATABASE_ID=ai-studio-raloadesignfirst-8ccbe7ea-5af1-4106-809a-71252bddde6f
 FIREBASE_ADMIN_ENABLED=true
@@ -28,6 +29,7 @@ SENTRY_DSN
 npm ci --legacy-peer-deps
 npm run lint
 npm run build
+npm run validate:production
 npx tsx test-entrypoint.ts
 npx tsx test-modules-2-4.ts
 ```

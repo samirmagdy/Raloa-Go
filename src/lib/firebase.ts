@@ -307,15 +307,19 @@ export async function signUpWithEmail(email: string, pass: string, handle?: stri
 export async function sendPasswordReset(email: string): Promise<void> {
   try {
     await sendPasswordResetEmail(auth, email);
-  } catch (_) {
-    // If Firebase reset fails on localhost, dispatch to server
+  } catch (error) {
+    const isLocalhost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    if (!isLocalhost) throw error;
+    // Local development fallback only; production reset flows stay in Firebase Auth.
     try {
       await fetch('/api/v1/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       });
-    } catch (_) {}
+    } catch (_) {
+      throw error;
+    }
   }
 }
 
@@ -587,11 +591,14 @@ export async function saveContactMessage(inquiry: ContactInquiry): Promise<strin
 }
 
 export async function saveNewsletterSubscription(email: string): Promise<string> {
-  const docRef = await addDoc(collection(db, 'newsletter_subscribers'), {
-    email: email.trim().toLowerCase(),
-    createdAt: new Date().toISOString()
+  const response = await fetch('/api/v1/public/newsletter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
   });
-  return docRef.id;
+  if (!response.ok) throw new Error('NEWSLETTER_SIGNUP_FAILED');
+  const payload = await response.json();
+  return payload.id;
 }
 
 export interface BookingAppointment {
@@ -610,13 +617,14 @@ export interface BookingAppointment {
 export async function saveBookingAppointment(
   data: Omit<BookingAppointment, 'id' | 'status' | 'createdAt'>
 ): Promise<string> {
-  const colRef = collection(db, 'bookings');
-  const docRef = await addDoc(colRef, {
-    ...data,
-    status: 'confirmed',
-    createdAt: new Date().toISOString()
+  const response = await fetch('/api/v1/public/bookings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
   });
-  return docRef.id;
+  if (!response.ok) throw new Error('BOOKING_FAILED');
+  const payload = await response.json();
+  return payload.id;
 }
 
 export interface StoreOrder {
@@ -635,13 +643,14 @@ export interface StoreOrder {
 export async function saveStoreOrder(
   data: Omit<StoreOrder, 'id' | 'status' | 'createdAt'>
 ): Promise<string> {
-  const colRef = collection(db, 'orders');
-  const docRef = await addDoc(colRef, {
-    ...data,
-    status: 'paid',
-    createdAt: new Date().toISOString()
+  const response = await fetch('/api/v1/public/orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
   });
-  return docRef.id;
+  if (!response.ok) throw new Error('ORDER_FAILED');
+  const payload = await response.json();
+  return payload.id;
 }
 
 export interface ReferralStats {
