@@ -297,9 +297,9 @@ export const Header: React.FC<HeaderProps> = ({
             : 'bg-white/80 dark:bg-slate-950/80 backdrop-blur-xs border-b border-transparent'
         }`}
       >
-        <div className="max-w-[1240px] mx-auto h-full px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 sm:gap-4">
+        <div className="max-w-[1800px] mx-auto h-full px-5 sm:px-8 xl:px-10 2xl:px-12 flex items-center justify-between gap-5 lg:gap-6">
           {/* Left Section: Brand Logo & Desktop Nav */}
-          <div className="flex items-center gap-4 lg:gap-6 xl:gap-8 shrink-0">
+          <div className="flex items-center gap-5 lg:gap-7 xl:gap-8 min-w-0">
             <a
               href="/"
               onClick={(e) => {
@@ -313,7 +313,7 @@ export const Header: React.FC<HeaderProps> = ({
             </a>
 
             {/* Desktop Navigation Links */}
-            <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5" aria-label="Main Navigation">
+            <nav className="hidden xl:flex items-center gap-0.5 xl:gap-1.5 min-w-0" aria-label="Main Navigation">
               {navLinks.map((link) => {
                 const isActive = user ? activeSection === link.id : false;
                 const IconComponent = (link as any).icon;
@@ -322,7 +322,7 @@ export const Header: React.FC<HeaderProps> = ({
                     key={link.id || link.href}
                     href={link.href}
                     onClick={(e) => handleNavClick(e, link)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] xl:text-[14px] font-medium transition-all whitespace-nowrap cursor-pointer ${
+                    className={`inline-flex items-center gap-1.5 px-3 xl:px-3.5 py-2 rounded-full text-[13px] xl:text-[14px] font-medium transition-all whitespace-nowrap cursor-pointer ${
                       isActive
                         ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold shadow-2xs'
                         : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
@@ -343,7 +343,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Right Action Controls */}
-          <div className="flex items-center gap-1.5 sm:gap-2 lg:gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 xl:gap-3 shrink-0">
             {/* Command Palette / Search Quick Jump Trigger */}
             {onOpenCommandPalette && (
               <button
@@ -351,10 +351,10 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={onOpenCommandPalette}
                 aria-label={isRtl ? 'البحث السريع والتنقل (Cmd+K)' : 'Quick Search & Command Palette (Cmd+K)'}
                 title={isRtl ? `البحث السريع (${isMac ? '⌘K' : 'Ctrl+K'})` : `Quick Search (${isMac ? '⌘K' : 'Ctrl+K'})`}
-                className="hidden sm:inline-flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-full border border-slate-200/90 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all text-[12px] sm:text-[13px] font-medium cursor-pointer shadow-2xs group shrink-0 select-none"
+                className="hidden sm:inline-flex items-center gap-2 w-[210px] xl:w-[246px] 2xl:w-[274px] justify-between px-3.5 py-2 rounded-full border border-slate-200/90 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all text-[12px] sm:text-[13px] font-medium cursor-pointer shadow-2xs group shrink-0 select-none"
               >
                 <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
-                <span className="hidden xl:inline text-slate-600 dark:text-slate-300">
+                <span className="truncate text-start text-slate-600 dark:text-slate-300">
                   {user ? (isRtl ? 'بحث في الموقع...' : 'Search workspace...') : isRtl ? 'بحث...' : 'Search...'}
                 </span>
                 <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono font-medium text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shadow-2xs">
@@ -366,7 +366,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Voice-over Tour Toggle (Only for Unauthenticated Visitors) */}
             {!user && onToggleVoiceTour && (
-              <div className="hidden lg:block">
+              <div className="hidden xl:block">
                 <VoiceTourToggle
                   enabled={voiceTourEnabled}
                   isSpeaking={voiceTourSpeaking}
@@ -412,7 +412,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   type="button"
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                  className="inline-flex items-center gap-2 pl-2 pr-3 rtl:pl-3 rtl:pr-2 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer shadow-2xs"
+                  className="inline-flex items-center gap-2 pl-2 pr-2.5 xl:pr-3 rtl:pl-3 rtl:pr-2 py-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer shadow-2xs"
                   aria-expanded={userDropdownOpen}
                 >
                   {user.photoURL ? (
@@ -426,7 +426,7 @@ export const Header: React.FC<HeaderProps> = ({
                       {(user.displayName || user.email || 'U')[0].toUpperCase()}
                     </div>
                   )}
-                  <span className="text-[13px] font-bold text-slate-800 dark:text-white max-w-[90px] truncate">
+                  <span className="text-[13px] font-bold text-slate-800 dark:text-white max-w-[72px] xl:max-w-[90px] truncate">
                     {user.displayName || user.email?.split('@')[0] || 'Account'}
                   </span>
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
@@ -558,7 +558,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Mobile / Tablet Menu Trigger */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden min-w-11 min-h-11 p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
+              className="xl:hidden min-w-11 min-h-11 p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
               aria-label="Open navigation menu"
               aria-expanded={mobileMenuOpen}
             >
@@ -571,7 +571,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Mobile & Tablet Drawer */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-50 lg:hidden bg-slate-950/60 backdrop-blur-xs transition-opacity"
+          className="fixed inset-0 z-50 xl:hidden bg-slate-950/60 backdrop-blur-xs transition-opacity"
           onClick={() => setMobileMenuOpen(false)}
         >
           <div
