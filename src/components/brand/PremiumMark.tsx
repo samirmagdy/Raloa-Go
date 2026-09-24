@@ -6,18 +6,21 @@ interface PremiumMarkProps {
   variant?: PremiumMarkVariant;
   className?: string;
   title?: string;
+  style?: React.CSSProperties;
 }
 
 /** Small, brand-neutral vector accents for decorative UI details. */
 export const PremiumMark: React.FC<PremiumMarkProps> = ({
   variant = 'spark',
   className = '',
-  title
+  title,
+  style,
 }) => (
   <svg
     viewBox="0 0 24 24"
     fill="none"
     className={className}
+    style={style}
     role={title ? 'img' : undefined}
     aria-label={title}
     aria-hidden={title ? undefined : true}
