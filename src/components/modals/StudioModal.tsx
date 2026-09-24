@@ -231,6 +231,11 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   const [savedTemplates, setSavedTemplates] = useState<SavedUserTemplate[]>([]);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [templateName, setTemplateName] = useState('');
+  const [customDomain, setCustomDomain] = useState('');
+  const [customDomainId, setCustomDomainId] = useState('');
+  const [customDomainRecords, setCustomDomainRecords] = useState<Array<{ type: string; name: string; value: string }>>([]);
+  const [customDomainStatus, setCustomDomainStatus] = useState('');
+  const [isProvisioningDomain, setIsProvisioningDomain] = useState(false);
 
   const templateStorageKey = `raloa_custom_templates_${user?.uid || 'guest'}`;
 
@@ -612,6 +617,42 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 
   const handleOpenPublicSite = () => {
     window.open(publicUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleCustomDomain = async () => {
+    if (!customDomain.trim()) return;
+    setIsProvisioningDomain(true);
+    setCustomDomainStatus('');
+    try {
+      const token = user ? await user.getIdToken() : '';
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      };
+      const provision = await fetch('/api/domains/provision', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ hostname: customDomain, siteId: username })
+      });
+      const provisionPayload = await provision.json();
+      if (!provision.ok) throw new Error(provisionPayload.error || 'Could not provision domain');
+      const domain = provisionPayload.domain;
+      setCustomDomainId(domain.domainId);
+      setCustomDomainRecords(provisionPayload.dnsRecords || domain.dnsRecords || []);
+
+      const verify = await fetch('/api/domains/verify', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ domainId: domain.domainId })
+      });
+      const verifyPayload = await verify.json();
+      if (!verify.ok) throw new Error(verifyPayload.error || 'Could not verify domain');
+      setCustomDomainStatus(verifyPayload.domain.verificationStatus === 'verified' ? 'active' : 'pending');
+    } catch (error) {
+      setCustomDomainStatus(error instanceof Error ? error.message : 'Could not connect domain');
+    } finally {
+      setIsProvisioningDomain(false);
+    }
   };
 
   const handlePreviewAction = useCallback((_: 'portfolio' | 'booking' | 'shop' | 'gear', data?: { url?: string }) => {
@@ -1433,6 +1474,47 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                       <span>{copied ? (isRtl ? 'تم النسخ!' : 'Copied!') : (isRtl ? 'نسخ الرابط' : 'Copy Link')}</span>
                     </button>
                   </div>
+                </div>
+
+                <div className="p-5 bg-white border border-slate-200 rounded-3xl shadow-2xs text-left rtl:text-right">
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                      <Globe className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900">{isRtl ? 'ربط نطاقك الخاص' : 'Connect a custom domain'}</h4>
+                      <p className="text-[11px] text-slate-500 mt-1">{isRtl ? 'متاح لمشتركي Pro وStudio مع SSL مُدار.' : 'Available on Pro and Studio with managed SSL.'}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      value={customDomain}
+                      onChange={(event) => {
+                        setCustomDomain(event.target.value.toLowerCase().trim());
+                        setCustomDomainStatus('');
+                        setCustomDomainRecords([]);
+                      }}
+                      placeholder="www.yourdomain.com"
+                      className="flex-1 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCustomDomain}
+                      disabled={isProvisioningDomain || !customDomain}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold transition-colors"
+                    >
+                      {isProvisioningDomain ? (isRtl ? 'جارٍ الربط...' : 'Connecting...') : (isRtl ? 'ربط النطاق' : 'Connect domain')}
+                    </button>
+                  </div>
+                  {customDomainStatus && <p className="mt-3 text-xs font-semibold text-indigo-700">{customDomainStatus}</p>}
+                  {customDomainRecords.length > 0 && (
+                    <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200 p-3 space-y-1">
+                      <p className="text-[11px] font-bold text-slate-700">{isRtl ? 'أضف سجلات DNS ثم أعد المحاولة:' : 'Add these DNS records, then try again:'}</p>
+                      {customDomainRecords.map((record) => (
+                        <p key={`${record.type}-${record.name}`} className="text-[10px] font-mono text-slate-600 break-all">{record.type} {record.name} → {record.value}</p>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Social OpenGraph Preview Quick-Jump Banner */}

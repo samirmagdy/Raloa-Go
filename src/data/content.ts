@@ -480,16 +480,14 @@ export const pricingPlans: PricingPlan[] = [
       'Your own domain for instant credibility (yourname.com)',
       'Premium templates that make your brand memorable',
       'Unlimited links and media as your audience grows',
-      'Bookings and checkout in one frictionless page',
-      'Real-time insights to double down on what converts',
+      'Actionable visitor insights to double down on what converts',
       'A distraction-free page without RALOA branding'
     ],
     featuresAr: [
       'نطاقك الخاص لمصداقية فورية (yourname.com)',
       'قوالب متميزة تجعل علامتك لا تُنسى',
       'روابط ووسائط غير محدودة مع نمو جمهورك',
-      'حجز ودفع في صفحة واحدة بدون خطوات معقدة',
-      'رؤى لحظية لمعرفة ما يحوّل الزوار إلى عملاء',
+      'إحصائيات عملية لمعرفة ما يحوّل الزوار إلى عملاء',
       'صفحة بلا تشتيت وبدون شعار رالوا'
     ],
     ctaText: 'Start Pro',
@@ -497,31 +495,29 @@ export const pricingPlans: PricingPlan[] = [
     ctaVariant: 'dark'
   },
   {
-    id: 'business',
-    name: 'Business',
-    nameAr: 'الشركات والفرق',
+    id: 'studio',
+    name: 'Studio',
+    nameAr: 'استوديو',
     priceMonthly: 12,
     priceYearly: 9.6, // 20% off
     period: 'month',
     periodAr: 'شهرياً',
-    description: 'Give your team the control to scale every campaign.',
-    descriptionAr: 'امنح فريقك الأدوات اللازمة لتوسيع كل حملة بثقة.',
+    description: 'For creators who want the complete RALOA toolkit.',
+    descriptionAr: 'للمبدعين الذين يريدون مجموعة أدوات رالوا الكاملة.',
     features: [
-      'Everything in Pro, ready for your next stage',
-      'Team roles that keep every update organized',
-      'API and CRM connections that eliminate manual work',
-      'Priority support when a campaign cannot wait',
-      'Early access to tools that keep you ahead'
+      'Everything in Pro, with room to grow',
+      'Advanced Studio controls for your page',
+      'Priority support when you need a hand',
+      'Early access to new creator tools'
     ],
     featuresAr: [
-      'كل مزايا برو جاهزة لمرحلتك التالية',
-      'صلاحيات للفريق تحافظ على تنظيم كل تحديث',
-      'ربط API وCRM يلغي الأعمال اليدوية',
-      'دعم ذو أولوية عندما لا تحتمل حملتك الانتظار',
-      'وصول مبكر لأدوات تبقيك في المقدمة'
+      'كل مزايا برو مع مساحة للنمو',
+      'أدوات استوديو متقدمة لصفحتك',
+      'دعم ذو أولوية عندما تحتاج المساعدة',
+      'وصول مبكر لأدوات المبدعين الجديدة'
     ],
-    ctaText: 'Start Business',
-    ctaTextAr: 'ابدأ باقة الشركات',
+    ctaText: 'Start Studio',
+    ctaTextAr: 'ابدأ باقة استوديو',
     ctaVariant: 'secondary'
   }
 ];
@@ -574,8 +570,8 @@ export const faqData: FAQItem[] = [
     id: 'faq-2',
     question: 'Can I use my own domain?',
     questionAr: 'هل يمكنني استخدام النطاق الخاص بي (دومين)؟',
-    answer: 'Yes. On our Pro and Business plans, you can easily connect your own custom domain (such as yourname.com or studio.me) with automatic SSL certificates and global CDN delivery.',
-    answerAr: 'نعم. مع باقة المحترفين وباقة الشركات، يمكنك ربط نطاقك المخصص بسهولة تامة (مثل yourname.com) مع شهادة أمان SSL تلقائية وشبكة توزيع محتوى فائقة السرعة.'
+    answer: 'Yes. Pro and Studio creators can connect a verified custom domain (such as yourname.com) with managed SSL setup.',
+    answerAr: 'نعم. يمكن لمشتركي برو واستوديو ربط نطاق مخصص موثّق مثل yourname.com مع إعداد SSL مُدار.'
   },
   {
     id: 'faq-3',

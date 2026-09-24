@@ -139,7 +139,7 @@ export const SECTION_SEO_REGISTRY: Record<string, Record<Locale, SectionSEOMetad
   },
   pricing: {
     en: {
-      title: 'Transparent Pricing Plans — Free, Pro & Business | RALOA',
+    title: 'Transparent Pricing Plans — Free, Pro & Studio | RALOA',
       description: 'Start free forever or unlock custom domains, zero transaction fees, deep analytics and VIP priority support with RALOA Pro.',
       ogTitle: 'Transparent Pricing with No Hidden Fees — Free & Pro Plans | RALOA',
       ogDescription: 'Start free forever. Upgrade to Pro whenever you want custom domains, zero commission sales, and advanced integrations.',

@@ -462,6 +462,22 @@ function MainApp() {
     handleOpenStudio();
   };
 
+  const handleManageBilling = async () => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch('/api/billing/portal-session', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.url) throw new Error(payload.error || 'Billing portal unavailable');
+      window.location.assign(payload.url);
+    } catch (error) {
+      console.error('Could not open billing portal:', error);
+    }
+  };
+
   // Determine if any modal is currently open
   const isAnyModalOpen = Boolean(
     commandPaletteOpen ||
@@ -702,6 +718,7 @@ function MainApp() {
                   handleSelectPlan(pricingPlans[1], false);
                 }
               }}
+              onManageBilling={handleManageBilling}
             />
           </main>
 

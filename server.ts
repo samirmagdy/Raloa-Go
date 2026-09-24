@@ -3,12 +3,62 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import {
+  APP_URL,
+  adminDb,
+  cloudflareRequest,
+  createCheckoutSession,
+  createPortalSession,
+  deleteDomain,
+  findDomainByHostname,
+  findDomainById,
+  getCloudflareConfig,
+  handleStripeWebhook,
+  isAdminConfigured,
+  isStripeConfigured,
+  saveDomain,
+  stripe,
+  verifyBearerToken,
+  type AuthenticatedUser,
+  type DomainRecord
+} from './server-services';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const requestId = req.headers['x-request-id']?.toString() || crypto.randomUUID();
+  const startedAt = Date.now();
+  res.setHeader('X-Request-ID', requestId);
+  res.on('finish', () => {
+    if (req.path.startsWith('/assets/')) return;
+    console.log(JSON.stringify({
+      requestId,
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      durationMs: Date.now() - startedAt,
+      timestamp: new Date().toISOString()
+    }));
+  });
+  next();
+});
+
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
+  const signature = req.headers['stripe-signature'];
+  if (typeof signature !== 'string') return res.status(400).json({ error: 'Missing Stripe signature' });
+
+  try {
+    await handleStripeWebhook(req.body as Buffer, signature);
+    return res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('[Stripe webhook]', error);
+    return res.status(400).json({ error: 'Webhook verification failed' });
+  }
+});
 
 // Body parsing middleware for API endpoints
 app.use(express.json());
@@ -33,7 +83,7 @@ function getIndexHtml(): string {
  * 6.2 Custom Domain Mapping Contract (Database Entity)
  */
 interface CustomDomainDnsRecord {
-  type: 'CNAME' | 'A';
+  type: 'CNAME' | 'A' | 'TXT';
   name: string;
   value: string;
   is_verified: boolean;
@@ -248,6 +298,39 @@ export const CONTACT_SUBMISSIONS: Array<{
   createdAt: string;
 }> = [];
 
+async function getAuthenticatedUser(req: Request): Promise<AuthenticatedUser | null> {
+  const authorization = req.headers.authorization;
+  if (typeof authorization === 'string' && authorization.startsWith('Bearer ')) {
+    const user = await verifyBearerToken(authorization.slice(7));
+    if (user) return user;
+  }
+
+  const sessionToken = parseCookies(req.headers.cookie).raloa_session;
+  const session = sessionToken ? ACTIVE_SESSIONS.get(sessionToken) : undefined;
+  return session && session.expiresAt > Date.now()
+    ? { uid: session.userId, email: session.email }
+    : null;
+}
+
+function normalizeHostname(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const hostname = value.trim().toLowerCase().replace(/\.$/, '');
+  if (!/^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(hostname)) return null;
+  if (hostname === 'raloa.app' || hostname.endsWith('.raloa.app')) return null;
+  return hostname;
+}
+
+function domainDnsRecords(result: any): CustomDomainDnsRecord[] {
+  const records = result?.ownership_verification?.http || result?.ownership_verification?.dns || [];
+  if (Array.isArray(records)) return records.map((record: any) => ({
+    type: record.type || 'CNAME',
+    name: record.name || record.domain,
+    value: record.value || record.data,
+    is_verified: false
+  }));
+  return [];
+}
+
 // Password reset token store (FR-4.4: 15-minute TTL, 256-bit entropy)
 export const PASSWORD_RESET_TOKENS = new Map<string, { email: string; expiresAt: number }>();
 export const FORGOT_PW_RATE_LIMITS = new Map<string, number[]>();
@@ -451,7 +534,7 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
  * FR-1.3 Custom Domain Handshake & Edge Resolution
  * Handles CNAME/A record resolution and 526 SSL fallback (AC-06)
  */
-app.use((req: Request, res: Response, next: NextFunction) => {
+app.use(async (req: Request, res: Response, next: NextFunction) => {
   const host = getRequestHost(req);
   const isPlatformDomain =
     host === 'raloa.app' ||
@@ -466,7 +549,9 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 
   // Lookup in custom domain database
-  const mapping = CUSTOM_DOMAINS[host];
+  const mapping = isAdminConfigured()
+    ? await findDomainByHostname(host)
+    : CUSTOM_DOMAINS[host];
   if (!mapping) {
     return res.status(404).send(`
       <!doctype html>
@@ -482,7 +567,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }
 
   // AC-06: Custom domain with invalid / pending SSL -> 526 Invalid SSL Screen
-  if (mapping.ssl_status === 'pending' || mapping.ssl_status === 'failed') {
+  const sslStatus = 'sslStatus' in mapping ? mapping.sslStatus : mapping.ssl_status;
+  if (sslStatus === 'pending' || sslStatus === 'failed') {
     return res.status(526).send(`
       <!doctype html>
       <html lang="en">
@@ -515,7 +601,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }
 
   // Active custom domain: rewrite internally to public-render without URL path pollution
-  req.url = `/@${mapping.site_id}`;
+  const siteId = 'siteId' in mapping ? mapping.siteId : mapping.site_id;
+  req.url = `/@${siteId}`;
   next();
 });
 
@@ -1048,6 +1135,175 @@ app.post('/api/v1/auth/verify-email', (req: Request, res: Response) => {
   });
 });
 
+app.get('/api/health', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok', service: 'raloa', timestamp: new Date().toISOString() });
+});
+
+app.get('/api/readiness', (_req: Request, res: Response) => {
+  const checks = {
+    firebaseAdmin: isAdminConfigured(),
+    stripe: isStripeConfigured(),
+    appUrl: Boolean(APP_URL)
+  };
+  const ready = process.env.NODE_ENV !== 'production' || Object.values(checks).every(Boolean);
+  res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready', checks });
+});
+
+app.post('/api/billing/activate-free', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+
+  if (isAdminConfigured()) {
+    await adminDb.collection('users').doc(user.uid).set({
+      plan: 'free',
+      isYearly: false,
+      billingStatus: 'free',
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  }
+
+  return res.status(200).json({ plan: 'free' });
+});
+
+app.post('/api/billing/checkout-session', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+
+  const plan = req.body?.plan === 'studio' || req.body?.plan === 'business' ? 'studio' : req.body?.plan;
+  const isYearly = req.body?.isYearly === true;
+  if (plan !== 'pro' && plan !== 'studio') return res.status(400).json({ error: 'A paid plan is required' });
+
+  try {
+    const url = await createCheckoutSession(user, plan, isYearly);
+    return res.status(200).json({ url });
+  } catch (error) {
+    console.error('[Billing checkout]', error);
+    const message = error instanceof Error ? error.message : 'Checkout unavailable';
+    return res.status(message.includes('NOT_CONFIGURED') ? 503 : 500).json({ error: message });
+  }
+});
+
+app.post('/api/billing/portal-session', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+
+  try {
+    return res.status(200).json({ url: await createPortalSession(user.uid) });
+  } catch (error) {
+    console.error('[Billing portal]', error);
+    const message = error instanceof Error ? error.message : 'Billing portal unavailable';
+    return res.status(message.includes('NOT_FOUND') ? 404 : 503).json({ error: message });
+  }
+});
+
+app.get('/api/domains', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+  if (!isAdminConfigured()) return res.status(200).json({ domains: [] });
+
+  const snapshot = await adminDb.collection('custom_domains').where('userId', '==', user.uid).get();
+  return res.status(200).json({ domains: snapshot.docs.map((document) => document.data()) });
+});
+
+app.post('/api/domains/provision', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+  if (!isAdminConfigured() || !getCloudflareConfig()) return res.status(503).json({ error: 'Domain provisioning is not configured' });
+
+  const hostname = normalizeHostname(req.body?.hostname);
+  const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : 'default';
+  if (!hostname) return res.status(400).json({ error: 'A valid customer-owned hostname is required' });
+
+  const userProfile = await adminDb.collection('users').doc(user.uid).get();
+  const plan = userProfile.data()?.plan;
+  if (plan !== 'pro' && plan !== 'studio') return res.status(403).json({ error: 'Custom domains require a paid plan' });
+
+  const existing = await findDomainByHostname(hostname);
+  if (existing && existing.userId !== user.uid) return res.status(409).json({ error: 'Domain is already attached' });
+  if (existing) return res.status(200).json({ domain: existing });
+
+  try {
+    const domainId = crypto.randomUUID();
+    const cloudflare = await cloudflareRequest(
+      `/zones/${getCloudflareConfig()!.zoneId}/custom_hostnames`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          hostname,
+          custom_metadata: { raloaDomainId: domainId, userId: user.uid, siteId },
+          ssl: { method: 'http', type: 'dv', settings: { http2: 'on', min_tls_version: '1.2' } }
+        })
+      }
+    );
+    const now = new Date().toISOString();
+    const domain: DomainRecord = {
+      domainId,
+      hostname,
+      userId: user.uid,
+      siteId,
+      verificationToken: crypto.randomBytes(24).toString('hex'),
+      verificationStatus: 'pending',
+      sslStatus: cloudflare?.ssl?.status === 'active' ? 'active' : 'pending',
+      cloudflareHostnameId: cloudflare?.id,
+      createdAt: now,
+      updatedAt: now
+    };
+    await saveDomain({ ...domain, dnsRecords: domainDnsRecords(cloudflare) });
+    return res.status(201).json({ domain, dnsRecords: domainDnsRecords(cloudflare) });
+  } catch (error) {
+    console.error('[Domain provision]', error);
+    return res.status(502).json({ error: 'Cloudflare could not provision this domain' });
+  }
+});
+
+app.post('/api/domains/verify', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+  if (!isAdminConfigured() || !getCloudflareConfig()) return res.status(503).json({ error: 'Domain verification is not configured' });
+
+  const domainId = typeof req.body?.domainId === 'string' ? req.body.domainId : '';
+  const domain = await findDomainById(domainId);
+  if (!domain || domain.userId !== user.uid) return res.status(404).json({ error: 'Domain not found' });
+  if (!domain.cloudflareHostnameId) return res.status(409).json({ error: 'Cloudflare hostname is missing' });
+
+  try {
+    const config = getCloudflareConfig()!;
+    const { cloudflareRequest } = await import('./server-services');
+    const result = await cloudflareRequest(`/zones/${config.zoneId}/custom_hostnames/${domain.cloudflareHostnameId}`);
+    const updated: DomainRecord = {
+      ...domain,
+      verificationStatus: result?.status === 'active' ? 'verified' : 'pending',
+      sslStatus: result?.ssl?.status === 'active' ? 'active' : 'pending',
+      updatedAt: new Date().toISOString()
+    };
+    await saveDomain(updated);
+    return res.status(200).json({ domain: updated });
+  } catch (error) {
+    console.error('[Domain verify]', error);
+    return res.status(502).json({ error: 'Cloudflare verification failed' });
+  }
+});
+
+app.delete('/api/domains/:domainId', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+  if (!isAdminConfigured()) return res.status(503).json({ error: 'Domain deletion is not configured' });
+  const domain = await findDomainById(req.params.domainId);
+  if (!domain || domain.userId !== user.uid) return res.status(404).json({ error: 'Domain not found' });
+
+  try {
+    const config = getCloudflareConfig();
+    if (config && domain.cloudflareHostnameId) {
+      await cloudflareRequest(`/zones/${config.zoneId}/custom_hostnames/${domain.cloudflareHostnameId}`, { method: 'DELETE' });
+    }
+    await deleteDomain(domain.domainId);
+    return res.status(204).send();
+  } catch (error) {
+    console.error('[Domain delete]', error);
+    return res.status(502).json({ error: 'Domain could not be removed' });
+  }
+});
+
 /**
  * Serve static production assets from dist directory
  */
@@ -1146,6 +1402,19 @@ app.get('*', (req: Request, res: Response) => {
   }
 
   res.send(html);
+});
+
+app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
+  const requestId = res.getHeader('X-Request-ID');
+  console.error(JSON.stringify({
+    requestId,
+    method: req.method,
+    path: req.path,
+    error: error.message,
+    stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
+  }));
+  if (res.headersSent) return;
+  res.status(500).json({ error: 'Internal server error', requestId });
 });
 
 // Start listening if run directly

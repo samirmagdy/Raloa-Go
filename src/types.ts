@@ -138,6 +138,7 @@ export interface UserProfile {
   photoURL: string | null;
   plan: 'free' | 'pro' | 'studio';
   isYearly?: boolean;
+  billingStatus?: 'free' | 'active' | 'trialing' | 'past_due' | 'canceled' | 'incomplete' | string;
   handle?: string;
   referralsCount?: number;
   referredBy?: string;
@@ -181,7 +182,7 @@ export interface ContactInquiry {
 }
 
 export interface CustomDomainDnsRecord {
-  type: 'CNAME' | 'A';
+  type: 'CNAME' | 'A' | 'TXT';
   name: string;
   value: string;
   is_verified: boolean;

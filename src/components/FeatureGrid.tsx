@@ -48,13 +48,13 @@ export const FeatureGrid: React.FC<FeatureGridProps> = ({ locale, onExploreFeatu
       : 'Creator Tools & Integrated Mini-Site Features — RALOA',
     description: isRtl
       ? 'نطاقات مخصصة، متجر رقمي متكامل، نظام حجز مواعيد، معارض وسائط متقدمة، وتحليلات فورية في منصة موحدة.'
-      : 'Custom domains, instant digital storefronts, calendar bookings, portfolio galleries, real-time analytics, and SEO optimization in one place.',
+      : 'Custom domains, polished portfolio pages, real-time analytics, and SEO essentials in one place.',
     ogTitle: isRtl
       ? 'أدوات ومميزات متطورة لصناع المحتوى والمهنيين — رالوا'
       : 'All-in-One Creator Toolkit — Modern Mini-Sites by RALOA',
     ogDescription: isRtl
       ? 'كل ما يحتاجه المبدع في منصة واحدة: نطاقات خاصة، مبيعات بدون عمولة، حجوزات مباشرة وتحليلات فورية.'
-      : 'Everything you need: custom domains, zero commission digital sales, booking schedules, and real-time UTM analytics.',
+      : 'Everything you need: custom domains, premium templates, and actionable visitor analytics.',
     ogImage: 'https://raloa.app/images/og-features.png',
     keywords: seoKeywords,
     metaTags: seoMetaTags

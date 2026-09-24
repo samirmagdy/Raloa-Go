@@ -57,13 +57,13 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
       : 'Transparent Pricing Plans — Free, Pro & Studio | RALOA',
     description: isRtl
       ? 'ابدأ مجاناً مدى الحياة أو اختر باقة المحترفين للنطاقات المخصصة، بدون عمولات مبيعات، وتحليلات متقدمة ودعم أولوية.'
-      : 'Start free forever or unlock custom domains, zero transaction fees, deep analytics and VIP priority support with RALOA Pro.',
+      : 'Start free forever or unlock custom domains, premium templates, and actionable analytics with RALOA Pro.',
     ogTitle: isRtl
       ? 'باقات وأسعار رالوا — انطلق مجاناً بدون رسوم خفية'
       : 'Transparent Pricing with No Hidden Fees — Free & Pro Plans | RALOA',
     ogDescription: isRtl
       ? 'أسعار واضحة بدون عمولات بيع مخفية. باقة مجانية وباقات احترافية للنطاقات المخصصة وتسييل المحتوى.'
-      : 'Transparent pricing with zero transaction fees on your digital sales. Build for free or upgrade for custom domains and advanced tools.',
+      : 'Transparent pricing for creators who want a polished page today and room to grow tomorrow.',
     ogImage: 'https://raloa.app/images/og-pricing.png',
     keywords: seoKeywords,
     metaTags: seoMetaTags,

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Locale } from '../../types';
 import { PremiumMark } from '../brand/PremiumMark';
+import { auth } from '../../lib/firebase';
 
 interface StudioSettingsTabProps {
   handle: string;
@@ -71,13 +72,43 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   const [activeSubSection, setActiveSubSection] = useState<'site' | 'domain' | 'integrations' | 'billing' | 'advanced'>('site');
   const [domainVerified, setDomainVerified] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [domainId, setDomainId] = useState('');
+  const [dnsRecords, setDnsRecords] = useState<Array<{ type: string; name: string; value: string }>>([]);
+  const [domainError, setDomainError] = useState('');
 
-  const handleVerifyDomain = () => {
+  const getApiHeaders = async (): Promise<Record<string, string>> => {
+    const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const handleVerifyDomain = async () => {
     setIsVerifying(true);
-    setTimeout(() => {
+    setDomainError('');
+    try {
+      const headers = { 'Content-Type': 'application/json', ...(await getApiHeaders()) };
+      const provision = await fetch('/api/domains/provision', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ hostname: customDomain, siteId: handle || 'default' })
+      });
+      const payload = await provision.json();
+      if (!provision.ok) throw new Error(payload.error || 'Could not provision domain');
+      setDomainId(payload.domain.domainId);
+      setDnsRecords(payload.dnsRecords || payload.domain.dnsRecords || []);
+
+      const verification = await fetch('/api/domains/verify', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ domainId: payload.domain.domainId })
+      });
+      const verifiedPayload = await verification.json();
+      if (!verification.ok) throw new Error(verifiedPayload.error || 'Could not verify domain');
+      setDomainVerified(verifiedPayload.domain.verificationStatus === 'verified');
+    } catch (error) {
+      setDomainError(error instanceof Error ? error.message : 'Could not verify domain');
+    } finally {
       setIsVerifying(false);
-      setDomainVerified(true);
-    }, 800);
+    }
   };
 
   return (
@@ -189,6 +220,9 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
                 onChange={(e) => {
                   onCustomDomainChange(e.target.value.toLowerCase().trim());
                   setDomainVerified(false);
+                  setDomainId('');
+                  setDnsRecords([]);
+                  setDomainError('');
                 }}
                 placeholder="links.mybrand.com"
                 className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -212,6 +246,22 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
               </button>
             </div>
           </div>
+
+          {domainError && <p role="alert" className="text-xs font-semibold text-rose-600 dark:text-rose-400">{domainError}</p>}
+
+          {dnsRecords.length > 0 && (
+            <div className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 dark:border-indigo-900 dark:bg-indigo-950/30">
+              <p className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
+                {isRtl ? 'أضف سجلات DNS التالية ثم أعد التحقق:' : 'Add these DNS records, then check again:'}
+              </p>
+              {dnsRecords.map((record) => (
+                <div key={`${record.type}-${record.name}`} className="grid grid-cols-[58px_1fr] gap-2 text-[11px] font-mono text-slate-700 dark:text-slate-300">
+                  <span className="font-bold">{record.type}</span>
+                  <span className="break-all">{record.name} → {record.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* DNS Configuration Instructions */}
           <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">

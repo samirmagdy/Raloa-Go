@@ -49,6 +49,7 @@ interface AuthenticatedHomeProps {
   onOpenStudio: (username?: string, template?: TemplateItem) => void;
   onOpenTemplates: () => void;
   onOpenPricing: () => void;
+  onManageBilling: () => void;
 }
 
 type TimeRange = '7d' | '30d' | 'all';
@@ -58,7 +59,8 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
   theme,
   onOpenStudio,
   onOpenTemplates,
-  onOpenPricing
+  onOpenPricing,
+  onManageBilling
 }) => {
   const { user, profile, loadMiniSite, saveMiniSite } = useAuth();
   const isRtl = locale === 'ar';
@@ -1017,7 +1019,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
 
           {/* Action 6: Manage Plan / Domain */}
           <button
-            onClick={onOpenPricing}
+            onClick={plan === 'free' ? onOpenPricing : onManageBilling}
             className="group p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm hover:border-indigo-500 dark:hover:border-indigo-500 hover:shadow-md transition-all text-left rtl:text-right flex items-start gap-4"
           >
             <div className="p-3 rounded-xl bg-pink-500/10 text-pink-600 dark:text-pink-400 group-hover:bg-pink-600 group-hover:text-white transition-colors">

@@ -11,11 +11,27 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function billingFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'plan',
+        'isYearly',
+        'billingStatus',
+        'stripeCustomerId',
+        'stripeSubscriptionId'
+      ]);
+    }
+
     // User profile documents
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId)
+      allow create: if isOwner(userId)
+        && request.resource.data.plan == 'free'
+        && !request.resource.data.keys().hasAny([
+          'billingStatus',
+          'stripeCustomerId',
+          'stripeSubscriptionId'
+        ]);
+      allow update: if isOwner(userId) && !billingFieldsChanged()
         // A newly-created account may atomically qualify itself once for its referrer.
         || (
           isAuthenticated()
@@ -112,6 +128,12 @@ service cloud.firestore {
       allow create: if true;
       allow read: if true;
       allow update, delete: if false;
+    }
+
+    // Custom domains are managed through authenticated server endpoints so
+    // Cloudflare credentials and ownership transitions never reach the client.
+    match /custom_domains/{domainId} {
+      allow read, write: if false;
     }
   }
 }

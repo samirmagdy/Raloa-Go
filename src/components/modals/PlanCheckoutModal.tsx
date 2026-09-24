@@ -52,18 +52,42 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
     }
 
     try {
-      const planTier = (plan.id.toLowerCase() as 'free' | 'pro' | 'studio') || 'free';
-      await updatePlan(planTier, isYearly);
-      setSuccess(true);
-      setTimeout(() => {
-        onConfirmPlan(plan);
-      }, 1000);
+      const planTier = plan.id === 'business' ? 'studio' : plan.id.toLowerCase();
+      const token = await user.getIdToken();
+      const response = await fetch(
+        planTier === 'free' ? '/api/billing/activate-free' : '/api/billing/checkout-session',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ plan: planTier, isYearly })
+        }
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || 'CHECKOUT_FAILED');
+      }
+
+      const payload = await response.json();
+      if (payload.url) {
+        window.location.assign(payload.url);
+        return;
+      }
+
+      if (planTier === 'free') {
+        await updatePlan('free', false);
+        setSuccess(true);
+        setTimeout(() => onConfirmPlan(plan), 1000);
+      }
     } catch (err) {
       console.error('Error updating plan:', err);
       setError(
         err instanceof Error && err.message === 'AUTH_REQUIRED'
           ? (isRtl ? 'يرجى تسجيل الدخول أولاً.' : 'Please sign in before activating a plan.')
-          : (isRtl ? 'تعذر تفعيل الباقة. حاول مرة أخرى.' : 'We could not activate this plan. Please try again.')
+          : (isRtl ? 'تعذر بدء الدفع. تحقق من إعدادات الحساب وحاول مرة أخرى.' : 'We could not start checkout. Please try again.')
       );
     } finally {
       setLoading(false);
