@@ -4,7 +4,6 @@ import { motion, useTransform } from 'motion/react';
 import { Locale, TemplateItem, BackgroundStyle } from '../types';
 import { dictionary } from '../data/content';
 import { PhoneMockup } from './PhoneMockup';
-import { PremiumMark } from './brand/PremiumMark';
 import { useScrollProgress } from '../hooks/useScrollProgress';
 import {
   AnnotationCard,
@@ -184,17 +183,6 @@ export const Hero: React.FC<HeroProps> = ({
           {/* Left Column: 55% split (lg:col-span-7) */}
           <div className="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-left rtl:lg:text-right">
             
-            {/* Eyebrow Pill with smooth slide-down entrance */}
-            <motion.div
-              initial={{ opacity: 0, y: -16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-50/90 dark:bg-indigo-950/80 border border-indigo-100/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] sm:text-[12px] tracking-wider uppercase mb-6 shadow-2xs"
-            >
-              <PremiumMark className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span>{t.eyebrow}</span>
-            </motion.div>
-
             {/* Headline with staged fade and glide */}
             <motion.h1
               initial={{ opacity: 0, y: 22 }}
@@ -225,7 +213,7 @@ export const Hero: React.FC<HeroProps> = ({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ duration: 0.5, delay: 0.24, ease: [0.16, 1, 0.3, 1] }}
               onSubmit={validateAndSubmit}
-              className="w-full max-w-[530px] mb-4"
+              className="w-full max-w-[530px]"
               noValidate
             >
               <div
@@ -308,7 +296,7 @@ export const Hero: React.FC<HeroProps> = ({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.5, delay: 0.32 }}
-              className="flex flex-wrap items-center justify-center lg:justify-start gap-y-2 gap-x-5 text-[13px] font-medium text-slate-600 dark:text-slate-400 mt-2"
+              className="w-full max-w-[530px] flex flex-wrap items-center justify-center lg:justify-between gap-y-2 gap-x-4 text-[13px] font-medium text-slate-600 dark:text-slate-400 mt-4"
             >
               {t.proof.map((item, idx) => (
                 <motion.div
@@ -316,7 +304,7 @@ export const Hero: React.FC<HeroProps> = ({
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.4, delay: 0.35 + idx * 0.07 }}
-                  className="flex items-center gap-1.5"
+                  className="flex items-center gap-1.5 whitespace-nowrap"
                 >
                   <div className="w-4 h-4 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 flex items-center justify-center">
                     <Check className="w-3 h-3 stroke-[2.5]" />

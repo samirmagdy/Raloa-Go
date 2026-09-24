@@ -1,10 +1,9 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ArrowRight,
   Menu,
   X,
-  Search,
   User as UserIcon,
   LogOut,
   ChevronDown,
@@ -22,9 +21,6 @@ import {
 import { PremiumMark } from './brand/PremiumMark';
 import { RaloaLogo } from './brand/RaloaLogo';
 import { LanguageDropdown } from './LanguageDropdown';
-import { ThemeToggle } from './ThemeToggle';
-import { SoundToggle } from './SoundToggle';
-import { VoiceTourToggle } from './VoiceTourToggle';
 import { Locale } from '../types';
 import { Theme } from '../utils/theme';
 import { dictionary } from '../data/content';
@@ -57,17 +53,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenStudio,
   onOpenTemplates,
   onOpenAuth,
-  onOpenCommandPalette,
   onNavigateToSection,
   theme,
-  onToggleTheme,
-  soundEnabled,
-  onToggleSound,
-  voiceTourEnabled = false,
-  voiceTourSpeaking = false,
-  onToggleVoiceTour,
-  currentSection = 'hero',
-  onReplayVoiceTour
 }) => {
   const { user, profile, logOut } = useAuth();
   const [scrolled, setScrolled] = useState(false);
@@ -103,11 +90,6 @@ export const Header: React.FC<HeaderProps> = ({
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const isMac = useMemo(() => {
-    if (typeof navigator === 'undefined') return true;
-    return /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || navigator.platform);
   }, []);
 
   const handleSelectLanguage = (newLocale: Locale) => {
@@ -297,7 +279,7 @@ export const Header: React.FC<HeaderProps> = ({
             : 'bg-white/80 dark:bg-slate-950/80 backdrop-blur-xs border-b border-transparent'
         }`}
       >
-        <div className="max-w-[1800px] mx-auto h-full px-5 sm:px-8 xl:px-10 2xl:px-12 flex items-center justify-between gap-5 lg:gap-6">
+        <div className="w-full h-full px-[4vw] flex items-center justify-between gap-5 lg:gap-6">
           {/* Left Section: Brand Logo & Desktop Nav */}
           <div className="flex items-center gap-5 lg:gap-7 xl:gap-8 min-w-0">
             <a
@@ -359,61 +341,6 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right Action Controls */}
           <div className="flex items-center gap-2 sm:gap-2.5 xl:gap-3 shrink-0">
-            {/* Command Palette / Search Quick Jump Trigger */}
-            {onOpenCommandPalette && (
-              <button
-                type="button"
-                onClick={onOpenCommandPalette}
-                aria-label={isRtl ? 'البحث السريع والتنقل (Cmd+K)' : 'Quick Search & Command Palette (Cmd+K)'}
-                title={isRtl ? `البحث السريع (${isMac ? '⌘K' : 'Ctrl+K'})` : `Quick Search (${isMac ? '⌘K' : 'Ctrl+K'})`}
-                className="hidden sm:inline-flex items-center gap-2 w-[210px] xl:w-[246px] 2xl:w-[274px] justify-between px-3.5 py-2 rounded-full border border-slate-200/90 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all text-[12px] sm:text-[13px] font-medium cursor-pointer shadow-2xs group shrink-0 select-none"
-              >
-                <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
-                <span className="truncate text-start text-slate-600 dark:text-slate-300">
-                  {user ? (isRtl ? 'بحث في الموقع...' : 'Search workspace...') : isRtl ? 'بحث...' : 'Search...'}
-                </span>
-                <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono font-medium text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shadow-2xs">
-                  <span>{isMac ? '⌘' : 'Ctrl'}</span>
-                  <span>K</span>
-                </kbd>
-              </button>
-            )}
-
-            {/* Voice-over Tour Toggle (Only for Unauthenticated Visitors) */}
-            {!user && onToggleVoiceTour && (
-              <div className="hidden xl:block">
-                <VoiceTourToggle
-                  enabled={voiceTourEnabled}
-                  isSpeaking={voiceTourSpeaking}
-                  onToggle={onToggleVoiceTour}
-                  currentSection={currentSection}
-                  onReplay={onReplayVoiceTour}
-                  variant="header"
-                  locale={locale}
-                />
-              </div>
-            )}
-
-            {/* Ambient Sound Toggle (Only for Unauthenticated Visitors) */}
-            {!user && (
-              <div className="hidden md:block">
-                <SoundToggle
-                  enabled={soundEnabled}
-                  onToggle={onToggleSound}
-                  variant="header"
-                  locale={locale}
-                />
-              </div>
-            )}
-
-            {/* Global Theme Toggle */}
-            <ThemeToggle
-              theme={theme}
-              onToggleTheme={onToggleTheme}
-              variant="header"
-              locale={locale}
-            />
-
             {/* Language Switcher Dropdown */}
             <LanguageDropdown
               currentLocale={locale}
@@ -608,26 +535,6 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               </div>
 
-              {/* Mobile Quick Jump / Search Trigger */}
-              {onOpenCommandPalette && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onOpenCommandPalette();
-                  }}
-                  className="w-full mt-4 flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer text-xs font-semibold shadow-2xs"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Search className="w-4 h-4 text-indigo-500 shrink-0" />
-                    <span>{user ? (isRtl ? 'بحث في الموقع...' : 'Search workspace...') : isRtl ? 'البحث عن قسم أو قالب...' : 'Search sections or templates...'}</span>
-                  </div>
-                  <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-medium rounded bg-white dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300">
-                    {isMac ? '⌘K' : 'Ctrl+K'}
-                  </kbd>
-                </button>
-              )}
-
               {/* Navigation Links in Mobile Drawer */}
               <nav className="mt-5 flex flex-col space-y-1.5" aria-label="Mobile Navigation">
                 {navLinks.map((link) => {
@@ -660,36 +567,8 @@ export const Header: React.FC<HeaderProps> = ({
                 })}
               </nav>
 
-              {/* Theme, Sound & Language Controls in Mobile Drawer */}
-              <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 space-y-3">
-                {!user && onToggleVoiceTour && (
-                  <VoiceTourToggle
-                    enabled={voiceTourEnabled}
-                    isSpeaking={voiceTourSpeaking}
-                    onToggle={onToggleVoiceTour}
-                    currentSection={currentSection}
-                    onReplay={onReplayVoiceTour}
-                    variant="mobile"
-                    locale={locale}
-                  />
-                )}
-
-                {!user && (
-                  <SoundToggle
-                    enabled={soundEnabled}
-                    onToggle={onToggleSound}
-                    variant="mobile"
-                    locale={locale}
-                  />
-                )}
-
-                <ThemeToggle
-                  theme={theme}
-                  onToggleTheme={onToggleTheme}
-                  variant="mobile"
-                  locale={locale}
-                />
-
+              {/* Language control in the mobile drawer */}
+              <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800">
                 <LanguageDropdown
                   currentLocale={locale}
                   onSelectLocale={(newLocale) => {

@@ -141,11 +141,11 @@ export const Footer: React.FC<FooterProps> = ({
           {/* Brand Info (4 cols) */}
           <div className="col-span-2 md:col-span-4 flex flex-col items-start">
             <img
-              src="/brand/raloa-logo-horizontal-primary.png"
+              src="/graphics/navbar-logo.png"
               alt="RALOA"
-              width="630"
-              height="280"
-              className="h-9 w-auto object-contain dark:hidden"
+              width="720"
+              height="180"
+              className="h-11 w-auto object-contain dark:hidden"
               draggable={false}
             />
             <img
@@ -153,7 +153,7 @@ export const Footer: React.FC<FooterProps> = ({
               alt="RALOA"
               width="720"
               height="180"
-              className="hidden h-9 w-auto object-contain dark:block"
+              className="hidden h-11 w-auto object-contain dark:block"
               draggable={false}
             />
             <p className="text-[13px] text-slate-500 dark:text-slate-400 mt-4 max-w-xs leading-relaxed">
