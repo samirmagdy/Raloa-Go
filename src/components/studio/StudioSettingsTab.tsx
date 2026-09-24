@@ -42,6 +42,7 @@ interface StudioSettingsTabProps {
   onWebhookUrlChange: (val: string) => void;
   onExportJson: () => void;
   onResetDefaults: () => void;
+  onUpgradePlan?: () => void;
   locale: Locale;
 }
 
@@ -66,6 +67,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   onWebhookUrlChange,
   onExportJson,
   onResetDefaults,
+  onUpgradePlan,
   locale
 }) => {
   const isRtl = locale === 'ar';
@@ -358,6 +360,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
 
             <button
               type="button"
+              onClick={onUpgradePlan}
               className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
             >
               {isRtl ? 'ترقية الخطة' : 'Upgrade Plan'}

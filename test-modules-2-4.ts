@@ -315,9 +315,10 @@ async function runTests() {
     // Test Case: TC-M4-05 (Localhost User Registration & Login)
     // -------------------------------------------------------------
     console.log('Testing TC-M4-05: Localhost Registration & Login Flow...');
-    const newRegEmail = 'newlocaluser@raloa.app';
+    const testSuffix = Date.now().toString(36);
+    const newRegEmail = `newlocaluser_${testSuffix}@raloa.app`;
     const newRegPassword = 'LocalPassword123!';
-    const newRegHandle = 'localking';
+    const newRegHandle = `local_${testSuffix}`;
 
     // 1. Register new account
     const resReg = await fetch(`${BASE_URL}/api/v1/auth/register`, {

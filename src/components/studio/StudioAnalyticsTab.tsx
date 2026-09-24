@@ -34,20 +34,50 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({
   const isRtl = locale === 'ar';
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | 'all'>('30d');
 
-  // Realistic 30-day analytics timeline data
-  const analyticsData = [
-    { date: 'Aug 26', views: 820, clicks: 142 },
-    { date: 'Aug 29', views: 940, clicks: 178 },
-    { date: 'Sep 01', views: 1100, clicks: 210 },
-    { date: 'Sep 04', views: 1350, clicks: 280 },
-    { date: 'Sep 07', views: 1220, clicks: 245 },
-    { date: 'Sep 10', views: 1480, clicks: 310 },
-    { date: 'Sep 13', views: 1620, clicks: 355 },
-    { date: 'Sep 16', views: 1850, clicks: 420 },
-    { date: 'Sep 19', views: 2100, clicks: 490 },
-    { date: 'Sep 22', views: 2380, clicks: 540 },
-    { date: 'Sep 24', views: 2540, clicks: 590 }
-  ];
+  // Dynamic analytics timeline datasets based on selected time range
+  const analyticsData = React.useMemo(() => {
+    if (timeRange === '7d') {
+      return [
+        { date: isRtl ? 'السبت' : 'Sat', views: 420, clicks: 148 },
+        { date: isRtl ? 'الأحد' : 'Sun', views: 530, clicks: 195 },
+        { date: isRtl ? 'الإثنين' : 'Mon', views: 610, clicks: 224 },
+        { date: isRtl ? 'الثلاثاء' : 'Tue', views: 790, clicks: 290 },
+        { date: isRtl ? 'الأربعاء' : 'Wed', views: 920, clicks: 340 },
+        { date: isRtl ? 'الخميس' : 'Thu', views: 880, clicks: 310 },
+        { date: isRtl ? 'الجمعة' : 'Fri', views: 1040, clicks: 382 }
+      ];
+    }
+    if (timeRange === 'all') {
+      return [
+        { date: 'Jan', views: 4500, clicks: 1200 },
+        { date: 'Mar', views: 6800, clicks: 1750 },
+        { date: 'May', views: 9200, clicks: 2400 },
+        { date: 'Jul', views: 13500, clicks: 3600 },
+        { date: 'Sep', views: 18420, clicks: 4280 }
+      ];
+    }
+    return [
+      { date: 'Aug 26', views: 820, clicks: 142 },
+      { date: 'Aug 29', views: 940, clicks: 178 },
+      { date: 'Sep 01', views: 1100, clicks: 210 },
+      { date: 'Sep 04', views: 1350, clicks: 280 },
+      { date: 'Sep 07', views: 1220, clicks: 245 },
+      { date: 'Sep 10', views: 1480, clicks: 310 },
+      { date: 'Sep 13', views: 1620, clicks: 355 },
+      { date: 'Sep 16', views: 1850, clicks: 420 },
+      { date: 'Sep 19', views: 2100, clicks: 490 },
+      { date: 'Sep 22', views: 2380, clicks: 540 },
+      { date: 'Sep 24', views: 2540, clicks: 590 }
+    ];
+  }, [timeRange, isRtl]);
+
+  const kpis = React.useMemo(() => {
+    const totalViews = analyticsData.reduce((acc, curr) => acc + curr.views, 0);
+    const totalClicks = analyticsData.reduce((acc, curr) => acc + curr.clicks, 0);
+    const uniqueVisitors = Math.round(totalViews * 0.66);
+    const ctr = totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(1) : '0.0';
+    return { totalViews, totalClicks, uniqueVisitors, ctr };
+  }, [analyticsData]);
 
   // UTM tracking attribution breakdown
   const utmSources = [
@@ -60,14 +90,14 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-150" dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* 1. Key 30-day KPI Cards */}
+      {/* 1. Key KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
           <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">{isRtl ? 'المشاهدات (٣٠ يوماً)' : '30-Day Views'}</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider">{isRtl ? 'إجمالي المشاهدات' : 'Total Views'}</span>
             <Eye className="w-4 h-4 text-indigo-500" />
           </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">18,420</p>
+          <p className="text-2xl font-black text-slate-900 dark:text-white">{kpis.totalViews.toLocaleString()}</p>
           <div className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
             <TrendingUp className="w-3.5 h-3.5" />
             <span>+24.6% {isRtl ? 'مقارنة بالسابق' : 'vs last period'}</span>
@@ -79,7 +109,7 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({
             <span className="text-[11px] font-bold uppercase tracking-wider">{isRtl ? 'الزوار الفريدون' : 'Unique Visitors'}</span>
             <Users className="w-4 h-4 text-blue-500" />
           </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">12,190</p>
+          <p className="text-2xl font-black text-slate-900 dark:text-white">{kpis.uniqueVisitors.toLocaleString()}</p>
           <div className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
             <TrendingUp className="w-3.5 h-3.5" />
             <span>+19.2%</span>
@@ -91,7 +121,7 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({
             <span className="text-[11px] font-bold uppercase tracking-wider">{isRtl ? 'إجمالي النقرات' : 'Total Clicks'}</span>
             <MousePointerClick className="w-4 h-4 text-emerald-500" />
           </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">4,280</p>
+          <p className="text-2xl font-black text-slate-900 dark:text-white">{kpis.totalClicks.toLocaleString()}</p>
           <div className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
             <TrendingUp className="w-3.5 h-3.5" />
             <span>+31.5%</span>
@@ -103,7 +133,7 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({
             <span className="text-[11px] font-bold uppercase tracking-wider">{isRtl ? 'معدل النقر (CTR)' : 'Average CTR'}</span>
             <Compass className="w-4 h-4 text-amber-500" />
           </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">23.2%</p>
+          <p className="text-2xl font-black text-slate-900 dark:text-white">{kpis.ctr}%</p>
           <p className="text-[11px] text-slate-400 font-medium mt-1">
             {isRtl ? 'معدل تفاعل ممتاز' : 'Top tier creator benchmark'}
           </p>
@@ -192,48 +222,54 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({
         </h3>
 
         <div className="space-y-2.5">
-          {links.slice(0, 5).map((l, index) => {
-            const simulatedClicks = [1840, 1120, 780, 420, 210][index] || 120;
-            const simulatedCtr = [34.2, 22.8, 16.4, 9.1, 4.5][index] || 3.2;
+          {links.length === 0 ? (
+            <div className="py-6 text-center text-xs text-slate-400">
+              {isRtl ? 'لا توجد روابط مضافة بعد. أضف روابط في تبويب المحتوى لمشاهدة إحصائياتها.' : 'No links added yet. Add links in the Content tab to view analytics.'}
+            </div>
+          ) : (
+            links.slice(0, 5).map((l, index) => {
+              const simulatedClicks = [1840, 1120, 780, 420, 210][index] || 120;
+              const simulatedCtr = [34.2, 22.8, 16.4, 9.1, 4.5][index] || 3.2;
 
-            return (
-              <div
-                key={l.id}
-                className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3"
-              >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <span className="w-5 h-5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[10px] flex items-center justify-center shrink-0">
-                    #{index + 1}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                      {l.title}
-                    </p>
-                    <p className="text-[10px] font-mono text-slate-400 truncate">
-                      {l.url}
-                    </p>
+              return (
+                <div
+                  key={l.id}
+                  className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <span className="w-5 h-5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[10px] flex items-center justify-center shrink-0">
+                      #{index + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                        {l.title}
+                      </p>
+                      <p className="text-[10px] font-mono text-slate-400 truncate">
+                        {l.url}
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-4 shrink-0 text-right rtl:text-left">
-                  <div>
-                    <span className="font-mono text-xs font-black text-slate-900 dark:text-white">
-                      {simulatedClicks.toLocaleString()}
-                    </span>
-                    <span className="text-[10px] text-slate-400 block">{isRtl ? 'نقرة' : 'clicks'}</span>
-                  </div>
-                  <div className="w-16">
-                    <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                      {simulatedCtr}%
-                    </span>
-                    <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mt-1 overflow-hidden">
-                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(simulatedCtr * 2.5, 100)}%` }} />
+                  <div className="flex items-center gap-4 shrink-0 text-right rtl:text-left">
+                    <div>
+                      <span className="font-mono text-xs font-black text-slate-900 dark:text-white">
+                        {simulatedClicks.toLocaleString()}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">{isRtl ? 'نقرة' : 'clicks'}</span>
+                    </div>
+                    <div className="w-16">
+                      <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                        {simulatedCtr}%
+                      </span>
+                      <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mt-1 overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(simulatedCtr * 2.5, 100)}%` }} />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 

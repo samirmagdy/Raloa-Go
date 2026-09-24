@@ -46,6 +46,7 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
   locale
 }) => {
   const [copied, setCopied] = useState(false);
+  const [siteSwitcherOpen, setSiteSwitcherOpen] = useState(false);
   const isRtl = locale === 'ar';
   const cleanHandle = handle.toLowerCase().replace(/[^a-z0-9_-]/g, '');
   const publicUrl = `https://raloa.app/@${cleanHandle}`;
@@ -72,22 +73,56 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
           {isRtl ? <ArrowLeft className="w-5 h-5 rotate-180" /> : <ArrowLeft className="w-5 h-5" />}
         </button>
 
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 max-w-[180px] sm:max-w-[240px]">
-            <Globe className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-            <span className="font-mono text-xs font-bold text-slate-800 dark:text-white truncate">
-              @{cleanHandle}
-            </span>
-            <span className="text-[10px] text-slate-400 font-sans hidden sm:inline">
-              raloa.app
+        <div className="relative">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              onClick={() => setSiteSwitcherOpen(!siteSwitcherOpen)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 border border-slate-200/80 dark:border-slate-700 max-w-[180px] sm:max-w-[240px] cursor-pointer transition-colors"
+              title={isRtl ? 'تبديل الموقع أو الرابط' : 'Current Site / Switcher'}
+            >
+              <Globe className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+              <span className="font-mono text-xs font-bold text-slate-800 dark:text-white truncate">
+                @{cleanHandle}
+              </span>
+              <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
+            </button>
+
+            {/* Plan Indicator Badge */}
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 shrink-0">
+              <PremiumMark className="w-2.5 h-2.5" />
+              <span>{plan}</span>
             </span>
           </div>
 
-          {/* Plan Indicator Badge */}
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 shrink-0">
-            <PremiumMark className="w-2.5 h-2.5" />
-            <span>{plan}</span>
-          </span>
+          {/* Site Switcher Dropdown */}
+          {siteSwitcherOpen && (
+            <div className={`absolute top-full mt-2 ${isRtl ? 'right-0' : 'left-0'} w-56 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl py-2 z-50 animate-in fade-in zoom-in-95 duration-100`}>
+              <div className="px-3.5 py-1.5 border-b border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                {isRtl ? 'الموقع النشط' : 'Active Site'}
+              </div>
+              <div className="p-2">
+                <div className="px-2 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 truncate">@{cleanHandle}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{publicUrl.replace('https://', '')}</p>
+                  </div>
+                  <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                </div>
+              </div>
+              <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
+                <a
+                  href={publicUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-between transition-colors"
+                >
+                  <span>{isRtl ? 'زيارة الرابط العام' : 'View Public URL'}</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                </a>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

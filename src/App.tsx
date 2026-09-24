@@ -639,6 +639,7 @@ function MainApp() {
             locale={locale}
             onClose={handleCloseStudio}
             onOpenAuth={(mode) => setAuthModal({ open: true, mode: mode || 'signin' })}
+            onOpenPricing={() => handleSelectPlan(pricingPlans[1], false)}
           />
         </Suspense>
       ) : currentRoute === 'templates' ? (

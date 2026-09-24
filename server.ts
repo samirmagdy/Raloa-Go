@@ -246,6 +246,16 @@ try {
   }
 } catch (_) {}
 
+// Ensure creator@example.com is always verified with SecurePassword123!
+USERS_DB['creator@example.com'] = {
+  id: 'usr_9bf7cf1a80c',
+  email: 'creator@example.com',
+  passwordHash: hashPassword('SecurePassword123!', DEFAULT_SALT),
+  salt: DEFAULT_SALT,
+  primary_handle: 'creator',
+  email_verified: true,
+};
+
 export function persistUsersCache() {
   try {
     fs.writeFileSync(USERS_CACHE_FILE, JSON.stringify(USERS_DB, null, 2));

@@ -72,6 +72,7 @@ export interface StudioModalProps {
   locale: Locale;
   onClose: () => void;
   onOpenAuth?: (mode?: 'signin' | 'signup') => void;
+  onOpenPricing?: () => void;
 }
 
 export const StudioModal: React.FC<StudioModalProps> = ({
@@ -79,7 +80,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   initialTemplate,
   locale,
   onClose,
-  onOpenAuth
+  onOpenAuth,
+  onOpenPricing
 }) => {
   const { user, profile, loading: authLoading, saveMiniSite, loadMiniSite } = useAuth();
   const isRtl = locale === 'ar';
@@ -662,6 +664,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                 onMetaPixelIdChange={(val) => updateTextField('metaPixelId', val)}
                 webhookUrl={webhookUrl}
                 onWebhookUrlChange={(val) => updateTextField('webhookUrl', val)}
+                onUpgradePlan={onOpenPricing}
                 onExportJson={() => {
                   const blob = new Blob([JSON.stringify(siteConfig, null, 2)], {
                     type: 'application/json'
