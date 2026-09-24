@@ -197,11 +197,21 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                     }`}
                   >
                     {link.thumbnail ? (
-                      <img
-                        src={link.thumbnail}
-                        alt={link.title}
-                        className="w-11 h-11 rounded-xl object-cover shrink-0 border border-black/10 dark:border-white/10"
-                      />
+                      <div
+                        className={`relative w-11 h-11 rounded-xl overflow-hidden shrink-0 border border-black/10 dark:border-white/10 ${themeConfig.cardIconBg} ${themeConfig.cardIconColor}`}
+                      >
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <PremiumMark className="w-5 h-5" />
+                        </div>
+                        <img
+                          src={link.thumbnail}
+                          alt={link.title}
+                          className="relative z-10 w-full h-full object-cover"
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      </div>
                     ) : (
                       <div
                         className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${themeConfig.cardIconBg} ${themeConfig.cardIconColor}`}

@@ -40,7 +40,7 @@ export const templatesData: TemplateItem[] = [
         subtitle: 'Limited edition museum-grade prints',
         subtitleAr: 'مطبوعات فنية فاخرة محدودة الإصدار',
         url: '#shop',
-        thumbnail: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=120&q=80',
+        thumbnail: 'https://images.unsplash.com/photo-1549490349-8643362247b5?auto=format&fit=crop&w=120&q=80',
         type: 'shop'
       },
       {
