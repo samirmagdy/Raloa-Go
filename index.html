@@ -59,15 +59,59 @@
     </script>
     <title>RALOA — Beautiful Mini-Sites for Creators, Freelancers & Businesses</title>
     <meta name="description" content="Create a polished mini-site for your links, content, bookings and products. Launch in minutes with RALOA — no coding required." />
+    <meta name="robots" content="index, follow" />
+    <meta name="author" content="RALOA" />
+    <link rel="canonical" href="https://raloa.app/" />
     <meta name="theme-color" content="#0F172A" />
     <meta property="og:title" content="RALOA — Beautiful Mini-Sites for Creators, Freelancers & Businesses" />
     <meta property="og:description" content="Create a polished mini-site for your links, content, bookings and products. Launch in minutes with RALOA — no coding required." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="/social/og-image-1200x630.jpg" />
+    <meta property="og:url" content="https://raloa.app/" />
+    <meta property="og:site_name" content="RALOA" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:image" content="https://raloa.app/social/og-image-1200x630.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="RALOA — Beautiful Mini-Sites for Creators, Freelancers & Businesses" />
     <meta name="twitter:description" content="Create a polished mini-site for your links, content, bookings and products. Launch in minutes with RALOA — no coding required." />
-    <meta name="twitter:image" content="/social/twitter-card-1200x600.jpg" />
+    <meta name="twitter:image" content="https://raloa.app/social/twitter-card-1200x600.jpg" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://raloa.app/#organization",
+            "name": "RALOA",
+            "url": "https://raloa.app/",
+            "logo": { "@type": "ImageObject", "url": "https://raloa.app/brand/raloa-logo-primary.png", "width": 528, "height": 179 },
+            "description": "RALOA helps creators, freelancers, and businesses build polished mini-sites for links, content, bookings, and products.",
+            "knowsAbout": ["Mini-site creation", "Creator websites", "Link-in-bio pages", "Digital products", "Audience analytics"]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://raloa.app/#website",
+            "name": "RALOA",
+            "url": "https://raloa.app/",
+            "publisher": { "@id": "https://raloa.app/#organization" },
+            "inLanguage": ["en", "ar"]
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://raloa.app/#application",
+            "name": "RALOA",
+            "description": "A no-code platform for creating and publishing customizable mini-sites.",
+            "applicationCategory": "BusinessApplication",
+            "operatingSystem": "Web",
+            "featureList": ["Customizable mini-sites", "Templates", "Link and media blocks", "Basic analytics", "Arabic RTL support"],
+            "offers": [
+              { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "USD", "url": "https://raloa.app/pricing" },
+              { "@type": "Offer", "name": "Pro", "price": "6", "priceCurrency": "USD", "url": "https://raloa.app/pricing" },
+              { "@type": "Offer", "name": "Studio", "price": "12", "priceCurrency": "USD", "url": "https://raloa.app/pricing" }
+            ]
+          }
+        ]
+      }
+    </script>
     <link rel="icon" href="/icons/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
@@ -79,7 +123,31 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Arabic:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
   </head>
   <body class="bg-[#FFFFFF] dark:bg-slate-950 text-[#0F172A] dark:text-slate-100 antialiased selection:bg-[#5B5CF6]/20 selection:text-[#5B5CF6] transition-colors duration-200">
-    <div id="root"></div>
+    <div id="root">
+      <noscript>
+        <main>
+          <h1>Beautiful mini-sites for creators, freelancers, and businesses</h1>
+          <p>RALOA helps you create and publish a polished mini-site for your links, content, bookings, and products without coding.</p>
+          <nav aria-label="Primary navigation">
+            <a href="/templates">Templates</a>
+            <a href="/features">Features</a>
+            <a href="/pricing">Pricing</a>
+            <a href="/guides">Guides</a>
+            <a href="/about">About RALOA</a>
+            <a href="/contact">Contact</a>
+          </nav>
+          <h2>How RALOA works</h2>
+          <p>Choose a template, add your content, customize your page, and publish your RALOA link in minutes.</p>
+          <h2>Pricing</h2>
+          <p>Free is available forever. Pro starts at $6 USD per month, and Studio starts at $12 USD per month.</p>
+          <h2>Frequently asked questions</h2>
+          <h3>Is RALOA free to use?</h3>
+          <p>Yes. The Free plan lets you create and host a mini-site with up to 10 links and essential analytics.</p>
+          <h3>Can I use my own domain?</h3>
+          <p>Pro and Studio creators can connect a verified custom domain with managed SSL setup.</p>
+        </main>
+      </noscript>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

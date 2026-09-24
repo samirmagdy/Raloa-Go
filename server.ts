@@ -80,6 +80,40 @@ function getIndexHtml(): string {
   return '<!doctype html><html><head><title>RALOA</title></head><body><div id="root"></div></body></html>';
 }
 
+const PUBLIC_LLM_GUIDE = `# RALOA
+
+> RALOA is a web platform for creators, freelancers, and businesses to build and publish customizable mini-sites.
+
+## Core pages
+
+- [Homepage](https://raloa.app/): Explains how RALOA combines links, content, bookings, and products in one no-code mini-site.
+- [Templates](https://raloa.app/templates): Browses the available mini-site templates and design directions for different creator types.
+- [Features](https://raloa.app/features): Summarizes customization, publishing, analytics, media, and creator workflow capabilities.
+- [Pricing](https://raloa.app/pricing): Compares the Free, Pro, and Studio plans, including current monthly pricing and plan limits.
+- [Guides](https://raloa.app/guides): Provides practical guidance for creating, customizing, publishing, and sharing a RALOA page.
+- [About RALOA](https://raloa.app/about): Describes RALOA's purpose and the creators and businesses it serves.
+- [Contact](https://raloa.app/contact): Provides the support and partnership contact path for RALOA.
+
+## Product
+
+- [Free plan](https://raloa.app/pricing): Includes a hosted mini-site, up to 10 links, basic templates, and essential analytics.
+- [Pro plan](https://raloa.app/pricing): Adds verified custom domains, premium templates, higher link and media limits, and advanced analytics.
+- [Studio plan](https://raloa.app/pricing): Adds the highest publishing limits and studio-level controls for growing teams and businesses.
+
+## Key facts
+
+- Product type: SaaS mini-site builder.
+- Primary audience: Creators, freelancers, educators, coaches, and modern businesses.
+- Supported languages: English and Arabic with RTL layout support.
+- Pricing currency: USD; Free is available forever, with paid monthly plans listed on the pricing page.
+- Canonical website: https://raloa.app/
+
+## Contact
+
+- Website: https://raloa.app/
+- Support: https://raloa.app/contact
+`;
+
 /**
  * 6.2 Custom Domain Mapping Contract (Database Entity)
  */
@@ -403,12 +437,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   // Referrer policy
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
 
-  // X-Frame-Options: SAMEORIGIN (allow iframe embedding on authorized template preview routes)
-  if (req.path.startsWith('/templates/preview') || req.path.startsWith('/embed/')) {
-    res.setHeader('X-Frame-Options', 'ALLOWALL');
-  } else {
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  }
+  // X-Frame-Options has no ALLOWALL value; keep previews protected by same-origin policy.
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
 
   // Content-Security-Policy
   res.setHeader(
@@ -419,6 +449,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     "frame-src 'self' https://js.stripe.com https://hooks.stripe.com; " +
     "img-src 'self' https: data: blob:;"
   );
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(self)');
 
   next();
 });
@@ -491,15 +522,49 @@ app.use((req: Request, res: Response, next: NextFunction) => {
  */
 app.get('/robots.txt', (_req: Request, res: Response) => {
   res.type('text/plain');
-  res.send(`User-agent: *
+  res.send(`# RALOA permits indexing of public marketing and creator profile pages.
+User-agent: GPTBot
+Allow: /
+User-agent: OAI-SearchBot
+Allow: /
+User-agent: ChatGPT-User
+Allow: /
+User-agent: ClaudeBot
+Allow: /
+User-agent: PerplexityBot
+Allow: /
+User-agent: Google-Extended
+Allow: /
+User-agent: Googlebot
+Allow: /
+User-agent: Bingbot
+Allow: /
+User-agent: Applebot-Extended
+Allow: /
+User-agent: Amazonbot
+Allow: /
+User-agent: FacebookBot
+Allow: /
+User-agent: Bytespider
+Disallow: /
+
+User-agent: *
 Allow: /
 Disallow: /studio/
 Disallow: /api/
 Disallow: /login
 Disallow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+
+Content-Signal: ai-train=yes, search=yes, ai-retrieval=yes
 
 Sitemap: https://raloa.app/sitemap.xml
 `);
+});
+
+app.get('/llms.txt', (_req: Request, res: Response) => {
+  res.type('text/plain; charset=utf-8').send(PUBLIC_LLM_GUIDE);
 });
 
 /**
@@ -534,6 +599,24 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
     <lastmod>2026-09-24</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://raloa.app/guides</loc>
+    <lastmod>2026-09-24</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://raloa.app/about</loc>
+    <lastmod>2026-09-24</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://raloa.app/contact</loc>
+    <lastmod>2026-09-24</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
   </url>
   <url>
     <loc>https://raloa.app/@elena</loc>
@@ -1446,6 +1529,45 @@ app.get('*', (req: Request, res: Response) => {
     html = html
       .replace(/<title>.*?<\/title>/, '<title>Create Your Account — RALOA</title>')
       .replace(/<meta property="og:title" content=".*?" \/>/, '<meta property="og:title" content="Claim Your Handle & Start Building — RALOA" />');
+  }
+
+  const routeSeo: Record<string, { description: string; canonical: string }> = {
+    '/': {
+      description: 'Create a polished mini-site for your links, content, bookings and products. Launch in minutes with RALOA — no coding required.',
+      canonical: 'https://raloa.app/'
+    },
+    '/templates': {
+      description: 'Explore curated mini-site templates for creators, photographers, educators, coaches, and modern businesses.',
+      canonical: 'https://raloa.app/templates'
+    },
+    '/features': {
+      description: 'See RALOA tools for customizable mini-sites, links, media, publishing, analytics, and Arabic RTL support.',
+      canonical: 'https://raloa.app/features'
+    },
+    '/pricing': {
+      description: 'Compare RALOA Free, Pro, and Studio plans with clear monthly pricing and verified feature limits.',
+      canonical: 'https://raloa.app/pricing'
+    },
+    '/guides': {
+      description: 'Learn how to create, customize, publish, and share a RALOA mini-site with practical creator guides.',
+      canonical: 'https://raloa.app/guides'
+    },
+    '/about': {
+      description: 'Learn what RALOA does and how its no-code mini-site builder serves creators, freelancers, and businesses.',
+      canonical: 'https://raloa.app/about'
+    },
+    '/contact': {
+      description: 'Contact RALOA for product support, partnerships, and questions about creating your mini-site.',
+      canonical: 'https://raloa.app/contact'
+    }
+  };
+  const selectedSeo = routeSeo[requestPath];
+  if (selectedSeo) {
+    html = html
+      .replace(/<meta name="description" content=".*?" \/>/, `<meta name="description" content="${selectedSeo.description}" />`)
+      .replace(/<meta property="og:description" content=".*?" \/>/, `<meta property="og:description" content="${selectedSeo.description}" />`)
+      .replace(/<meta property="og:url" content=".*?" \/>/, `<meta property="og:url" content="${selectedSeo.canonical}" />`)
+      .replace(/<link rel="canonical" href=".*?" \/>/, `<link rel="canonical" href="${selectedSeo.canonical}" />`);
   }
 
   res.send(html);

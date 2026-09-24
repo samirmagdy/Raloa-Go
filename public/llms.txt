@@ -1,0 +1,32 @@
+# RALOA
+
+> RALOA is a web platform for creators, freelancers, and businesses to build and publish customizable mini-sites.
+
+## Core pages
+
+- [Homepage](https://raloa.app/): Explains how RALOA combines links, content, bookings, and products in one no-code mini-site.
+- [Templates](https://raloa.app/templates): Browses the available mini-site templates and design directions for different creator types.
+- [Features](https://raloa.app/features): Summarizes customization, publishing, analytics, media, and creator workflow capabilities.
+- [Pricing](https://raloa.app/pricing): Compares the Free, Pro, and Studio plans, including current monthly pricing and plan limits.
+- [Guides](https://raloa.app/guides): Provides practical guidance for creating, customizing, publishing, and sharing a RALOA page.
+- [About RALOA](https://raloa.app/about): Describes RALOA's purpose and the creators and businesses it serves.
+- [Contact](https://raloa.app/contact): Provides the support and partnership contact path for RALOA.
+
+## Product
+
+- [Free plan](https://raloa.app/pricing): Includes a hosted mini-site, up to 10 links, basic templates, and essential analytics.
+- [Pro plan](https://raloa.app/pricing): Adds verified custom domains, premium templates, higher link and media limits, and advanced analytics.
+- [Studio plan](https://raloa.app/pricing): Adds the highest publishing limits and studio-level controls for growing teams and businesses.
+
+## Key facts
+
+- Product type: SaaS mini-site builder.
+- Primary audience: Creators, freelancers, educators, coaches, and modern businesses.
+- Supported languages: English and Arabic with RTL layout support.
+- Pricing currency: USD; Free is available forever, with paid monthly plans listed on the pricing page.
+- Canonical website: https://raloa.app/
+
+## Contact
+
+- Website: https://raloa.app/
+- Support: https://raloa.app/contact
