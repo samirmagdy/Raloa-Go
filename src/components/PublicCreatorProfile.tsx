@@ -244,7 +244,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
                 key={soc.platform}
                 href={soc.url}
                 target="_blank"
-                rel="noopener noreferrer"
+                rel="ugc nofollow noopener noreferrer"
                 onClick={() => recordLinkClick(`soc_${soc.platform}`, soc.platform, cleanHandle)}
                 className="w-10 h-10 rounded-2xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95 shadow-2xs backdrop-blur-md"
                 style={{

@@ -94,6 +94,95 @@ function escapeHtml(value: string): string {
   })[character] || character);
 }
 
+function escapeJsonLd(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026');
+}
+
+function replaceHeadTag(html: string, pattern: RegExp, replacement: string): string {
+  return pattern.test(html) ? html.replace(pattern, replacement) : html;
+}
+
+function setRobotsMetadata(html: string, value: string): string {
+  const tag = `<meta name="robots" content="${escapeHtml(value)}" />`;
+  return replaceHeadTag(html, /<meta name="robots" content=".*?" \/>/, tag);
+}
+
+function injectJsonLd(html: string, data: unknown): string {
+  const script = `<script type="application/ld+json" data-ssr-seo="true">${escapeJsonLd(data)}</script>`;
+  return html.replace('</head>', `${script}</head>`);
+}
+
+function canonicalOrigin(req: Request): string {
+  const host = getRequestHost(req);
+  const isCustomDomain = host !== 'raloa.app' && host !== 'www.raloa.app' &&
+    host !== 'localhost' && host !== '127.0.0.1' && !host.endsWith('.raloa.app');
+  if (isCustomDomain) return `https://${host}`;
+  return 'https://raloa.app';
+}
+
+function xmlEscape(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'
+  })[character] || character);
+}
+
+const SEO_PAGES: Record<string, { title: string; description: string; heading: string; body: string }> = {
+  '/': {
+    title: 'RALOA - Beautiful Mini-Sites for Creators, Freelancers & Businesses',
+    description: 'Create a polished mini-site for your links, content, bookings and products. Launch in minutes with RALOA - no coding required.',
+    heading: 'Beautiful mini-sites for creators, freelancers, and businesses',
+    body: 'RALOA gives you one place to publish your links, content, bookings, and products without coding.'
+  },
+  '/templates': {
+    title: 'All Templates - RALOA Design Gallery',
+    description: 'Explore curated mini-site templates for creators, photographers, educators, coaches, and modern businesses.',
+    heading: 'Mini-site templates designed to convert',
+    body: 'Choose a polished starting point, customize every section, and publish a page that feels like your brand.'
+  },
+  '/features': {
+    title: 'Creator Toolkit & Features - RALOA',
+    description: 'See RALOA tools for customizable mini-sites, links, media, publishing, analytics, and Arabic RTL support.',
+    heading: 'Everything you need to publish your story',
+    body: 'Build a fast, flexible mini-site with content blocks, media, links, publishing controls, and essential analytics.'
+  },
+  '/pricing': {
+    title: 'Pricing Plans - RALOA',
+    description: 'Compare RALOA Free, Pro, and Studio plans with clear monthly pricing and verified feature limits.',
+    heading: 'Pricing for every creator',
+    body: 'Start free, then upgrade when you need more publishing capacity, premium templates, analytics, or custom domains.'
+  },
+  '/guides': {
+    title: 'Guides & Tutorials - RALOA',
+    description: 'Learn how to create, customize, publish, and share a RALOA mini-site with practical creator guides.',
+    heading: 'Practical guides for building your mini-site',
+    body: 'Follow clear steps for choosing a template, adding content, publishing your page, and growing your audience.'
+  },
+  '/about': {
+    title: 'About RALOA',
+    description: 'Learn what RALOA does and how its no-code mini-site builder serves creators, freelancers, and businesses.',
+    heading: 'A simpler way to share what you do',
+    body: 'RALOA is a design-first mini-site builder for people who want a polished web presence without a complicated website stack.'
+  },
+  '/contact': {
+    title: 'Contact RALOA Support & Partnerships',
+    description: 'Contact RALOA for product support, partnerships, and questions about creating your mini-site.',
+    heading: 'Contact the RALOA team',
+    body: 'Reach out for product support, partnership questions, or help publishing your creator mini-site.'
+  }
+};
+
+function injectSeoPageContent(html: string, page: typeof SEO_PAGES[string], pathName: string): string {
+  const links = Object.entries(SEO_PAGES)
+    .filter(([route]) => route !== pathName && route !== '/')
+    .map(([route, value]) => `<a href="${route}">${escapeHtml(value.heading)}</a>`)
+    .join(' · ');
+  const content = `<main id="seo-prerendered-content"><h1>${escapeHtml(page.heading)}</h1><p>${escapeHtml(page.body)}</p><nav aria-label="Related RALOA pages">${links}</nav></main>`;
+  return html.replace('<div id="root">', `<div id="root">${content}`);
+}
+
 const PUBLIC_LLM_GUIDE = `# RALOA
 
 > RALOA is a web platform for creators, freelancers, and businesses to build and publish customizable mini-sites.
@@ -655,73 +744,35 @@ app.get('/llms.txt', (_req: Request, res: Response) => {
 /**
  * FR-3.3 Dynamic sitemap.xml Endpoint
  */
-app.get('/sitemap.xml', (_req: Request, res: Response) => {
-  res.type('application/xml');
-  res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
-  <url>
-    <loc>https://raloa.app/</loc>
-    <lastmod>2026-09-24</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>1.0</priority>
-    <xhtml:link rel="alternate" hreflang="en" href="https://raloa.app/?lang=en" />
-    <xhtml:link rel="alternate" hreflang="ar" href="https://raloa.app/?lang=ar" />
-  </url>
-  <url>
-    <loc>https://raloa.app/templates</loc>
-    <lastmod>2026-09-24</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://raloa.app/features</loc>
-    <lastmod>2026-09-24</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://raloa.app/pricing</loc>
-    <lastmod>2026-09-24</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://raloa.app/guides</loc>
-    <lastmod>2026-09-24</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://raloa.app/about</loc>
-    <lastmod>2026-09-24</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://raloa.app/contact</loc>
-    <lastmod>2026-09-24</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://raloa.app/@elena</loc>
-    <lastmod>2026-09-24</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://raloa.app/@mateo</loc>
-    <lastmod>2026-09-24</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://raloa.app/@studio</loc>
-    <lastmod>2026-09-24</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-</urlset>`);
+app.get('/sitemap.xml', async (_req: Request, res: Response) => {
+  const pages = Object.keys(SEO_PAGES);
+  const profiles: Array<{ handle: string; lastmod: string | null }> = Object.entries(CREATORS_METADATA).map(([handle]) => ({ handle, lastmod: null }));
+
+  // In production, only published sites are eligible for discovery. The fixture
+  // catalog is retained for local/demo mode so the sitemap remains useful there.
+  if (isAdminConfigured()) {
+    try {
+      const snapshot = await adminDb.collectionGroup('sites').where('isPublished', '==', true).get();
+      const publishedHandles = new Map<string, { handle: string; lastmod: string | null }>();
+      for (const document of snapshot.docs) {
+        const data = document.data();
+        const handle = String(data.handle || data.username || '').toLowerCase().trim();
+        if (!handle) continue;
+        const updatedAt = data.updatedAt || data.publishedAt || null;
+        const lastmod = updatedAt ? new Date(updatedAt).toISOString().slice(0, 10) : null;
+        publishedHandles.set(handle, { handle, lastmod });
+      }
+      profiles.splice(0, profiles.length, ...publishedHandles.values());
+    } catch (error) {
+      console.error('[Sitemap profiles]', error);
+      profiles.splice(0, profiles.length);
+    }
+  }
+
+  const urls = [...pages.map((route) => ({ loc: `https://raloa.app${route}`, lastmod: null })),
+    ...profiles.map((profile) => ({ loc: `https://raloa.app/@${profile.handle}`, lastmod: profile.lastmod }))];
+  const xml = urls.map(({ loc, lastmod }) => `<url><loc>${xmlEscape(loc)}</loc>${lastmod ? `<lastmod>${xmlEscape(lastmod)}</lastmod>` : ''}</url>`).join('');
+  res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${xml}</urlset>`);
 });
 
 /**
@@ -1832,6 +1883,9 @@ if (fs.existsSync(distPath)) {
 app.get('*', async (req: Request, res: Response) => {
   let html = getIndexHtml();
   const requestPath = req.path;
+  const customOrigin = canonicalOrigin(req);
+  const platformPath = requestPath === '/' ? '' : requestPath;
+  let isPublicProfile = false;
 
   // Guard: Authenticated users should never see not-logged-in guest auth routes
   const session = await getAuthenticatedUser(req);
@@ -1864,23 +1918,48 @@ app.get('*', async (req: Request, res: Response) => {
       : fixtureCreator;
 
     if (creator) {
+      isPublicProfile = true;
       // Dynamic OpenGraph & Twitter hydration (FR-3.2)
       const ogTitle = escapeHtml(`${creator.name} (@${handle}) - RALOA Mini-Site`);
       const ogDesc = escapeHtml(creator.bio);
       const ogImage = escapeHtml(creator.avatar);
+      const profileCanonical = customOrigin === 'https://raloa.app' ? `https://raloa.app/@${handle}` : `${customOrigin}/`;
+      const profileDescription = creator.bio || `Explore ${creator.name}'s official links and work on RALOA.`;
 
       html = html
         .replace(/<title>.*?<\/title>/, `<title>${ogTitle}</title>`)
+        .replace(/<meta name="description" content=".*?" \/>/, `<meta name="description" content="${escapeHtml(profileDescription)}" />`)
         .replace(/<meta property="og:title" content=".*?" \/>/, `<meta property="og:title" content="${ogTitle}" />`)
         .replace(/<meta property="og:description" content=".*?" \/>/, `<meta property="og:description" content="${ogDesc}" />`)
         .replace(/<meta property="og:image" content=".*?" \/>/, `<meta property="og:image" content="${ogImage}" />`)
+        .replace(/<meta property="og:url" content=".*?" \/>/, `<meta property="og:url" content="${escapeHtml(profileCanonical)}" />`)
+        .replace(/<link rel="canonical" href=".*?" \/>/, `<link rel="canonical" href="${escapeHtml(profileCanonical)}" />`)
         .replace(/<meta name="twitter:title" content=".*?" \/>/, `<meta name="twitter:title" content="${ogTitle}" />`)
         .replace(/<meta name="twitter:description" content=".*?" \/>/, `<meta name="twitter:description" content="${ogDesc}" />`)
         .replace(/<meta name="twitter:image" content=".*?" \/>/, `<meta name="twitter:image" content="${ogImage}" />`);
+      html = setRobotsMetadata(html, 'index, follow');
+      html = injectJsonLd(html, {
+        '@context': 'https://schema.org',
+        '@type': 'ProfilePage',
+        '@id': `${profileCanonical}#profile`,
+        url: profileCanonical,
+        name: `${creator.name} on RALOA`,
+        mainEntity: {
+          '@type': 'Person',
+          name: creator.name,
+          description: profileDescription,
+          jobTitle: creator.role || undefined,
+          image: creator.avatar || undefined,
+          url: profileCanonical
+        },
+        isPartOf: { '@id': 'https://raloa.app/#website' }
+      });
     } else {
       // AC-03: Invalid handle 404 metadata
-      const notFoundTitle = `404: Handle @${handle} Available - RALOA`;
-      html = html.replace(/<title>.*?<\/title>/, `<title>${notFoundTitle}</title>`);
+      const notFoundTitle = `404: Handle @${handle} Not Found - RALOA`;
+      html = setRobotsMetadata(html.replace(/<title>.*?<\/title>/, `<title>${notFoundTitle}</title>`), 'noindex, nofollow');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      return res.status(404).send(html);
     }
   } else if (requestPath === '/templates') {
     html = html
@@ -1954,14 +2033,41 @@ app.get('*', async (req: Request, res: Response) => {
   };
   const selectedSeo = routeSeo[requestPath];
   if (selectedSeo) {
+    const canonical = customOrigin === 'https://raloa.app'
+      ? selectedSeo.canonical
+      : `${customOrigin}/`;
     html = html
-      .replace(/<meta name="description" content=".*?" \/>/, `<meta name="description" content="${selectedSeo.description}" />`)
-      .replace(/<meta property="og:description" content=".*?" \/>/, `<meta property="og:description" content="${selectedSeo.description}" />`)
-      .replace(/<meta property="og:url" content=".*?" \/>/, `<meta property="og:url" content="${selectedSeo.canonical}" />`)
-      .replace(/<link rel="canonical" href=".*?" \/>/, `<link rel="canonical" href="${selectedSeo.canonical}" />`);
+      .replace(/<meta name="description" content=".*?" \/>/, `<meta name="description" content="${escapeHtml(selectedSeo.description)}" />`)
+      .replace(/<meta property="og:description" content=".*?" \/>/, `<meta property="og:description" content="${escapeHtml(selectedSeo.description)}" />`)
+      .replace(/<meta property="og:url" content=".*?" \/>/, `<meta property="og:url" content="${escapeHtml(canonical)}" />`)
+      .replace(/<link rel="canonical" href=".*?" \/>/, `<link rel="canonical" href="${escapeHtml(canonical)}" />`);
+    const seoPage = SEO_PAGES[requestPath];
+    if (seoPage) html = injectSeoPageContent(html, seoPage, requestPath);
+    html = injectJsonLd(html, {
+      '@context': 'https://schema.org',
+      '@type': requestPath === '/' ? 'WebSite' : 'WebPage',
+      name: seoPage?.title || 'RALOA',
+      description: selectedSeo.description,
+      url: canonical,
+      isPartOf: { '@id': 'https://raloa.app/#website' }
+    });
+    html = html.replace('</head>', `<link rel="alternate" hreflang="en" href="https://raloa.app${platformPath || '/'}" /><link rel="alternate" hreflang="ar" href="https://raloa.app/ar${platformPath || ''}" /><link rel="alternate" hreflang="x-default" href="https://raloa.app${platformPath || '/'}" /></head>`);
+  } else {
+    const noIndexRoutes = new Set(['/login', '/register', '/forgot-password', '/reset-password', '/dashboard', '/studio', '/analytics', '/settings']);
+    if (isPublicProfile) {
+      html = setRobotsMetadata(html, 'index, follow');
+    } else {
+      html = setRobotsMetadata(html, 'noindex, nofollow')
+        .replace(/<link rel="canonical" href=".*?" \/>/, `<link rel="canonical" href="${escapeHtml(`${customOrigin}${requestPath}`)}" />`)
+        .replace(/<meta property="og:url" content=".*?" \/>/, `<meta property="og:url" content="${escapeHtml(`${customOrigin}${requestPath}`)}" />`);
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      if (!noIndexRoutes.has(requestPath) && !requestPath.startsWith('/legal/')) {
+        return res.status(404).send(html);
+      }
+    }
   }
 
-  res.send(html);
+  return res.status(200).send(html);
 });
 
 app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {

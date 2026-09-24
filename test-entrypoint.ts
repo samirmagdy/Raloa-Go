@@ -129,7 +129,11 @@ async function runTests() {
     const resHandle = await fetch(`${baseUrl}/@elena`);
     const handleHtml = await resHandle.text();
     assert(
-      handleHtml.includes('Elena (@elena)') && handleHtml.includes('og:title'),
+      resHandle.status === 200 &&
+        handleHtml.includes('Elena (@elena)') &&
+        handleHtml.includes('og:title') &&
+        handleHtml.includes('https://raloa.app/@elena') &&
+        handleHtml.includes('ProfilePage'),
       'FR-1.4 & FR-3.2: Public handle /@elena rewrites internally and hydrates OpenGraph metadata',
       handleHtml.slice(0, 300)
     );
@@ -138,9 +142,18 @@ async function runTests() {
     const resInvalidHandle = await fetch(`${baseUrl}/@nonexistent`);
     const invalidHtml = await resInvalidHandle.text();
     assert(
-      invalidHtml.includes('@nonexistent'),
-      'AC-03: Invalid handle /@nonexistent responds with handle context for Claim CTA',
+      resInvalidHandle.status === 404 &&
+        invalidHtml.includes('@nonexistent') &&
+        resInvalidHandle.headers.get('x-robots-tag') === 'noindex, nofollow',
+      'AC-03: Invalid handle /@nonexistent is a real 404 and cannot be indexed',
       invalidHtml.slice(0, 200)
+    );
+
+    const resUnknown = await fetch(`${baseUrl}/not-a-real-page`);
+    assert(
+      resUnknown.status === 404 && resUnknown.headers.get('x-robots-tag') === 'noindex, nofollow',
+      'SEO: Unknown marketing routes return a real 404 with noindex',
+      `Status: ${resUnknown.status}`
     );
 
     // AC-06: Custom domain with invalid/pending SSL -> 526 fallback screen
