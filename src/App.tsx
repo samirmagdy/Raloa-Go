@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
+import type { ComponentType } from 'react';
 import { Locale, TemplateItem, PricingPlan } from './types';
 import { templatesData, pricingPlans } from './data/content';
 import { Header } from './components/Header';
@@ -24,19 +25,39 @@ import { InvalidSslFallback } from './components/InvalidSslFallback';
 import { AuthenticatedHome } from './components/AuthenticatedHome';
 import { useAuth } from './hooks/useAuth';
 
-// Interactive Modals
-const CommandPaletteModal = lazy(() => import('./components/modals/CommandPaletteModal').then((m) => ({ default: m.CommandPaletteModal })));
-const StudioModal = lazy(() => import('./components/modals/StudioModal').then((m) => ({ default: m.StudioModal })));
-const TemplatePreviewModal = lazy(() => import('./components/modals/TemplatePreviewModal').then((m) => ({ default: m.TemplatePreviewModal })));
-const PlanCheckoutModal = lazy(() => import('./components/modals/PlanCheckoutModal').then((m) => ({ default: m.PlanCheckoutModal })));
-const MiniSiteDemoModal = lazy(() => import('./components/modals/MiniSiteDemoModal').then((m) => ({ default: m.MiniSiteDemoModal })));
-const AuthModal = lazy(() => import('./components/modals/AuthModal').then((m) => ({ default: m.AuthModal })));
-const ContactModal = lazy(() => import('./components/modals/ContactModal').then((m) => ({ default: m.ContactModal })));
-const LegalModal = lazy(() => import('./components/modals/LegalModal').then((m) => ({ default: m.LegalModal })));
-const KeyboardShortcutsModal = lazy(() => import('./components/modals/KeyboardShortcutsModal').then((m) => ({ default: m.KeyboardShortcutsModal })));
-const ProjectStatsModal = lazy(() => import('./components/modals/ProjectStatsModal').then((m) => ({ default: m.ProjectStatsModal })));
-const ReferralModal = lazy(() => import('./components/modals/ReferralModal').then((m) => ({ default: m.ReferralModal })));
-const AccountSettingsModal = lazy(() => import('./components/modals/AccountSettingsModal').then((m) => ({ default: m.AccountSettingsModal })));
+function lazyWithChunkRecovery<T extends ComponentType<any>>(loader: () => Promise<{ default: T }>, chunkName: string) {
+  return lazy(async () => {
+  try {
+    const module = await loader();
+    if (typeof window !== 'undefined') window.sessionStorage.removeItem(`raloa_chunk_retry:${chunkName}`);
+    return module;
+  } catch (error) {
+    if (typeof window !== 'undefined') {
+      const retryKey = `raloa_chunk_retry:${chunkName}`;
+      if (!window.sessionStorage.getItem(retryKey)) {
+        window.sessionStorage.setItem(retryKey, '1');
+        window.location.reload();
+      }
+    }
+    throw error;
+  }
+  });
+}
+
+// Interactive modals. A deploy can invalidate an old hashed chunk in an open tab;
+// lazyWithChunkRecovery refreshes once so the browser receives the current manifest.
+const CommandPaletteModal = lazyWithChunkRecovery(() => import('./components/modals/CommandPaletteModal').then((m) => ({ default: m.CommandPaletteModal })), 'command-palette');
+const StudioModal = lazyWithChunkRecovery(() => import('./components/modals/StudioModal').then((m) => ({ default: m.StudioModal })), 'studio');
+const TemplatePreviewModal = lazyWithChunkRecovery(() => import('./components/modals/TemplatePreviewModal').then((m) => ({ default: m.TemplatePreviewModal })), 'template-preview');
+const PlanCheckoutModal = lazyWithChunkRecovery(() => import('./components/modals/PlanCheckoutModal').then((m) => ({ default: m.PlanCheckoutModal })), 'plan-checkout');
+const MiniSiteDemoModal = lazyWithChunkRecovery(() => import('./components/modals/MiniSiteDemoModal').then((m) => ({ default: m.MiniSiteDemoModal })), 'mini-site-demo');
+const AuthModal = lazyWithChunkRecovery(() => import('./components/modals/AuthModal').then((m) => ({ default: m.AuthModal })), 'auth');
+const ContactModal = lazyWithChunkRecovery(() => import('./components/modals/ContactModal').then((m) => ({ default: m.ContactModal })), 'contact');
+const LegalModal = lazyWithChunkRecovery(() => import('./components/modals/LegalModal').then((m) => ({ default: m.LegalModal })), 'legal');
+const KeyboardShortcutsModal = lazyWithChunkRecovery(() => import('./components/modals/KeyboardShortcutsModal').then((m) => ({ default: m.KeyboardShortcutsModal })), 'shortcuts');
+const ProjectStatsModal = lazyWithChunkRecovery(() => import('./components/modals/ProjectStatsModal').then((m) => ({ default: m.ProjectStatsModal })), 'project-stats');
+const ReferralModal = lazyWithChunkRecovery(() => import('./components/modals/ReferralModal').then((m) => ({ default: m.ReferralModal })), 'referral');
+const AccountSettingsModal = lazyWithChunkRecovery(() => import('./components/modals/AccountSettingsModal').then((m) => ({ default: m.AccountSettingsModal })), 'account-settings');
 import { EasterEggOverlay } from './components/EasterEggOverlay';
 import { LoadingOverlay } from './components/LoadingOverlay';
 import { getInitialLocale, persistLocale } from './utils/locale';

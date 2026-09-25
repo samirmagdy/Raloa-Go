@@ -2327,13 +2327,23 @@ app.delete('/api/domains/:domainId', async (req: Request, res: Response) => {
  */
 const distPath = path.resolve(__dirname, 'dist');
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath, { index: false }));
+  app.use(express.static(distPath, {
+    index: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    }
+  }));
 }
 
 /**
  * FR-1.4 Public Handle Rewriting & FR-3.1/FR-3.2 SSR Meta Tag Hydration
  */
 app.get('*', async (req: Request, res: Response) => {
+  // The HTML shell contains the current hashed asset manifest. Never let a
+  // browser keep an old shell after a deployment replaces those chunks.
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
   let html = getIndexHtml();
   const requestPath = req.path;
   const customOrigin = canonicalOrigin(req);
