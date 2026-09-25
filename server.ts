@@ -1817,6 +1817,12 @@ app.put('/api/account/profile', async (req: Request, res: Response) => {
     return apiError(res, 400, 'INVALID_LOCALE', 'Choose English or Arabic.', { locale: 'Choose a supported language.' });
   }
   if (body.locale) updates.locale = body.locale;
+  if (body.photoURL !== undefined) {
+    if (typeof body.photoURL !== 'string' || body.photoURL.length > 2000 || (body.photoURL && !/^https:\/\//i.test(body.photoURL))) {
+      return apiError(res, 400, 'INVALID_AVATAR', 'Avatar URL must be an HTTPS URL.', { photoURL: 'Use a valid HTTPS image URL.' });
+    }
+    updates.photoURL = body.photoURL;
+  }
   if (typeof updates.displayName === 'string' && (!updates.displayName || updates.displayName.length > 80)) return apiError(res, 400, 'INVALID_DISPLAY_NAME', 'Display name must be 1–80 characters.', { displayName: 'Use 1–80 characters.' });
   if (typeof updates.bio === 'string' && updates.bio.length > 500) return apiError(res, 400, 'INVALID_BIO', 'Bio must be 500 characters or fewer.', { bio: 'Use 500 characters or fewer.' });
   if (typeof updates.pronouns === 'string' && updates.pronouns.length > 60) return apiError(res, 400, 'INVALID_PRONOUNS', 'Pronouns must be 60 characters or fewer.', { pronouns: 'Use 60 characters or fewer.' });

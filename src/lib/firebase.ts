@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getStorage } from 'firebase/storage';
 import {
   getAuth,
   GoogleAuthProvider,
@@ -31,6 +32,7 @@ export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 // Initialize Firebase Authentication
 export const auth = getAuth(app);
+export const storage = getStorage(app);
 
 // Initialize Firestore Database with provisioned custom Database ID if specified
 export const db = firebaseConfig.firestoreDatabaseId

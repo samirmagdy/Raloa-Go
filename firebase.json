@@ -3,5 +3,8 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json",
     "database": "ai-studio-raloadesignfirst-8ccbe7ea-5af1-4106-809a-71252bddde6f"
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }
