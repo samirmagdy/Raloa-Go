@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowRight, Check, Mail, Lock, AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { X, ArrowRight, Check, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
 import { Locale } from '../../types';
 import { RaloaMark } from '../brand/RaloaLogo';
 import { useAuth } from '../../hooks/useAuth';
@@ -41,16 +41,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const param = new URLSearchParams(window.location.search).get('handle');
       if (param) return param;
       return sessionStorage.getItem('claimed_handle') || '';
-    }
-    return '';
-  });
-
-  const [stagedTemplate] = useState<string>(() => {
-    if (initialTemplate) return initialTemplate;
-    if (typeof window !== 'undefined') {
-      const param = new URLSearchParams(window.location.search).get('template');
-      if (param) return param;
-      return sessionStorage.getItem('selected_template_id') || '';
     }
     return '';
   });
@@ -326,24 +316,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               
-              {/* Staged Handle & Template Banner (FR-2.1 & FR-2.3) */}
-              {mode === 'signup' && (claimedHandle || stagedTemplate) && (
-                <div className="p-3 bg-indigo-50/80 dark:bg-indigo-950/50 border border-indigo-200/80 dark:border-indigo-800/80 rounded-2xl flex flex-wrap items-center gap-2 text-xs">
-                  {claimedHandle && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[11px]">
-                      <Check className="w-3 h-3 stroke-[3]" />
-                      <span>@{claimedHandle}</span>
-                    </span>
-                  )}
-                  {stagedTemplate && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-semibold text-[11px]">
-                      <Sparkles className="w-3 h-3" />
-                      <span>{isRtl ? `قالب: ${stagedTemplate}` : `Template: ${stagedTemplate}`}</span>
-                    </span>
-                  )}
-                </div>
-              )}
-
               {/* Lockout Warning Banner with Live Countdown Timer (SEC-2 & TC-M4-04) */}
               {lockoutSeconds > 0 && (
                 <div className="p-3.5 bg-rose-50 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-900 text-rose-800 dark:text-rose-200 text-xs rounded-2xl flex items-start gap-2.5 animate-pulse">
