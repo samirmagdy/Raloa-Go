@@ -32,9 +32,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.set('trust proxy', 1);
+const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS || 1);
+app.set('trust proxy', Number.isInteger(trustedProxyHops) && trustedProxyHops >= 0 ? trustedProxyHops : 1);
 const PORT = Number(process.env.PORT) || 3000;
 const AUTH_SESSION_SECRET = process.env.AUTH_SESSION_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'local-development-session-secret');
+const localAuthEnabled = process.env.NODE_ENV === 'test' ||
+  process.env.LOCAL_AUTH_ENABLED === 'true' ||
+  (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'staging' && process.env.NODE_ENV !== 'preview' && process.env.LOCAL_AUTH_ENABLED !== 'false');
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const requestId = req.headers['x-request-id']?.toString() || crypto.randomUUID();
@@ -70,6 +74,91 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 // Body parsing middleware for API endpoints
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Keep one machine-readable error contract while retaining the legacy
+// `status`/`message` fields during the migration of existing callers.
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  const originalJson = res.json.bind(res);
+  res.json = ((body: any) => {
+    if (res.statusCode >= 400 && body && typeof body === 'object') {
+      const legacyMessage = typeof body.message === 'string' ? body.message : 'Request failed';
+      const legacyError = typeof body.error === 'string' ? body.error : '';
+      const code = typeof body.code === 'string'
+        ? body.code
+        : (legacyError || legacyMessage).toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'REQUEST_FAILED';
+      body = {
+        ...body,
+        error: { code, message: legacyMessage, ...(body.fields ? { fields: body.fields } : {}) },
+        errorCode: code
+      };
+    }
+    return originalJson(body);
+  }) as Response['json'];
+  next();
+});
+
+type PublicRateBucket = { startedAt: number; count: number };
+const PUBLIC_RATE_LIMITS = new Map<string, PublicRateBucket>();
+const LOCAL_IDEMPOTENCY = new Map<string, { response: Record<string, unknown>; createdAt: number }>();
+
+function clientIdentity(req: Request): string {
+  return req.ip || req.socket.remoteAddress || 'unknown';
+}
+
+async function enforcePublicRateLimit(req: Request, key: string, limit: number, windowMs: number): Promise<{ allowed: boolean; retryAfter: number }> {
+  const identity = `${key}:${clientIdentity(req)}`;
+  if (isAdminConfigured()) return consumeDistributedRateLimit(identity, limit, windowMs);
+  const now = Date.now();
+  const current = PUBLIC_RATE_LIMITS.get(identity);
+  const bucket = !current || now - current.startedAt >= windowMs ? { startedAt: now, count: 0 } : current;
+  const allowed = bucket.count < limit;
+  if (allowed) bucket.count += 1;
+  PUBLIC_RATE_LIMITS.set(identity, bucket);
+  return { allowed, retryAfter: Math.max(1, Math.ceil((bucket.startedAt + windowMs - now) / 1000)) };
+}
+
+function apiError(res: Response, status: number, code: string, message: string, fields?: Record<string, string>) {
+  return res.status(status).json({
+    status: 'error',
+    error: code,
+    code,
+    message,
+    ...(fields ? { fields } : {})
+  });
+}
+
+async function claimIdempotency(scope: string, key: string): Promise<{ replay: boolean; inProgress?: boolean; response?: Record<string, unknown> }> {
+  const normalized = key.trim();
+  if (!normalized || normalized.length > 200) throw new Error('INVALID_IDEMPOTENCY_KEY');
+  const id = crypto.createHash('sha256').update(`${scope}:${normalized}`).digest('hex');
+  if (!isAdminConfigured()) {
+    const existing = LOCAL_IDEMPOTENCY.get(id);
+    if (existing && Date.now() - existing.createdAt < 24 * 60 * 60 * 1000) return { replay: true, response: existing.response };
+    return { replay: false };
+  }
+  const ref = adminDb.collection('idempotency_keys').doc(id);
+  let replay = false;
+  let response: Record<string, unknown> | undefined;
+  await adminDb.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    if (snapshot.exists) {
+      replay = true;
+      response = snapshot.data()?.response as Record<string, unknown> | undefined;
+      return;
+    }
+    transaction.create(ref, { scope, status: 'processing', createdAt: new Date().toISOString() });
+  });
+  return { replay, inProgress: replay && !response, response };
+}
+
+async function completeIdempotency(scope: string, key: string, response: Record<string, unknown>): Promise<void> {
+  const id = crypto.createHash('sha256').update(`${scope}:${key.trim()}`).digest('hex');
+  if (!isAdminConfigured()) {
+    LOCAL_IDEMPOTENCY.set(id, { response, createdAt: Date.now() });
+    return;
+  }
+  await adminDb.collection('idempotency_keys').doc(id).set({ scope, status: 'completed', response, completedAt: new Date().toISOString() }, { merge: true });
+}
 
 // Read base index.html template from dist if built, or fallback to root index.html
 const distIndexPath = path.resolve(__dirname, 'dist', 'index.html');
@@ -569,10 +658,13 @@ function verifySignedSessionCookie(token: string): AuthenticatedUser & { primary
 
 function getRequestHost(req: Request): string {
   const forwardedHost = req.headers['x-forwarded-host'];
-  if (typeof forwardedHost === 'string' && forwardedHost.trim()) {
-    return forwardedHost.split(',')[0].trim().toLowerCase();
+  const candidate = trustedProxyHops > 0 && typeof forwardedHost === 'string' && forwardedHost.trim()
+    ? forwardedHost.split(',')[0].trim().toLowerCase()
+    : (req.headers.host || '').split(':')[0].toLowerCase();
+  if (!/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(candidate)) {
+    return '';
   }
-  return (req.headers.host || '').split(':')[0].toLowerCase();
+  return candidate;
 }
 
 /**
@@ -581,7 +673,8 @@ function getRequestHost(req: Request): string {
  */
 app.use((req: Request, res: Response, next: NextFunction) => {
   const host = getRequestHost(req);
-  const forwardedProto = req.headers['x-forwarded-proto'];
+  if (!host) return apiError(res, 400, 'INVALID_HOST', 'The request host is invalid.');
+  const forwardedProto = trustedProxyHops > 0 ? req.headers['x-forwarded-proto'] : undefined;
 
   // Check if hitting www.raloa.app or plain HTTP on raloa.app
   if (host === 'www.raloa.app') {
@@ -920,15 +1013,20 @@ app.post('/api/v1/handles/reserve', async (req: Request, res: Response) => {
 
   try {
     const reservationRef = adminDb.collection('handles').doc(handle);
+    const userRef = adminDb.collection('users').doc(user.uid);
     await adminDb.runTransaction(async (transaction) => {
-      const snapshot = await transaction.get(reservationRef);
+      const [snapshot, userSnapshot] = await Promise.all([transaction.get(reservationRef), transaction.get(userRef)]);
       if (snapshot.exists && snapshot.data()?.userId !== user.uid) throw new Error('HANDLE_TAKEN');
+      if (userSnapshot.exists && userSnapshot.data()?.handle && userSnapshot.data()?.handle !== handle) {
+        throw new Error('HANDLE_CHANGE_REQUIRES_REVIEW');
+      }
       transaction.set(reservationRef, { userId: user.uid, handle, updatedAt: new Date().toISOString() }, { merge: true });
+      transaction.set(userRef, { handle, updatedAt: new Date().toISOString() }, { merge: true });
     });
-    await adminDb.collection('users').doc(user.uid).set({ handle, updatedAt: new Date().toISOString() }, { merge: true });
     return res.status(200).json({ handle });
   } catch (error) {
     if (error instanceof Error && error.message === 'HANDLE_TAKEN') return res.status(409).json({ error: 'Handle is already taken' });
+    if (error instanceof Error && error.message === 'HANDLE_CHANGE_REQUIRES_REVIEW') return res.status(409).json({ error: 'Handle changes require account review' });
     console.error('[Handle reservation]', error);
     return res.status(503).json({ error: 'Handle reservation is temporarily unavailable' });
   }
@@ -942,12 +1040,25 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
   if (!/^[a-z0-9_-]{3,30}$/.test(hostHandle) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !timeSlot || !validEmail(clientEmail)) {
     return res.status(400).json({ error: 'Valid host, date, time, and email are required' });
   }
+  const hostExists = isAdminConfigured()
+    ? Boolean(await getPublishedSiteByHandle(hostHandle).catch(() => null))
+    : templatesData.some((template) => template.id.toLowerCase() === hostHandle || template.name.toLowerCase() === hostHandle);
+  if (!hostExists) return res.status(404).json({ error: 'Published host not found' });
+  const rate = await enforcePublicRateLimit(req, 'booking', 10, 60 * 60 * 1000);
+  if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many booking requests', retry_after: rate.retryAfter });
+  const idempotencyKey = req.headers['idempotency-key'];
+  if (typeof idempotencyKey !== 'string') return res.status(400).json({ error: 'Idempotency-Key header is required' });
   try {
+    const claimed = await claimIdempotency('booking', idempotencyKey);
+    if (claimed.inProgress) return apiError(res, 409, 'IDEMPOTENCY_IN_PROGRESS', 'A request with this idempotency key is already being processed.');
+    if (claimed.replay && claimed.response) return res.status(201).json(claimed.response);
     const booking = { hostHandle, date, timeSlot, clientEmail, status: 'pending', createdAt: new Date().toISOString() };
     const reference = isAdminConfigured()
       ? await adminDb.collection('bookings').add(booking)
       : { id: `booking_${Date.now()}` };
-    return res.status(201).json({ id: reference.id, status: booking.status });
+    const response = { id: reference.id, status: booking.status };
+    await completeIdempotency('booking', idempotencyKey, response);
+    return res.status(201).json(response);
   } catch (error) {
     console.error('[Public booking]', error);
     return res.status(503).json({ error: 'Booking service is temporarily unavailable' });
@@ -960,12 +1071,21 @@ app.post('/api/v1/public/orders', async (req: Request, res: Response) => {
   if (itemTitle !== 'Brutalist Shadow Study #03' || !validEmail(buyerEmail)) {
     return res.status(400).json({ error: 'A valid product and buyer email are required' });
   }
+  const rate = await enforcePublicRateLimit(req, 'order', 10, 60 * 60 * 1000);
+  if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many order requests', retry_after: rate.retryAfter });
+  const idempotencyKey = req.headers['idempotency-key'];
+  if (typeof idempotencyKey !== 'string') return res.status(400).json({ error: 'Idempotency-Key header is required' });
   try {
+    const claimed = await claimIdempotency('order', idempotencyKey);
+    if (claimed.inProgress) return apiError(res, 409, 'IDEMPOTENCY_IN_PROGRESS', 'A request with this idempotency key is already being processed.');
+    if (claimed.replay && claimed.response) return res.status(201).json(claimed.response);
     const order = { itemTitle, price: 140, currency: 'USD', buyerEmail, status: 'pending', createdAt: new Date().toISOString() };
     const reference = isAdminConfigured()
       ? await adminDb.collection('orders').add(order)
       : { id: `order_${Date.now()}` };
-    return res.status(201).json({ id: reference.id, status: order.status });
+    const response = { id: reference.id, status: order.status };
+    await completeIdempotency('order', idempotencyKey, response);
+    return res.status(201).json(response);
   } catch (error) {
     console.error('[Public order]', error);
     return res.status(503).json({ error: 'Order service is temporarily unavailable' });
@@ -993,7 +1113,7 @@ app.post('/api/v1/public/newsletter', async (req: Request, res: Response) => {
  * Validates required payload fields: fullName, email, subject, message.
  */
 app.post('/api/v1/public/contact', async (req: Request, res: Response) => {
-  const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+  const ip = clientIdentity(req);
   const now = Date.now();
   const oneHourAgo = now - 3600000;
 
@@ -1051,12 +1171,47 @@ app.post('/api/v1/public/contact', async (req: Request, res: Response) => {
   });
 });
 
+app.post('/api/v1/public/telemetry/page-view', async (req: Request, res: Response) => {
+  const pathValue = typeof req.body?.path === 'string' ? req.body.path.trim() : '';
+  const userAgent = typeof req.body?.userAgent === 'string' ? req.body.userAgent.slice(0, 512) : '';
+  if (!pathValue || pathValue.length > 500 || !pathValue.startsWith('/')) {
+    return apiError(res, 400, 'INVALID_TELEMETRY', 'A valid path is required.');
+  }
+  const limit = await enforcePublicRateLimit(req, 'page-view', 60, 60 * 60 * 1000);
+  if (!limit.allowed) {
+    res.setHeader('Retry-After', String(limit.retryAfter));
+    return apiError(res, 429, 'RATE_LIMITED', 'Too many telemetry events.', { retryAfter: String(limit.retryAfter) });
+  }
+  if (isAdminConfigured()) {
+    await adminDb.collection('page_views').add({ path: pathValue, userAgent, timestamp: new Date().toISOString() });
+  }
+  return res.status(202).json({ status: 'accepted' });
+});
+
+app.post('/api/v1/public/telemetry/link-click', async (req: Request, res: Response) => {
+  const linkId = typeof req.body?.linkId === 'string' ? req.body.linkId.trim() : '';
+  const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+  const siteHandle = typeof req.body?.siteHandle === 'string' ? req.body.siteHandle.trim().toLowerCase() : '';
+  if (!linkId || linkId.length > 200 || !url || url.length > 2000 || !/^[a-z0-9_-]{3,30}$/.test(siteHandle)) {
+    return apiError(res, 400, 'INVALID_TELEMETRY', 'Valid link, URL, and site handle are required.');
+  }
+  const limit = await enforcePublicRateLimit(req, 'link-click', 120, 60 * 60 * 1000);
+  if (!limit.allowed) {
+    res.setHeader('Retry-After', String(limit.retryAfter));
+    return apiError(res, 429, 'RATE_LIMITED', 'Too many telemetry events.', { retryAfter: String(limit.retryAfter) });
+  }
+  if (isAdminConfigured()) {
+    await adminDb.collection('link_clicks').add({ linkId, url, siteHandle, timestamp: new Date().toISOString() });
+  }
+  return res.status(202).json({ status: 'accepted' });
+});
+
 /**
  * FR-4.1 User Registration Endpoint (Localhost & Server Auth)
  * Supports localhost registration when Firebase Cloud provider is restricted.
  */
 app.post('/api/v1/auth/register', async (req: Request, res: Response) => {
-  if (process.env.NODE_ENV === 'production') {
+  if (!localAuthEnabled) {
     return res.status(410).json({ status: 'error', message: 'Use Firebase email registration.' });
   }
   const { email, password, handle } = req.body || {};
@@ -1134,7 +1289,7 @@ app.post('/api/v1/auth/register', async (req: Request, res: Response) => {
  * Issues short-lived access / long-lived raloa_session cookie.
  */
 app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
-  if (process.env.NODE_ENV === 'production') {
+  if (!localAuthEnabled) {
     return res.status(410).json({ status: 'error', message: 'Use Firebase email authentication.' });
   }
   const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
@@ -1279,7 +1434,7 @@ app.post('/api/v1/auth/logout', (req: Request, res: Response) => {
  * Issues 256-bit token with 15-minute TTL.
  */
 app.post('/api/v1/auth/forgot-password', async (req: Request, res: Response) => {
-  if (process.env.NODE_ENV === 'production') {
+  if (!localAuthEnabled) {
     return res.status(410).json({ status: 'error', message: 'Use Firebase password reset email.' });
   }
   const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
@@ -1327,7 +1482,7 @@ app.post('/api/v1/auth/forgot-password', async (req: Request, res: Response) => 
  * Validates token authenticity before updating password.
  */
 app.post('/api/v1/auth/reset-password', (req: Request, res: Response) => {
-  if (process.env.NODE_ENV === 'production') {
+  if (!localAuthEnabled) {
     return res.status(410).json({ status: 'error', message: 'Use Firebase password reset email.' });
   }
   const { token, new_password, newPassword } = req.body || {};
@@ -1384,7 +1539,7 @@ app.post('/api/v1/auth/reset-password', (req: Request, res: Response) => {
  * FR-4.6 Social Identity Providers (Google)
  */
 app.post('/api/v1/auth/oauth/google', (req: Request, res: Response) => {
-  if (process.env.NODE_ENV === 'production') {
+  if (!localAuthEnabled) {
     return res.status(410).json({ status: 'error', message: 'Use Firebase Google OAuth directly.' });
   }
   const { email } = req.body || {};
@@ -1435,7 +1590,7 @@ app.post('/api/v1/auth/oauth/google', (req: Request, res: Response) => {
  * FR-4.6 Social Identity Providers (Sign in with Apple)
  */
 app.post('/api/v1/auth/oauth/apple', (req: Request, res: Response) => {
-  if (process.env.NODE_ENV === 'production') {
+  if (!localAuthEnabled) {
     return res.status(410).json({ status: 'error', message: 'Apple OAuth is not enabled until verified provider credentials are configured.' });
   }
   const { email } = req.body || {};
@@ -1526,6 +1681,9 @@ app.post('/api/v1/auth/session', async (req: Request, res: Response) => {
  * FR-4.5 Email Verification Confirmation
  */
 app.post('/api/v1/auth/verify-email', (req: Request, res: Response) => {
+  if (!localAuthEnabled) {
+    return res.status(410).json({ status: 'error', message: 'Use Firebase email verification.' });
+  }
   const { email } = req.body || {};
   if (!email) {
     return res.status(400).json({ status: 'error', message: 'Email is required' });
@@ -1576,6 +1734,28 @@ app.get('/api/readiness', async (_req: Request, res: Response) => {
   return res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready', checks });
 });
 
+app.get('/api/analytics/platform', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'ANALYTICS_UNAVAILABLE', 'Platform analytics are temporarily unavailable.');
+  try {
+    const [views, clicks, sites] = await Promise.all([
+      adminDb.collection('page_views').limit(1000).get(),
+      adminDb.collection('link_clicks').limit(1000).get(),
+      adminDb.collectionGroup('sites').where('isPublished', '==', true).limit(1000).get()
+    ]);
+    return res.status(200).json({
+      totalVisits: views.size,
+      totalClicks: clicks.size,
+      activeSitesCount: sites.size,
+      capped: views.size === 1000 || clicks.size === 1000 || sites.size === 1000
+    });
+  } catch (error) {
+    console.error('[Platform analytics]', error);
+    return apiError(res, 503, 'ANALYTICS_UNAVAILABLE', 'Platform analytics are temporarily unavailable.');
+  }
+});
+
 app.get('/api/public/sites/:handle', async (req: Request, res: Response) => {
   const handle = String(req.params.handle || '').trim().toLowerCase();
   if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return res.status(400).json({ error: 'Invalid handle' });
@@ -1606,6 +1786,44 @@ app.get('/api/public/sites/:handle', async (req: Request, res: Response) => {
     console.error('[Public site lookup]', error);
     return res.status(503).json({ error: 'Public site is temporarily unavailable' });
   }
+});
+
+app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'SERVICE_NOT_CONFIGURED', 'Site persistence is not configured.');
+  const siteId = String(req.params.siteId || '').trim();
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(siteId)) return apiError(res, 400, 'INVALID_SITE_ID', 'Invalid site ID.');
+  const incoming = req.body && typeof req.body === 'object' ? req.body : {};
+  const profile = await adminDb.collection('users').doc(user.uid).get();
+  const profileData = profile.data();
+  if (!profile.exists) return apiError(res, 404, 'PROFILE_NOT_FOUND', 'User profile not found.');
+  const existingRef = adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId);
+  const existing = await existingRef.get();
+  const current = existing.data() || {};
+  const merged = {
+    ...current,
+    ...incoming,
+    id: siteId,
+    userId: user.uid,
+    updatedAt: new Date().toISOString()
+  } as Record<string, any>;
+  const handle = String(profileData?.handle || merged.username || '').trim().toLowerCase();
+  if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return apiError(res, 400, 'INVALID_HANDLE', 'A valid handle is required before saving a site.');
+  merged.username = handle;
+  if (typeof merged.displayName !== 'string' || merged.displayName.length > 120 || typeof merged.bio !== 'string' || merged.bio.length > 2000) {
+    return apiError(res, 400, 'INVALID_SITE_CONTENT', 'Display name and bio are required and must be within limits.');
+  }
+  if (!Array.isArray(merged.links) || merged.links.length > (profileData?.plan === 'free' ? 10 : 100)) {
+    return apiError(res, 403, 'PLAN_LIMIT_REACHED', 'This plan does not allow this many links.');
+  }
+  const allowedKeys = new Set(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'updatedAt']);
+  const sanitized = Object.fromEntries(Object.entries(merged).filter(([key]) => allowedKeys.has(key)));
+  if (profileData?.plan === 'free' && (sanitized.customDomain || sanitized.hidePoweredBy === true || sanitized.ga4Id || sanitized.metaPixelId || sanitized.webhookUrl)) {
+    return apiError(res, 403, 'FEATURE_NOT_AVAILABLE', 'Upgrade your plan to use this site feature.');
+  }
+  await existingRef.set(sanitized, { merge: true });
+  return res.status(existing.exists ? 200 : 201).json({ site: sanitized });
 });
 
 app.post('/api/billing/activate-free', async (req: Request, res: Response) => {
@@ -1641,7 +1859,8 @@ app.post('/api/billing/checkout-session', async (req: Request, res: Response) =>
   } catch (error) {
     console.error('[Billing checkout]', error);
     const message = error instanceof Error ? error.message : 'Checkout unavailable';
-    return res.status(message.includes('NOT_CONFIGURED') ? 503 : 500).json({ error: message });
+    console.error('[Billing checkout detail]', message);
+    return res.status(message.includes('NOT_CONFIGURED') ? 503 : 502).json({ error: 'Checkout is temporarily unavailable' });
   }
 });
 
@@ -1670,9 +1889,10 @@ app.post('/api/v1/referrals/qualify', async (req: Request, res: Response) => {
   if (!code) return res.status(400).json({ error: 'Referral code is required' });
 
   try {
-    const codeSnapshot = await adminDb.collection('referral_codes').doc(code).get();
-    if (!codeSnapshot.exists) return res.status(404).json({ error: 'Referral code not found' });
-    const referrerId = codeSnapshot.data()?.userId;
+    const referrerSnapshot = await adminDb.collection('users').where('handle', '==', code).limit(1).get();
+    const referrerDocument = referrerSnapshot.docs[0];
+    if (!referrerDocument) return res.status(404).json({ error: 'Referral code not found' });
+    const referrerId = referrerDocument.id;
     if (!referrerId || referrerId === user.uid) return res.status(400).json({ error: 'Invalid referral' });
 
     const referrerRef = adminDb.collection('users').doc(referrerId);
@@ -2080,7 +2300,7 @@ app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
     stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
   }));
   if (res.headersSent) return;
-  res.status(500).json({ error: 'Internal server error', requestId });
+  res.status(500).json({ status: 'error', error: 'INTERNAL_ERROR', code: 'INTERNAL_ERROR', message: 'Internal server error', requestId });
 });
 
 // Start listening if run directly

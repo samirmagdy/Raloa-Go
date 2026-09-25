@@ -147,17 +147,10 @@ async function reserveHandle(user: User, handle?: string): Promise<void> {
 }
 
 async function publishReferralCode(code: string | undefined, userId: string): Promise<void> {
-  const cleanCode = code?.trim().toLowerCase();
-  if (!cleanCode) return;
-  try {
-    await setDoc(doc(db, 'referral_codes', cleanCode), {
-      userId,
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
-  } catch (error) {
-    // Referral mapping must never prevent account creation.
-    console.error('Could not publish referral code mapping:', error);
-  }
+  // Referral codes are resolved from the server-owned users/handle index. Do
+  // not publish a client-readable userId mapping to Firestore.
+  void code;
+  void userId;
 }
 
 /**
@@ -455,9 +448,10 @@ export async function completeReferralSignup(
     }
 
     if (typeof window === 'undefined' || !['localhost', '127.0.0.1'].includes(window.location.hostname)) return false;
-    const codeSnap = await getDoc(doc(db, 'referral_codes', cleanCode));
-    if (!codeSnap.exists()) return false;
-    const referrerId = codeSnap.data().userId;
+    const referrerQuery = await getDocs(query(collection(db, 'users'), where('handle', '==', cleanCode), limit(1)));
+    const referrerDoc = referrerQuery.docs[0];
+    if (!referrerDoc) return false;
+    const referrerId = referrerDoc.id;
     if (referrerId === referredUserId) return false;
 
     const referrerRef = doc(db, 'users', referrerId);
@@ -488,7 +482,7 @@ export async function completeReferralSignup(
 
       transaction.set(referrerRef, {
         referralsCount: nextCount,
-        plan: newFreeMonths > 0 && referrer.plan === 'free' ? 'pro' : referrer.plan || 'free',
+        plan: referrer.plan || 'free',
         isYearly: referrer.isYearly || false,
         referralRewards: rewards,
         referralProUntil: nextProUntil || null,
@@ -525,16 +519,15 @@ export async function updateUserPlan(
   plan: 'free' | 'pro' | 'studio',
   isYearly: boolean = false
 ): Promise<void> {
-  const userDocRef = doc(db, 'users', uid);
-  await setDoc(
-    userDocRef,
-    {
-      plan,
-      isYearly,
-      updatedAt: new Date().toISOString()
-    },
-    { merge: true }
-  );
+  if (!auth.currentUser || auth.currentUser.uid !== uid) throw new Error('AUTH_REQUIRED');
+  if (plan !== 'free') throw new Error('PAID_PLAN_REQUIRES_CHECKOUT');
+  const token = await auth.currentUser.getIdToken();
+  const response = await fetch('/api/billing/activate-free', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ isYearly })
+  });
+  if (!response.ok) throw new Error('PLAN_UPDATE_FAILED');
 }
 
 /**
@@ -545,17 +538,14 @@ export async function saveUserMiniSiteToFirestore(
   siteData: Partial<UserMiniSite>,
   siteId: string = 'default'
 ): Promise<void> {
-  const siteDocRef = doc(db, 'users', userId, 'sites', siteId);
-  await setDoc(
-    siteDocRef,
-    {
-      ...siteData,
-      id: siteId,
-      userId,
-      updatedAt: new Date().toISOString()
-    },
-    { merge: true }
-  );
+  if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error('AUTH_REQUIRED');
+  const token = await auth.currentUser.getIdToken();
+  const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(siteData)
+  });
+  if (!response.ok) throw new Error('SITE_SAVE_FAILED');
 }
 
 /**
@@ -582,12 +572,14 @@ export async function loadUserMiniSiteFromFirestore(
  * Record contact inquiry in Firestore
  */
 export async function saveContactMessage(inquiry: ContactInquiry): Promise<string> {
-  const colRef = collection(db, 'contacts');
-  const docRef = await addDoc(colRef, {
-    ...inquiry,
-    createdAt: new Date().toISOString()
+  const response = await fetch('/api/v1/public/contact', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(inquiry)
   });
-  return docRef.id;
+  if (!response.ok) throw new Error('CONTACT_SUBMISSION_FAILED');
+  const payload = await response.json();
+  return payload.data?.id || payload.id;
 }
 
 export async function saveNewsletterSubscription(email: string): Promise<string> {
@@ -619,7 +611,7 @@ export async function saveBookingAppointment(
 ): Promise<string> {
   const response = await fetch('/api/v1/public/bookings', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify(data)
   });
   if (!response.ok) throw new Error('BOOKING_FAILED');
@@ -645,7 +637,7 @@ export async function saveStoreOrder(
 ): Promise<string> {
   const response = await fetch('/api/v1/public/orders', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify(data)
   });
   if (!response.ok) throw new Error('ORDER_FAILED');
@@ -735,11 +727,13 @@ export async function recordReferralInvite(
  */
 export async function recordPageView(path: string): Promise<void> {
   try {
-    const colRef = collection(db, 'page_views');
-    await addDoc(colRef, {
-      path,
-      timestamp: new Date().toISOString(),
-      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : ''
+    await fetch('/api/v1/public/telemetry/page-view', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        path,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : ''
+      })
     });
   } catch {
     // Non-blocking telemetry
@@ -755,12 +749,14 @@ export async function recordLinkClick(
   siteHandle?: string
 ): Promise<void> {
   try {
-    const colRef = collection(db, 'link_clicks');
-    await addDoc(colRef, {
-      linkId,
-      url,
-      siteHandle: siteHandle || 'creator',
-      timestamp: new Date().toISOString()
+    await fetch('/api/v1/public/telemetry/link-click', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        linkId,
+        url,
+        siteHandle: siteHandle || 'creator'
+      })
     });
   } catch {
     // Non-blocking telemetry
@@ -776,15 +772,14 @@ export async function fetchPlatformMetrics(): Promise<{
   activeSitesCount: number;
 }> {
   try {
-    const viewsSnap = await getDocs(query(collection(db, 'page_views'), limit(100)));
-    const clicksSnap = await getDocs(query(collection(db, 'link_clicks'), limit(100)));
-    const viewsCount = viewsSnap.size;
-    const clicksCount = clicksSnap.size;
+    const response = await fetch('/api/analytics/platform');
+    if (!response.ok) throw new Error('PLATFORM_METRICS_UNAVAILABLE');
+    const metrics = await response.json() as { totalVisits?: number; totalClicks?: number; activeSitesCount?: number };
 
     return {
-      totalVisits: 14200 + viewsCount,
-      totalClicks: 8400 + clicksCount,
-      activeSitesCount: 2480
+      totalVisits: Number(metrics.totalVisits || 0),
+      totalClicks: Number(metrics.totalClicks || 0),
+      activeSitesCount: Number(metrics.activeSitesCount || 0)
     };
   } catch (error) {
     console.error('Error fetching platform metrics:', error);

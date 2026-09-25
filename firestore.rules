@@ -10,17 +10,30 @@ service cloud.firestore {
       return value is string && value.size() <= 320 && value.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
     }
     function validProfile(data) {
-      return data.uid is string && data.email is string && data.email.size() <= 320
+      return data.uid is string && (data.email == null || (data.email is string && data.email.size() <= 320))
+        && data.handle is string && data.handle.matches('^[a-z0-9_-]{3,30}$')
         && data.plan in ['free', 'pro', 'studio'] && data.isYearly is bool
         && data.referralsCount is number && data.referralsCount >= 0
         && data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'plan', 'isYearly', 'billingStatus', 'handle', 'referralsCount', 'referredBy', 'referralStatus', 'referralRewards', 'referralProUntil', 'verifiedCreator', 'customDomainPerkUnlocked', 'createdAt', 'updatedAt', 'stripeCustomerId', 'stripeSubscriptionId']);
     }
+    function validLink(link) {
+      return link is map
+        && link.keys().hasOnly(['id', 'title', 'titleAr', 'subtitle', 'subtitleAr', 'url', 'thumbnail', 'type'])
+        && link.id is string && link.id.size() <= 200
+        && link.title is string && link.title.size() <= 200
+        && link.url is string && link.url.size() <= 2000
+        && (!('titleAr' in link) || link.titleAr is string)
+        && (!('subtitle' in link) || link.subtitle is string)
+        && (!('subtitleAr' in link) || link.subtitleAr is string)
+        && (!('thumbnail' in link) || link.thumbnail is string)
+        && (!('type' in link) || link.type in ['link', 'gallery', 'booking', 'shop']);
+    }
     function validSite(data, userId) {
-      return data.username is string && data.username.size() >= 3 && data.username.size() <= 30
+      return data.username is string && data.username.matches('^[a-z0-9_-]{3,30}$')
         && data.templateId is string && data.templateId.size() <= 100
         && data.displayName is string && data.displayName.size() <= 120
         && data.bio is string && data.bio.size() <= 2000
-        && data.links is list && data.links.size() <= 100 && data.isPublished is bool
+        && data.links is list && data.links.size() <= 100 && data.links.all(link, validLink(link)) && data.isPublished is bool
         && data.keys().hasOnly(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'updatedAt'])
         && (!('userId' in data) || data.userId == userId)
         && (get(/databases/$(database)/documents/users/$(userId)).data.plan != 'free' || data.links.size() <= 10)
@@ -38,7 +51,7 @@ service cloud.firestore {
         && validProfile(request.resource.data);
       allow update: if owner(userId) && validProfile(request.resource.data)
         && request.resource.data.uid == resource.data.uid
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plan', 'isYearly', 'billingStatus', 'stripeCustomerId', 'stripeSubscriptionId', 'referralsCount', 'referralRewards', 'referralProUntil', 'verifiedCreator', 'customDomainPerkUnlocked', 'referredBy', 'referralStatus']);
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plan', 'isYearly', 'billingStatus', 'stripeCustomerId', 'stripeSubscriptionId', 'referralsCount', 'referralRewards', 'referralProUntil', 'verifiedCreator', 'customDomainPerkUnlocked', 'referredBy', 'referralStatus', 'handle']);
       allow delete: if false;
 
       match /sites/{siteId} {
@@ -56,36 +69,21 @@ service cloud.firestore {
     }
 
     match /referral_codes/{code} {
-      allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid
-        && code.size() >= 3 && code.size() <= 50
-        && request.resource.data.keys().hasOnly(['userId', 'updatedAt']);
-      allow update, delete: if false;
+      allow read, write: if false;
     }
     match /contacts/{contactId} {
-      allow create: if validEmail(request.resource.data.email)
-        && (('name' in request.resource.data && request.resource.data.name is string) || ('fullName' in request.resource.data && request.resource.data.fullName is string))
-        && request.resource.data.message is string
-        && request.resource.data.message.size() >= 1 && request.resource.data.message.size() <= 5000
-        && request.resource.data.keys().hasOnly(['id', 'name', 'fullName', 'email', 'subject', 'message', 'createdAt']);
-      allow read, update, delete: if false;
+      allow read, write: if false;
     }
     match /newsletter_subscribers/{subscriberId} {
-      allow create: if validEmail(request.resource.data.email) && request.resource.data.keys().hasOnly(['email', 'createdAt']);
-      allow read, update, delete: if false;
+      allow read, write: if false;
     }
     match /bookings/{bookingId} { allow read, write: if false; }
     match /orders/{orderId} { allow read, write: if false; }
     match /page_views/{viewId} {
-      allow create: if request.resource.data.path is string && request.resource.data.path.size() <= 500
-        && request.resource.data.keys().hasOnly(['path', 'timestamp', 'userAgent']);
-      allow read, update, delete: if false;
+      allow read, write: if false;
     }
     match /link_clicks/{clickId} {
-      allow create: if request.resource.data.linkId is string && request.resource.data.linkId.size() <= 200
-        && request.resource.data.url is string && request.resource.data.url.size() <= 2000
-        && request.resource.data.keys().hasOnly(['linkId', 'url', 'siteHandle', 'timestamp']);
-      allow read, update, delete: if false;
+      allow read, write: if false;
     }
     match /custom_domains/{domainId} { allow read, write: if false; }
     match /stripe_events/{eventId} { allow read, write: if false; }

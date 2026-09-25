@@ -1,0 +1,366 @@
+openapi: 3.0.3
+info:
+  title: RALOA API
+  version: 1.0.0
+  description: Server-authoritative API surface for the RALOA product.
+servers:
+  - url: https://raloa.app
+paths:
+  /api/analytics/platform:
+    get:
+      operationId: get_get_api_analytics_platform
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/billing/activate-free:
+    post:
+      operationId: post_post_api_billing_activate_free
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/billing/checkout-session:
+    get:
+      operationId: get_get_api_billing_checkout_session
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+    post:
+      operationId: post_post_api_billing_checkout_session
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/billing/portal-session:
+    post:
+      operationId: post_post_api_billing_portal_session
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/domains:
+    get:
+      operationId: get_get_api_domains
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/domains/*:
+    delete:
+      operationId: delete_delete_api_domains_domainid
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/domains/provision:
+    post:
+      operationId: post_post_api_domains_provision
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/domains/verify:
+    post:
+      operationId: post_post_api_domains_verify
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/health:
+    get:
+      operationId: get_get_api_health
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/public/sites/*:
+    get:
+      operationId: get_get_api_public_sites_handle
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/readiness:
+    get:
+      operationId: get_get_api_readiness
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/sites/*:
+    put:
+      operationId: put_put_api_sites_siteid
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/auth/forgot-password:
+    post:
+      operationId: post_post_api_v1_auth_forgot_password
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/auth/login:
+    post:
+      operationId: post_post_api_v1_auth_login
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/auth/logout:
+    post:
+      operationId: post_post_api_v1_auth_logout
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/auth/oauth/apple:
+    post:
+      operationId: post_post_api_v1_auth_oauth_apple
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/auth/oauth/google:
+    post:
+      operationId: post_post_api_v1_auth_oauth_google
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/auth/register:
+    post:
+      operationId: post_post_api_v1_auth_register
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/auth/reset-password:
+    post:
+      operationId: post_post_api_v1_auth_reset_password
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/auth/session:
+    get:
+      operationId: get_get_api_v1_auth_session
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+    post:
+      operationId: post_post_api_v1_auth_session
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/auth/verify-email:
+    post:
+      operationId: post_post_api_v1_auth_verify_email
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/handles/check:
+    get:
+      operationId: get_get_api_v1_handles_check
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/handles/reserve:
+    post:
+      operationId: post_post_api_v1_handles_reserve
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/public/bookings:
+    post:
+      operationId: post_post_api_v1_public_bookings
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/public/contact:
+    post:
+      operationId: post_post_api_v1_public_contact
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/public/newsletter:
+    post:
+      operationId: post_post_api_v1_public_newsletter
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/public/orders:
+    post:
+      operationId: post_post_api_v1_public_orders
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/public/telemetry/link-click:
+    post:
+      operationId: post_post_api_v1_public_telemetry_link_click
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/public/telemetry/page-view:
+    post:
+      operationId: post_post_api_v1_public_telemetry_page_view
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/referrals/qualify:
+    post:
+      operationId: post_post_api_v1_referrals_qualify
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/webhooks/stripe:
+    post:
+      operationId: post_post_api_webhooks_stripe
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /llms.txt:
+    get:
+      operationId: get_get_llms_txt
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /robots.txt:
+    get:
+      operationId: get_get_robots_txt
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /sitemap.xml:
+    get:
+      operationId: get_get_sitemap_xml
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required

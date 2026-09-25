@@ -235,7 +235,7 @@ async function runTests() {
         // The 5th failed attempt triggers the lockout (status 429)
         assert(resBad.status === 429, `5th consecutive failed attempt returns 429 Too Many Requests`);
         const dataLocked = await resBad.json();
-        assert(dataLocked.error === 'Too Many Requests', 'Error response indicates "Too Many Requests"');
+        assert(dataLocked.error?.message === 'Account temporarily locked due to consecutive failed attempts. Please try again in 600 seconds.' || dataLocked.errorCode === 'TOO_MANY_REQUESTS', 'Error response uses the structured error contract');
         assert(typeof dataLocked.retry_after === 'number' && dataLocked.retry_after > 0, 'Retry-After seconds provided');
       }
     }
