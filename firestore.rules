@@ -33,7 +33,7 @@ service cloud.firestore {
         && data.templateId is string && data.templateId.size() <= 100
         && data.displayName is string && data.displayName.size() <= 120
         && data.bio is string && data.bio.size() <= 2000
-        && data.links is list && data.links.size() <= 100 && data.links.all(link, validLink(link)) && data.isPublished is bool
+        && data.links is list && data.links.size() <= 100 && data.isPublished is bool
         && data.keys().hasOnly(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'updatedAt'])
         && (!('userId' in data) || data.userId == userId)
         && (get(/databases/$(database)/documents/users/$(userId)).data.plan != 'free' || data.links.size() <= 10)
