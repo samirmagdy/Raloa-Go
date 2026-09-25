@@ -8,6 +8,7 @@ import type { DocumentData } from 'firebase-admin/firestore';
 import {
   APP_URL,
   adminDb,
+  adminAuth,
   cloudflareRequest,
   createCheckoutSession,
   createPortalSession,
@@ -1704,6 +1705,85 @@ app.post('/api/v1/auth/session', async (req: Request, res: Response) => {
 });
 
 /**
+ * Multi-session management & Revoke-All
+ */
+app.get('/api/account/sessions', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+
+  const cookies = parseCookies(req.headers.cookie);
+  const currentSessionToken = cookies['raloa_session'];
+  const userSessions: Array<{ id: string; current: boolean; createdAt: string; userAgent: string; ip: string }> = [];
+
+  for (const [token, session] of ACTIVE_SESSIONS.entries()) {
+    if (session.userId === user.uid || session.email === user.email) {
+      userSessions.push({
+        id: token.slice(0, 8),
+        current: token === currentSessionToken,
+        createdAt: new Date(session.createdAt).toISOString(),
+        userAgent: String(req.headers['user-agent'] || 'Browser Session'),
+        ip: String(req.ip || '127.0.0.1')
+      });
+    }
+  }
+
+  // Ensure current session is represented
+  if (userSessions.length === 0) {
+    userSessions.push({
+      id: 'current',
+      current: true,
+      createdAt: new Date().toISOString(),
+      userAgent: String(req.headers['user-agent'] || 'Current Browser'),
+      ip: String(req.ip || '127.0.0.1')
+    });
+  }
+
+  return res.status(200).json({ sessions: userSessions });
+});
+
+app.delete('/api/account/sessions/:sessionId', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+
+  const { sessionId } = req.params;
+  for (const [token, session] of ACTIVE_SESSIONS.entries()) {
+    if ((session.userId === user.uid || session.email === user.email) && token.startsWith(sessionId)) {
+      ACTIVE_SESSIONS.delete(token);
+    }
+  }
+  return res.status(200).json({ status: 'revoked' });
+});
+
+app.post('/api/account/sessions/revoke-all', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+
+  // Revoke all in-memory sessions for this user
+  for (const [token, session] of ACTIVE_SESSIONS.entries()) {
+    if (session.userId === user.uid || session.email === user.email) {
+      ACTIVE_SESSIONS.delete(token);
+    }
+  }
+
+  // Revoke Firebase Auth refresh tokens if admin is configured
+  if (isAdminConfigured()) {
+    try {
+      await adminAuth.revokeRefreshTokens(user.uid);
+    } catch (err) {
+      console.warn('Could not revoke Firebase refresh tokens:', err);
+    }
+  }
+
+  // Clear cookie on caller's browser
+  res.setHeader(
+    'Set-Cookie',
+    'raloa_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax'
+  );
+
+  return res.status(200).json({ status: 'all_revoked', message: 'Signed out of all devices.' });
+});
+
+/**
  * FR-4.5 Email Verification Confirmation
  */
 app.post('/api/v1/auth/verify-email', (req: Request, res: Response) => {
@@ -1910,10 +1990,23 @@ app.get('/api/account/billing', async (req: Request, res: Response) => {
     const ref = await accountDocument(user);
     const snapshot = ref ? await ref.get() : null;
     const data = snapshot?.data() || accountSettingsFor(user);
+    
+    // Check if promotional referral pro reward has expired, enforce downgrade
+    let currentPlan = data.plan || 'free';
+    if (currentPlan === 'pro' && data.referralProUntil && Date.parse(data.referralProUntil) <= Date.now() && !data.stripeSubscriptionId) {
+      currentPlan = 'free';
+      if (ref) {
+        await ref.set({ plan: 'free', billingStatus: 'expired' }, { merge: true });
+      } else {
+        const local = accountSettingsFor(user);
+        LOCAL_ACCOUNT_SETTINGS.set(user.uid, { ...local, plan: 'free', billingStatus: 'expired' });
+      }
+    }
+
     return res.status(200).json({ billing: {
-      plan: data.plan || 'free',
+      plan: currentPlan,
       interval: data.isYearly ? 'yearly' : 'monthly',
-      status: data.billingStatus || 'free',
+      status: currentPlan === 'free' && data.referralProUntil && Date.parse(data.referralProUntil) <= Date.now() ? 'expired' : (data.billingStatus || 'free'),
       renewalDate: data.subscriptionCurrentPeriodEnd || null,
       customerId: data.stripeCustomerId || null,
       subscriptionId: data.stripeSubscriptionId || null

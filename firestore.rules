@@ -87,5 +87,7 @@ service cloud.firestore {
     }
     match /custom_domains/{domainId} { allow read, write: if false; }
     match /stripe_events/{eventId} { allow read, write: if false; }
+    match /account_deletion_requests/{requestId} { allow read, write: if false; }
+    match /sessions/{sessionId} { allow read, write: if false; }
   }
 }

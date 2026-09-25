@@ -94,6 +94,30 @@ paths:
           description: Invalid request
         '401':
           description: Authentication required
+  /api/account/sessions:
+    get:
+      operationId: get_get_api_account_sessions
+      responses:
+        '200':
+          description: Successful response
+        '401':
+          description: Authentication required
+  /api/account/sessions/{sessionId}:
+    delete:
+      operationId: delete_delete_api_account_sessions_sessionid
+      responses:
+        '200':
+          description: Successful response
+        '401':
+          description: Authentication required
+  /api/account/sessions/revoke-all:
+    post:
+      operationId: post_post_api_account_sessions_revoke_all
+      responses:
+        '200':
+          description: Successful response
+        '401':
+          description: Authentication required
   /api/analytics/platform:
     get:
       operationId: get_get_api_analytics_platform

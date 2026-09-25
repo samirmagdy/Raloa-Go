@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  AlertCircle,
+  AlertTriangle,
   Bell,
   Check,
   ChevronRight,
@@ -162,6 +164,43 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     }
   };
 
+  const processAvatarImage = (file: File): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = () => {
+        img.src = reader.result as string;
+      };
+      reader.onerror = reject;
+      img.onload = () => {
+        const size = Math.min(img.width, img.height);
+        const startX = (img.width - size) / 2;
+        const startY = (img.height - size) / 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 400;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(file);
+          return;
+        }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, startX, startY, size, size, 0, 0, 400, 400);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else resolve(file);
+          },
+          'image/webp',
+          0.85
+        );
+      };
+      img.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const uploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !auth.currentUser) return;
@@ -171,14 +210,15 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     }
     setAvatarBusy(true);
     try {
+      const processedBlob = await processAvatarImage(file);
       const objectRef = storageRef(storage, `users/${auth.currentUser.uid}/avatar`);
-      await uploadBytes(objectRef, file, { contentType: file.type, cacheControl: 'public,max-age=3600' });
+      await uploadBytes(objectRef, processedBlob, { contentType: 'image/webp', cacheControl: 'public,max-age=3600' });
       const photoURL = await getDownloadURL(objectRef);
       await request('/api/account/profile', { method: 'PUT', body: JSON.stringify({ photoURL }) });
       setAvatarUrl(photoURL);
       await auth.currentUser.reload();
       await onProfileUpdated();
-      setStatus({ type: 'success', text: isRtl ? 'تم تحديث الصورة.' : 'Avatar updated.' });
+      setStatus({ type: 'success', text: isRtl ? 'تم تحديث الصورة وتحسينها بنجاح.' : 'Avatar cropped and updated.' });
     } catch (error) {
       setStatus({ type: 'error', text: error instanceof Error ? error.message : (isRtl ? 'تعذر رفع الصورة.' : 'Avatar upload failed.') });
     } finally {
@@ -427,7 +467,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   <div className="flex justify-end"><button type="submit" disabled={saving} className="min-h-11 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white transition hover:bg-indigo-600 disabled:cursor-wait disabled:opacity-60 dark:bg-white dark:text-slate-950">{saving ? '…' : copy.save}</button></div>
                 </form>}
 
-                {section === 'security' && <div className="space-y-5"><div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{copy.security}</h2><p className="mt-1 text-sm text-slate-500">{isRtl ? 'حافظ على وصولك آمناً.' : 'Keep access to your account secure.'}</p><div className="mt-5 divide-y divide-slate-100 dark:divide-slate-800"><div className="flex items-center justify-between gap-4 py-4"><div><p className="text-sm font-semibold text-slate-900 dark:text-white">{isRtl ? 'البريد الإلكتروني' : 'Email address'}</p><p className="mt-1 text-sm text-slate-500">{auth.currentUser?.email || profile?.email || '—'}</p></div><span className="text-xs font-bold text-emerald-600">{auth.currentUser?.emailVerified ? (isRtl ? 'تم التحقق' : 'Verified') : (isRtl ? 'غير متحقق' : 'Unverified')}</span></div><div className="flex items-center justify-between gap-4 py-4"><div><p className="text-sm font-semibold text-slate-900 dark:text-white">{isRtl ? 'كلمة المرور' : 'Password'}</p><p className="mt-1 text-sm text-slate-500">{isRtl ? 'أرسل رابطاً آمناً لتغيير كلمة المرور.' : 'Send a secure link to change your password.'}</p></div><button type="button" onClick={sendResetEmail} disabled={saving} className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:text-slate-200">{isRtl ? 'إرسال الرابط' : 'Send reset link'}</button></div></div></div><div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'جلسة هذا الجهاز' : 'Current session'}</h2><p className="mt-1 text-sm text-slate-500">{isRtl ? 'يمكنك تسجيل الخروج من هذا الجهاز الآن.' : 'You are currently signed in on this device.'}</p><button type="button" onClick={onSignOut} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-rose-200 px-4 text-sm font-bold text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300"><LogOut className="h-4 w-4" />{isRtl ? 'تسجيل الخروج' : 'Sign out'}</button></div></div>}
+                {section === 'security' && <div className="space-y-5"><div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{copy.security}</h2><p className="mt-1 text-sm text-slate-500">{isRtl ? 'حافظ على وصولك آمناً.' : 'Keep access to your account secure.'}</p><div className="mt-5 divide-y divide-slate-100 dark:divide-slate-800"><div className="flex items-center justify-between gap-4 py-4"><div><p className="text-sm font-semibold text-slate-900 dark:text-white">{isRtl ? 'البريد الإلكتروني' : 'Email address'}</p><p className="mt-1 text-sm text-slate-500">{auth.currentUser?.email || profile?.email || '—'}</p></div><span className="text-xs font-bold text-emerald-600">{auth.currentUser?.emailVerified ? (isRtl ? 'تم التحقق' : 'Verified') : (isRtl ? 'غير متحقق' : 'Unverified')}</span></div><div className="flex items-center justify-between gap-4 py-4"><div><p className="text-sm font-semibold text-slate-900 dark:text-white">{isRtl ? 'كلمة المرور' : 'Password'}</p><p className="mt-1 text-sm text-slate-500">{isRtl ? 'أرسل رابطاً آمناً لتغيير كلمة المرور.' : 'Send a secure link to change your password.'}</p></div><button type="button" onClick={sendResetEmail} disabled={saving} className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:text-slate-200">{isRtl ? 'إرسال الرابط' : 'Send reset link'}</button></div></div></div><div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'الجلسات والأجهزة النشطة' : 'Active sessions & devices'}</h2><p className="mt-1 text-sm text-slate-500">{isRtl ? 'إدارة جلساتك وتسجيل الخروج من جميع الأجهزة.' : 'Manage your active logins or sign out everywhere.'}</p><div className="mt-5 flex flex-wrap gap-3"><button type="button" onClick={onSignOut} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-rose-200 px-4 text-sm font-bold text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300"><LogOut className="h-4 w-4" />{isRtl ? 'تسجيل الخروج من هذا الجهاز' : 'Sign out this device'}</button><button type="button" onClick={async () => { if (!window.confirm(isRtl ? 'هل تريد تسجيل الخروج من جميع الأجهزة؟' : 'Sign out of all devices?')) return; setSecurityBusy(true); try { await request('/api/account/sessions/revoke-all', { method: 'POST' }); await onSignOut(); } catch (err) { setStatus({ type: 'error', text: isRtl ? 'تعذر إنهاء جميع الجلسات.' : 'Could not revoke all sessions.' }); } finally { setSecurityBusy(false); } }} disabled={securityBusy} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-60"><LogOut className="h-4 w-4" />{securityBusy ? '…' : (isRtl ? 'تسجيل الخروج من جميع الأجهزة' : 'Sign out all devices')}</button></div></div></div>}
 
                 {section === 'security' && <div className="space-y-5"><div className={sectionClass}>{!auth.currentUser?.emailVerified && <div className="mb-5 flex items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><span>{isRtl ? 'لم يتم التحقق من بريدك بعد.' : 'Your email is not verified yet.'}</span><button type="button" onClick={resendVerification} disabled={securityBusy} className="min-h-10 rounded-lg bg-amber-600 px-3 text-xs font-bold text-white disabled:opacity-60">{isRtl ? 'إرسال التحقق' : 'Resend verification'}</button></div>}<h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'تحديث بيانات الدخول' : 'Update sign-in details'}</h2><p className="mt-1 text-sm text-slate-500">{isRtl ? 'يتطلب التغيير تأكيد كلمة المرور الحالية.' : 'Changes require your current password for account protection.'}</p><form onSubmit={changePassword} className="mt-5 grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'كلمة المرور الحالية' : 'Current password'}<input className={`${inputClass} mt-2`} type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" required /></label><label className="text-xs font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'كلمة المرور الجديدة' : 'New password'}<input className={`${inputClass} mt-2`} type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" minLength={6} required /></label><button type="submit" disabled={securityBusy} className="min-h-11 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white hover:bg-indigo-600 disabled:opacity-60 dark:bg-white dark:text-slate-950 sm:col-span-2">{securityBusy ? '…' : (isRtl ? 'تغيير كلمة المرور' : 'Change password')}</button></form><form onSubmit={changeEmail} className="mt-6 grid gap-3 border-t border-slate-100 pt-5 dark:border-slate-800 sm:grid-cols-2"><label className="text-xs font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'البريد الجديد' : 'New email'}<input className={`${inputClass} mt-2`} type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} autoComplete="email" required /></label><div className="flex items-end"><button type="submit" disabled={securityBusy} className="min-h-11 w-full rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200">{isRtl ? 'إرسال رابط التحقق' : 'Verify new email'}</button></div></form></div></div>}
 
@@ -435,7 +475,72 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
                 {section === 'privacy' && <PreferenceSection title={copy.privacy} description={isRtl ? 'تحكم في ظهور بياناتك واستخدامها.' : 'Control how your profile and analytics are used.'} items={[['profilePublished', isRtl ? 'موقعك منشور' : 'Public profile is published'], ['searchIndexing', isRtl ? 'السماح لمحركات البحث بالفهرسة' : 'Allow search engines to index my profile'], ['analyticsCollection', isRtl ? 'السماح بجمع تحليلات الزوار' : 'Allow visitor analytics collection']]} values={preferences.privacy} onToggle={(key) => togglePreference('privacy', key)} onSave={savePreferences} saving={saving} saveLabel={copy.save} />}
 
-                {section === 'billing' && <div className="space-y-5"><div className={sectionClass}><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-indigo-600">{isRtl ? 'الخطة الحالية' : 'Current plan'}</p><h2 className="mt-2 text-3xl font-black capitalize text-slate-950 dark:text-white">{billing?.plan || profile?.plan || 'free'}</h2><p className="mt-1 text-sm text-slate-500">{billing?.status || profile?.billingStatus || 'free'} · {billing?.interval || 'monthly'}</p></div><CreditCard className="h-6 w-6 text-indigo-600" /></div>{billing?.renewalDate && <p className="mt-5 rounded-xl bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">{isRtl ? 'التجديد القادم: ' : 'Renews: '}{new Date(billing.renewalDate).toLocaleDateString(locale)}</p>}<button type="button" onClick={billing?.plan === 'free' ? onOpenPricing : onManageBilling} className="mt-5 min-h-11 w-full rounded-xl bg-slate-950 px-4 text-sm font-bold text-white hover:bg-indigo-600 dark:bg-white dark:text-slate-950">{billing?.plan === 'free' ? (isRtl ? 'استعرض الخطط' : 'View plans') : (isRtl ? 'إدارة الفوترة' : 'Manage billing')}</button></div></div>}
+                {section === 'billing' && <div className="space-y-5">
+                  <div className={sectionClass}>
+                    {/* Status Alert Banners for past_due, canceled, incomplete */}
+                    {billing?.status === 'past_due' && (
+                      <div className="mb-5 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+                        <AlertCircle className="h-5 w-5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="font-bold">{isRtl ? 'فشل تحصيل الاشتراك' : 'Subscription payment failed'}</p>
+                          <p className="mt-1 text-xs opacity-90">
+                            {isRtl
+                              ? 'يرجى تحديث وسيلة الدفع لتفادي إيقاف مزايا باقتك وتحويل حسابك إلى الباقة المجانية.'
+                              : 'Please update your payment method to avoid losing premium features and downgrading to the free plan.'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {billing?.status === 'canceled' && (
+                      <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                        <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="font-bold">{isRtl ? 'تم إلغاء التجديد التلقائي' : 'Subscription canceled'}</p>
+                          <p className="mt-1 text-xs opacity-90">
+                            {isRtl
+                              ? `ستظل مزايا باقتك الحالية مفعلة حتى نهاية الفترة في ${billing.renewalDate ? new Date(billing.renewalDate).toLocaleDateString(locale) : 'نهاية دورة الفوترة'}.`
+                              : `Your premium features remain active until your billing period ends on ${billing.renewalDate ? new Date(billing.renewalDate).toLocaleDateString(locale) : 'period end'}.`}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {billing?.status === 'incomplete' && (
+                      <div className="mb-5 flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-200">
+                        <AlertCircle className="h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="font-bold">{isRtl ? 'يلزم تأكيد الدفع' : 'Payment confirmation required'}</p>
+                          <p className="mt-1 text-xs opacity-90">
+                            {isRtl
+                              ? 'يتطلب بنكك خطوة تأكيد إضافية (3D Secure). يرجى فتح بوابة الفوترة لإكمال العملية.'
+                              : 'Your bank requires additional verification (3D Secure). Please open billing to complete authorization.'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[.14em] text-indigo-600">{isRtl ? 'الخطة الحالية' : 'Current plan'}</p>
+                        <h2 className="mt-2 text-3xl font-black capitalize text-slate-950 dark:text-white">{billing?.plan || profile?.plan || 'free'}</h2>
+                        <p className="mt-1 text-sm text-slate-500">{billing?.status || profile?.billingStatus || 'free'} · {billing?.interval || 'monthly'}</p>
+                      </div>
+                      <CreditCard className="h-6 w-6 text-indigo-600" />
+                    </div>
+                    {billing?.renewalDate && (
+                      <p className="mt-5 rounded-xl bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        {billing?.status === 'canceled'
+                          ? (isRtl ? 'تاريخ انتهاء المزايا: ' : 'Access ends: ')
+                          : (isRtl ? 'التجديد القادم: ' : 'Renews: ')}
+                        {new Date(billing.renewalDate).toLocaleDateString(locale)}
+                      </p>
+                    )}
+                    <button type="button" onClick={billing?.plan === 'free' ? onOpenPricing : onManageBilling} className="mt-5 min-h-11 w-full rounded-xl bg-slate-950 px-4 text-sm font-bold text-white hover:bg-indigo-600 dark:bg-white dark:text-slate-950">
+                      {billing?.plan === 'free' ? (isRtl ? 'استعرض الخطط' : 'View plans') : (isRtl ? 'إدارة الفوترة' : 'Manage billing')}
+                    </button>
+                  </div>
+                </div>}
                 {section === 'billing' && billingDetails.paymentMethod && <div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'وسيلة الدفع' : 'Payment method'}</h2><p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{billingDetails.paymentMethod.brand.toUpperCase()} ···· {billingDetails.paymentMethod.last4} · {billingDetails.paymentMethod.expMonth}/{billingDetails.paymentMethod.expYear}</p></div>}
                 {section === 'billing' && billingDetails.invoices.length > 0 && <div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'الفواتير الأخيرة' : 'Recent invoices'}</h2><div className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">{billingDetails.invoices.map((invoice) => <div key={invoice.id} className="flex items-center justify-between gap-3 py-3 text-sm"><span className="text-slate-600 dark:text-slate-300">{invoice.number || invoice.id} · {new Date(invoice.created * 1000).toLocaleDateString(locale)}</span>{invoice.hostedInvoiceUrl ? <a href={invoice.hostedInvoiceUrl} target="_blank" rel="noreferrer" className="font-bold text-indigo-600 hover:text-indigo-700">{isRtl ? 'عرض' : 'View'}</a> : <span className="text-slate-400">{invoice.status || '—'}</span>}</div>)}</div></div>}
 
