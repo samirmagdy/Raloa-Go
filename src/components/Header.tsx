@@ -16,7 +16,8 @@ import {
   Palette,
   ExternalLink,
   Copy,
-  Sparkles
+  Sparkles,
+  SlidersHorizontal
 } from 'lucide-react';
 import { PremiumMark } from './brand/PremiumMark';
 import { RaloaLogo } from './brand/RaloaLogo';
@@ -34,6 +35,7 @@ interface HeaderProps {
   onOpenStudio: (username?: string) => void;
   onOpenTemplates?: () => void;
   onOpenAuth: (mode?: 'signin' | 'signup') => void;
+  onOpenAccountSettings?: () => void;
   onOpenCommandPalette?: () => void;
   onNavigateToSection?: (sectionId: string) => void;
   theme: Theme;
@@ -54,6 +56,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenStudio,
   onOpenTemplates,
   onOpenAuth,
+  onOpenAccountSettings,
   onNavigateToSection,
   theme,
 }) => {
@@ -391,6 +394,22 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
 
                     <div className="py-1">
+                      {onOpenAccountSettings && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUserDropdownOpen(false);
+                            onOpenAccountSettings();
+                          }}
+                          className="w-full px-4 py-2 text-left rtl:text-right text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-between transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2">
+                            <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-500" />
+                            <span>{isRtl ? 'إعدادات الحساب' : 'Account settings'}</span>
+                          </div>
+                          <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180 text-slate-400" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -618,6 +637,19 @@ export const Header: React.FC<HeaderProps> = ({
                       <span>{copiedLink ? (isRtl ? 'تم النسخ' : 'Copied!') : (isRtl ? 'نسخ الرابط' : 'Copy Link')}</span>
                     </button>
                   </div>
+
+                  {onOpenAccountSettings && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        onOpenAccountSettings();
+                      }}
+                      className="w-full min-h-11 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-bold text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/70"
+                    >
+                      {isRtl ? 'إعدادات الحساب' : 'Account settings'}
+                    </button>
+                  )}
 
                   <button
                     onClick={() => {

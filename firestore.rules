@@ -14,7 +14,7 @@ service cloud.firestore {
         && data.handle is string && data.handle.matches('^[a-z0-9_-]{3,30}$')
         && data.plan in ['free', 'pro', 'studio'] && data.isYearly is bool
         && data.referralsCount is number && data.referralsCount >= 0
-        && data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'plan', 'isYearly', 'billingStatus', 'handle', 'referralsCount', 'referredBy', 'referralStatus', 'referralRewards', 'referralProUntil', 'verifiedCreator', 'customDomainPerkUnlocked', 'createdAt', 'updatedAt', 'stripeCustomerId', 'stripeSubscriptionId']);
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'bio', 'pronouns', 'location', 'website', 'locale', 'timeZone', 'notificationPreferences', 'privacyPreferences', 'plan', 'isYearly', 'billingStatus', 'handle', 'referralsCount', 'referredBy', 'referralStatus', 'referralRewards', 'referralProUntil', 'verifiedCreator', 'customDomainPerkUnlocked', 'createdAt', 'updatedAt', 'stripeCustomerId', 'stripeSubscriptionId', 'subscriptionCurrentPeriodEnd']);
     }
     function validLink(link) {
       return link is map

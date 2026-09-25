@@ -6,6 +6,84 @@ info:
 servers:
   - url: https://raloa.app
 paths:
+  /api/account/billing:
+    get:
+      operationId: get_get_api_account_billing
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/account/delete-request:
+    post:
+      operationId: post_post_api_account_delete_request
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/account/export:
+    get:
+      operationId: get_get_api_account_export
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/account/preferences:
+    get:
+      operationId: get_get_api_account_preferences
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+    put:
+      operationId: put_put_api_account_preferences
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/account/profile:
+    get:
+      operationId: get_get_api_account_profile
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+    put:
+      operationId: put_put_api_account_profile
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/account/referrals:
+    get:
+      operationId: get_get_api_account_referrals
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
   /api/analytics/platform:
     get:
       operationId: get_get_api_analytics_platform

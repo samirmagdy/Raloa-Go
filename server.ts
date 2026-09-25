@@ -39,6 +39,23 @@ const AUTH_SESSION_SECRET = process.env.AUTH_SESSION_SECRET || (process.env.NODE
 const localAuthEnabled = process.env.NODE_ENV === 'test' ||
   process.env.LOCAL_AUTH_ENABLED === 'true' ||
   (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'staging' && process.env.NODE_ENV !== 'preview' && process.env.LOCAL_AUTH_ENABLED !== 'false');
+const LOCAL_ACCOUNT_SETTINGS = new Map<string, Record<string, unknown>>();
+
+const DEFAULT_NOTIFICATION_PREFERENCES = {
+  productUpdates: true,
+  billing: true,
+  domains: true,
+  bookings: true,
+  orders: true,
+  referrals: true,
+  analyticsSummary: false,
+  security: true
+};
+const DEFAULT_PRIVACY_PREFERENCES = {
+  profilePublished: true,
+  searchIndexing: true,
+  analyticsCollection: true
+};
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const requestId = req.headers['x-request-id']?.toString() || crypto.randomUUID();
@@ -1732,6 +1749,222 @@ app.get('/api/readiness', async (_req: Request, res: Response) => {
 
   const ready = Object.values(checks).every(Boolean);
   return res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready', checks });
+});
+
+function accountSettingsFor(user: AuthenticatedUser): Record<string, unknown> {
+  const existing = LOCAL_ACCOUNT_SETTINGS.get(user.uid);
+  if (existing) return existing;
+  const localUser = Object.values(USERS_DB).find((candidate) => candidate.id === user.uid || candidate.email === user.email);
+  const initial = {
+    uid: user.uid,
+    email: user.email || localUser?.email || null,
+    emailVerified: Boolean(localUser?.email_verified),
+    displayName: localUser?.primary_handle || user.email?.split('@')[0] || 'Creator',
+    handle: localUser?.primary_handle || user.email?.split('@')[0] || 'creator',
+    photoURL: null,
+    bio: '',
+    pronouns: '',
+    location: '',
+    website: '',
+    locale: 'en',
+    timeZone: 'Asia/Riyadh',
+    notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
+    privacyPreferences: DEFAULT_PRIVACY_PREFERENCES,
+    plan: 'free',
+    billingStatus: 'free',
+    referralsCount: 0,
+    referralRewards: { verifiedBadgeUnlocked: false, freeProMonthsEarned: 0, customDomainUnlocked: false },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  LOCAL_ACCOUNT_SETTINGS.set(user.uid, initial);
+  return initial;
+}
+
+async function accountDocument(user: AuthenticatedUser) {
+  if (!isAdminConfigured()) return null;
+  return adminDb.collection('users').doc(user.uid);
+}
+
+app.get('/api/account/profile', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  try {
+    const ref = await accountDocument(user);
+    if (!ref) return res.status(200).json({ profile: accountSettingsFor(user) });
+    const snapshot = await ref.get();
+    const profile = { ...accountSettingsFor(user), ...(snapshot.exists ? snapshot.data() : {}) };
+    return res.status(200).json({ profile });
+  } catch (error) {
+    console.error('[Account profile read]', error);
+    return apiError(res, 503, 'PROFILE_UNAVAILABLE', 'Your profile is temporarily unavailable.');
+  }
+});
+
+app.put('/api/account/profile', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  const body = req.body || {};
+  const textFields = ['displayName', 'bio', 'pronouns', 'location', 'website', 'timeZone'] as const;
+  const updates: Record<string, unknown> = {};
+  for (const field of textFields) {
+    if (body[field] !== undefined) {
+      if (typeof body[field] !== 'string') return apiError(res, 400, 'INVALID_FIELD', `${field} must be text.`, { [field]: 'Enter valid text.' });
+      updates[field] = body[field].trim();
+    }
+  }
+  if (typeof body.locale !== 'undefined' && body.locale !== 'en' && body.locale !== 'ar') {
+    return apiError(res, 400, 'INVALID_LOCALE', 'Choose English or Arabic.', { locale: 'Choose a supported language.' });
+  }
+  if (body.locale) updates.locale = body.locale;
+  if (typeof updates.displayName === 'string' && (!updates.displayName || updates.displayName.length > 80)) return apiError(res, 400, 'INVALID_DISPLAY_NAME', 'Display name must be 1–80 characters.', { displayName: 'Use 1–80 characters.' });
+  if (typeof updates.bio === 'string' && updates.bio.length > 500) return apiError(res, 400, 'INVALID_BIO', 'Bio must be 500 characters or fewer.', { bio: 'Use 500 characters or fewer.' });
+  if (typeof updates.pronouns === 'string' && updates.pronouns.length > 60) return apiError(res, 400, 'INVALID_PRONOUNS', 'Pronouns must be 60 characters or fewer.', { pronouns: 'Use 60 characters or fewer.' });
+  if (typeof updates.location === 'string' && updates.location.length > 100) return apiError(res, 400, 'INVALID_LOCATION', 'Location must be 100 characters or fewer.', { location: 'Use 100 characters or fewer.' });
+  if (typeof updates.website === 'string' && updates.website && !/^https:\/\//i.test(updates.website)) return apiError(res, 400, 'INVALID_WEBSITE', 'Website must use HTTPS.', { website: 'Use an https:// URL.' });
+  if (typeof updates.website === 'string' && updates.website.length > 500) return apiError(res, 400, 'INVALID_WEBSITE', 'Website URL is too long.', { website: 'Use 500 characters or fewer.' });
+  if (typeof updates.timeZone === 'string' && updates.timeZone.length > 80) return apiError(res, 400, 'INVALID_TIME_ZONE', 'Time zone is invalid.', { timeZone: 'Choose a valid time zone.' });
+  updates.updatedAt = new Date().toISOString();
+  try {
+    const ref = await accountDocument(user);
+    if (ref) await ref.set(updates, { merge: true });
+    const local = { ...accountSettingsFor(user), ...updates };
+    LOCAL_ACCOUNT_SETTINGS.set(user.uid, local);
+    return res.status(200).json({ profile: local });
+  } catch (error) {
+    console.error('[Account profile write]', error);
+    return apiError(res, 503, 'PROFILE_SAVE_FAILED', 'Your profile could not be saved.');
+  }
+});
+
+app.get('/api/account/preferences', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  try {
+    const ref = await accountDocument(user);
+    const snapshot = ref ? await ref.get() : null;
+    const data = snapshot?.data() || accountSettingsFor(user);
+    return res.status(200).json({
+      notifications: { ...DEFAULT_NOTIFICATION_PREFERENCES, ...(data.notificationPreferences as Record<string, boolean> || {}) },
+      privacy: { ...DEFAULT_PRIVACY_PREFERENCES, ...(data.privacyPreferences as Record<string, boolean> || {}) }
+    });
+  } catch (error) {
+    console.error('[Account preferences read]', error);
+    return apiError(res, 503, 'PREFERENCES_UNAVAILABLE', 'Preferences are temporarily unavailable.');
+  }
+});
+
+app.put('/api/account/preferences', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  const validatePreferences = (value: unknown, allowed: Record<string, boolean>) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const incoming = value as Record<string, unknown>;
+    if (Object.keys(incoming).some((key) => !(key in allowed) || typeof incoming[key] !== 'boolean')) return null;
+    return { ...allowed, ...incoming };
+  };
+  const notifications = validatePreferences(req.body?.notifications, DEFAULT_NOTIFICATION_PREFERENCES);
+  const privacy = validatePreferences(req.body?.privacy, DEFAULT_PRIVACY_PREFERENCES);
+  if (!notifications || !privacy) return apiError(res, 400, 'INVALID_PREFERENCES', 'Preference values must be supported boolean settings.');
+  try {
+    const updates = { notificationPreferences: notifications, privacyPreferences: privacy, updatedAt: new Date().toISOString() };
+    const ref = await accountDocument(user);
+    if (ref) await ref.set(updates, { merge: true });
+    LOCAL_ACCOUNT_SETTINGS.set(user.uid, { ...accountSettingsFor(user), ...updates });
+    return res.status(200).json({ notifications, privacy });
+  } catch (error) {
+    console.error('[Account preferences write]', error);
+    return apiError(res, 503, 'PREFERENCES_SAVE_FAILED', 'Preferences could not be saved.');
+  }
+});
+
+app.get('/api/account/billing', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  try {
+    const ref = await accountDocument(user);
+    const snapshot = ref ? await ref.get() : null;
+    const data = snapshot?.data() || accountSettingsFor(user);
+    return res.status(200).json({ billing: {
+      plan: data.plan || 'free',
+      interval: data.isYearly ? 'yearly' : 'monthly',
+      status: data.billingStatus || 'free',
+      renewalDate: data.subscriptionCurrentPeriodEnd || null,
+      customerId: data.stripeCustomerId || null,
+      subscriptionId: data.stripeSubscriptionId || null
+    } });
+  } catch (error) {
+    console.error('[Account billing read]', error);
+    return apiError(res, 503, 'BILLING_STATUS_UNAVAILABLE', 'Billing status is temporarily unavailable.');
+  }
+});
+
+app.get('/api/account/referrals', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  try {
+    const ref = await accountDocument(user);
+    const snapshot = ref ? await ref.get() : null;
+    const data = snapshot?.data() || accountSettingsFor(user);
+    const code = String(data.handle || 'creator').toLowerCase();
+    const referrals = ref ? await ref.collection('referrals').limit(100).get() : null;
+    return res.status(200).json({ summary: {
+      referralLink: `${APP_URL}/join?ref=${encodeURIComponent(code)}`,
+      qualifiedCount: Number(data.referralsCount || 0),
+      pendingCount: referrals ? referrals.docs.filter((doc) => doc.data().status === 'invited').length : 0,
+      rewards: data.referralRewards || {},
+      rewardExpiresAt: data.referralProUntil || null
+    } });
+  } catch (error) {
+    console.error('[Account referrals read]', error);
+    return apiError(res, 503, 'REFERRALS_UNAVAILABLE', 'Referral rewards are temporarily unavailable.');
+  }
+});
+
+app.post('/api/account/delete-request', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  try {
+    const ref = await accountDocument(user);
+    if (ref) {
+      const profile = await ref.get();
+      const billingStatus = profile.data()?.billingStatus;
+      if (['active', 'trialing', 'past_due', 'incomplete'].includes(String(billingStatus))) {
+        return apiError(res, 409, 'ACTIVE_BILLING', 'Cancel your active subscription before requesting account deletion.');
+      }
+      const requestRef = adminDb.collection('account_deletion_requests').doc(user.uid);
+      await requestRef.set({ uid: user.uid, email: user.email || null, status: 'requested', requestedAt: new Date().toISOString() }, { merge: true });
+    } else {
+      LOCAL_ACCOUNT_SETTINGS.set(user.uid, { ...accountSettingsFor(user), deletionRequestedAt: new Date().toISOString() });
+    }
+    return res.status(202).json({ status: 'requested' });
+  } catch (error) {
+    console.error('[Account deletion request]', error);
+    return apiError(res, 503, 'DELETE_REQUEST_FAILED', 'The deletion request could not be recorded.');
+  }
+});
+
+app.get('/api/account/export', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  try {
+    const ref = await accountDocument(user);
+    const profile = ref ? (await ref.get()).data() || {} : accountSettingsFor(user);
+    const site = ref ? (await ref.collection('sites').doc('default').get()).data() || null : null;
+    const referrals = ref ? (await ref.collection('referrals').limit(1000).get()).docs.map((doc) => doc.data()) : [];
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      account: { uid: user.uid, email: user.email || profile.email || null, profile: { ...profile, stripeCustomerId: undefined, stripeSubscriptionId: undefined } },
+      site,
+      referrals
+    };
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="raloa-account-export-${user.uid}.json"`);
+    return res.status(200).send(JSON.stringify(exportData, null, 2));
+  } catch (error) {
+    console.error('[Account export]', error);
+    return apiError(res, 503, 'EXPORT_FAILED', 'Your data export could not be generated.');
+  }
 });
 
 app.get('/api/analytics/platform', async (req: Request, res: Response) => {

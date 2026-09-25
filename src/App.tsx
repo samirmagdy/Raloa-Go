@@ -36,6 +36,7 @@ const LegalModal = lazy(() => import('./components/modals/LegalModal').then((m) 
 const KeyboardShortcutsModal = lazy(() => import('./components/modals/KeyboardShortcutsModal').then((m) => ({ default: m.KeyboardShortcutsModal })));
 const ProjectStatsModal = lazy(() => import('./components/modals/ProjectStatsModal').then((m) => ({ default: m.ProjectStatsModal })));
 const ReferralModal = lazy(() => import('./components/modals/ReferralModal').then((m) => ({ default: m.ReferralModal })));
+const AccountSettingsModal = lazy(() => import('./components/modals/AccountSettingsModal').then((m) => ({ default: m.AccountSettingsModal })));
 import { EasterEggOverlay } from './components/EasterEggOverlay';
 import { LoadingOverlay } from './components/LoadingOverlay';
 import { getInitialLocale, persistLocale } from './utils/locale';
@@ -113,13 +114,14 @@ function resolveInitialRoute(): {
 }
 
 function MainApp() {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, logOut } = useAuth();
   const [locale, setLocale] = useState<Locale>(() => getInitialLocale());
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => getInitialSoundEnabled());
   const [isLoading, setIsLoading] = useState(true);
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [billingError, setBillingError] = useState<string | null>(null);
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -750,6 +752,7 @@ function MainApp() {
             onOpenAuth={(mode) => {
               if (!user) setAuthModal({ open: true, mode: mode || 'signin' });
             }}
+            onOpenAccountSettings={() => setAccountSettingsOpen(true)}
             onOpenCommandPalette={() => setCommandPaletteOpen(true)}
             onNavigateToSection={handleNavigateToSection}
             theme={theme}
@@ -805,13 +808,14 @@ function MainApp() {
       <ScrollSpyDots locale={locale} />
 
       {/* 01 Sticky Navigation Header */}
-      <Header
+          <Header
         locale={locale}
         onSelectLocale={handleSelectLocale}
         onToggleLocale={toggleLocale}
         onOpenStudio={(user) => handleOpenStudio(user)}
         onOpenTemplates={handleOpenTemplates}
         onOpenAuth={(mode) => setAuthModal({ open: true, mode: mode || 'signin' })}
+        onOpenAccountSettings={() => setAccountSettingsOpen(true)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
         onNavigateToSection={handleNavigateToSection}
         theme={theme}
@@ -1034,6 +1038,27 @@ function MainApp() {
             handleOpenStudio(studioUsername || email.split('@')[0], stagedTemplate);
           }}
         />
+      )}
+
+      {accountSettingsOpen && user && (
+        <Suspense fallback={null}>
+          <AccountSettingsModal
+            locale={locale}
+            profile={profile}
+            onClose={() => setAccountSettingsOpen(false)}
+            onProfileUpdated={refreshProfile}
+            onManageBilling={handleManageBilling}
+            onOpenPricing={() => {
+              setAccountSettingsOpen(false);
+              const el = document.getElementById('pricing');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }}
+            onSignOut={async () => {
+              setAccountSettingsOpen(false);
+              await logOut();
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Contact Support Modal */}
