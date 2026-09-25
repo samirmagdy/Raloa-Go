@@ -11,6 +11,7 @@ import {
   cloudflareRequest,
   createCheckoutSession,
   createPortalSession,
+  getBillingDetails,
   deleteDomain,
   findDomainByHostname,
   findDomainById,
@@ -51,6 +52,7 @@ const DEFAULT_NOTIFICATION_PREFERENCES = {
   analyticsSummary: false,
   security: true
 };
+const DEFAULT_NOTIFICATION_CHANNELS = { email: true, inApp: true };
 const DEFAULT_PRIVACY_PREFERENCES = {
   profilePublished: true,
   searchIndexing: true,
@@ -1200,6 +1202,11 @@ app.post('/api/v1/public/telemetry/page-view', async (req: Request, res: Respons
     return apiError(res, 429, 'RATE_LIMITED', 'Too many telemetry events.', { retryAfter: String(limit.retryAfter) });
   }
   if (isAdminConfigured()) {
+    const handle = pathValue.match(/^\/@([a-z0-9_-]{3,30})(?:\/|$)/i)?.[1];
+    if (handle) {
+      const site = await getPublishedSiteByHandle(handle);
+      if (site && site.analyticsCollection === false) return res.status(202).json({ status: 'accepted' });
+    }
     await adminDb.collection('page_views').add({ path: pathValue, userAgent, timestamp: new Date().toISOString() });
   }
   return res.status(202).json({ status: 'accepted' });
@@ -1218,6 +1225,8 @@ app.post('/api/v1/public/telemetry/link-click', async (req: Request, res: Respon
     return apiError(res, 429, 'RATE_LIMITED', 'Too many telemetry events.', { retryAfter: String(limit.retryAfter) });
   }
   if (isAdminConfigured()) {
+    const site = await getPublishedSiteByHandle(siteHandle);
+    if (!site || site.analyticsCollection === false) return res.status(202).json({ status: 'accepted' });
     await adminDb.collection('link_clicks').add({ linkId, url, siteHandle, timestamp: new Date().toISOString() });
   }
   return res.status(202).json({ status: 'accepted' });
@@ -1769,6 +1778,7 @@ function accountSettingsFor(user: AuthenticatedUser): Record<string, unknown> {
     locale: 'en',
     timeZone: 'Asia/Riyadh',
     notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
+    notificationChannels: DEFAULT_NOTIFICATION_CHANNELS,
     privacyPreferences: DEFAULT_PRIVACY_PREFERENCES,
     plan: 'free',
     billingStatus: 'free',
@@ -1833,7 +1843,14 @@ app.put('/api/account/profile', async (req: Request, res: Response) => {
   updates.updatedAt = new Date().toISOString();
   try {
     const ref = await accountDocument(user);
-    if (ref) await ref.set(updates, { merge: true });
+    if (ref) {
+      await ref.set(updates, { merge: true });
+      const siteUpdates: Record<string, unknown> = {};
+      if (updates.displayName !== undefined) siteUpdates.displayName = updates.displayName;
+      if (updates.bio !== undefined) siteUpdates.bio = updates.bio;
+      if (updates.photoURL !== undefined) siteUpdates.avatar = updates.photoURL;
+      if (Object.keys(siteUpdates).length > 0) await ref.collection('sites').doc('default').set(siteUpdates, { merge: true });
+    }
     const local = { ...accountSettingsFor(user), ...updates };
     LOCAL_ACCOUNT_SETTINGS.set(user.uid, local);
     return res.status(200).json({ profile: local });
@@ -1852,7 +1869,8 @@ app.get('/api/account/preferences', async (req: Request, res: Response) => {
     const data = snapshot?.data() || accountSettingsFor(user);
     return res.status(200).json({
       notifications: { ...DEFAULT_NOTIFICATION_PREFERENCES, ...(data.notificationPreferences as Record<string, boolean> || {}) },
-      privacy: { ...DEFAULT_PRIVACY_PREFERENCES, ...(data.privacyPreferences as Record<string, boolean> || {}) }
+      privacy: { ...DEFAULT_PRIVACY_PREFERENCES, ...(data.privacyPreferences as Record<string, boolean> || {}) },
+      channels: { ...DEFAULT_NOTIFICATION_CHANNELS, ...(data.notificationChannels as Record<string, boolean> || {}) }
     });
   } catch (error) {
     console.error('[Account preferences read]', error);
@@ -1871,13 +1889,14 @@ app.put('/api/account/preferences', async (req: Request, res: Response) => {
   };
   const notifications = validatePreferences(req.body?.notifications, DEFAULT_NOTIFICATION_PREFERENCES);
   const privacy = validatePreferences(req.body?.privacy, DEFAULT_PRIVACY_PREFERENCES);
-  if (!notifications || !privacy) return apiError(res, 400, 'INVALID_PREFERENCES', 'Preference values must be supported boolean settings.');
+  const channels = validatePreferences(req.body?.channels, DEFAULT_NOTIFICATION_CHANNELS);
+  if (!notifications || !privacy || !channels) return apiError(res, 400, 'INVALID_PREFERENCES', 'Preference values must be supported boolean settings.');
   try {
-    const updates = { notificationPreferences: notifications, privacyPreferences: privacy, updatedAt: new Date().toISOString() };
+    const updates = { notificationPreferences: notifications, privacyPreferences: privacy, notificationChannels: channels, updatedAt: new Date().toISOString() };
     const ref = await accountDocument(user);
     if (ref) await ref.set(updates, { merge: true });
     LOCAL_ACCOUNT_SETTINGS.set(user.uid, { ...accountSettingsFor(user), ...updates });
-    return res.status(200).json({ notifications, privacy });
+    return res.status(200).json({ notifications, privacy, channels });
   } catch (error) {
     console.error('[Account preferences write]', error);
     return apiError(res, 503, 'PREFERENCES_SAVE_FAILED', 'Preferences could not be saved.');
@@ -1905,6 +1924,18 @@ app.get('/api/account/billing', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/account/billing/details', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  try {
+    const details = isAdminConfigured() ? await getBillingDetails(user.uid) : { invoices: [], paymentMethod: null };
+    return res.status(200).json(details);
+  } catch (error) {
+    console.error('[Account billing details]', error);
+    return apiError(res, 503, 'BILLING_DETAILS_UNAVAILABLE', 'Billing details are temporarily unavailable.');
+  }
+});
+
 app.get('/api/account/referrals', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
@@ -1920,7 +1951,7 @@ app.get('/api/account/referrals', async (req: Request, res: Response) => {
       pendingCount: referrals ? referrals.docs.filter((doc) => doc.data().status === 'invited').length : 0,
       rewards: data.referralRewards || {},
       rewardExpiresAt: data.referralProUntil || null
-    } });
+    }, invitations: referrals ? referrals.docs.map((doc) => ({ id: doc.id, email: doc.data().invitedEmail || null, status: doc.data().status || 'invited', createdAt: doc.data().createdAt || null })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 20) : [] });
   } catch (error) {
     console.error('[Account referrals read]', error);
     return apiError(res, 503, 'REFERRALS_UNAVAILABLE', 'Referral rewards are temporarily unavailable.');
@@ -2406,7 +2437,9 @@ app.get('*', async (req: Request, res: Response) => {
         .replace(/<meta name="twitter:title" content=".*?" \/>/, `<meta name="twitter:title" content="${ogTitle}" />`)
         .replace(/<meta name="twitter:description" content=".*?" \/>/, `<meta name="twitter:description" content="${ogDesc}" />`)
         .replace(/<meta name="twitter:image" content=".*?" \/>/, `<meta name="twitter:image" content="${ogImage}" />`);
-      html = setRobotsMetadata(html, 'index, follow');
+      const allowSearchIndexing = publishedSite?.searchIndexing !== false;
+      html = setRobotsMetadata(html, allowSearchIndexing ? 'index, follow' : 'noindex, nofollow');
+      if (!allowSearchIndexing) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
       html = injectJsonLd(html, {
         '@context': 'https://schema.org',
         '@type': 'ProfilePage',

@@ -97,6 +97,7 @@ export async function getPublishedSiteByHandle(handle: string): Promise<Record<s
     .get();
   const profileDocument = profileSnapshot.docs[0];
   if (!profileDocument) return null;
+  if (profileDocument.data()?.privacyPreferences?.profilePublished === false) return null;
 
   const siteDocument = await adminDb.collection('users')
     .doc(profileDocument.id)
@@ -108,7 +109,9 @@ export async function getPublishedSiteByHandle(handle: string): Promise<Record<s
   return {
     ...siteDocument.data(),
     userId: profileDocument.id,
-    handle: cleanHandle
+    handle: cleanHandle,
+    searchIndexing: profileDocument.data()?.privacyPreferences?.searchIndexing !== false,
+    analyticsCollection: profileDocument.data()?.privacyPreferences?.analyticsCollection !== false
   };
 }
 
@@ -204,6 +207,33 @@ export async function createPortalSession(uid: string): Promise<string> {
     return_url: `${APP_URL}/studio`
   });
   return session.url;
+}
+
+export async function getBillingDetails(uid: string): Promise<{
+  invoices: Array<{ id: string; number: string | null; status: string | null; amountPaid: number; currency: string; created: number; hostedInvoiceUrl: string | null }>;
+  paymentMethod: { brand: string; last4: string; expMonth: number; expYear: number } | null;
+}> {
+  if (!stripe) throw new Error('STRIPE_NOT_CONFIGURED');
+  const user = await adminDb.collection('users').doc(uid).get();
+  const customerId = user.data()?.stripeCustomerId;
+  if (!customerId) return { invoices: [], paymentMethod: null };
+  const [invoices, paymentMethods] = await Promise.all([
+    stripe.invoices.list({ customer: customerId, limit: 20 }),
+    stripe.paymentMethods.list({ customer: customerId, type: 'card' })
+  ]);
+  const card = paymentMethods.data[0]?.card;
+  return {
+    invoices: invoices.data.map((invoice) => ({
+      id: invoice.id,
+      number: invoice.number,
+      status: invoice.status,
+      amountPaid: invoice.amount_paid,
+      currency: invoice.currency,
+      created: invoice.created,
+      hostedInvoiceUrl: invoice.hosted_invoice_url || null
+    })),
+    paymentMethod: card ? { brand: card.brand, last4: card.last4, expMonth: card.exp_month, expYear: card.exp_year } : null
+  };
 }
 
 export async function handleStripeWebhook(payload: string | Buffer, signature: string): Promise<void> {

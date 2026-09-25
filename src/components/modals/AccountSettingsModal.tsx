@@ -14,15 +14,17 @@ import {
 } from 'lucide-react';
 import { Locale, UserProfile } from '../../types';
 import { auth, googleProvider, sendPasswordReset, storage, recordReferralInvite } from '../../lib/firebase';
-import { EmailAuthProvider, linkWithPopup, reauthenticateWithCredential, sendEmailVerification, unlink, updatePassword, verifyBeforeUpdateEmail } from 'firebase/auth';
-import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
+import { EmailAuthProvider, OAuthProvider, linkWithPopup, reauthenticateWithCredential, sendEmailVerification, unlink, updatePassword, verifyBeforeUpdateEmail } from 'firebase/auth';
+import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 
 type Section = 'profile' | 'security' | 'notifications' | 'privacy' | 'billing' | 'referrals' | 'connected' | 'danger';
 type Preferences = {
   notifications: Record<string, boolean>;
   privacy: Record<string, boolean>;
+  channels: Record<string, boolean>;
 };
 type Billing = { plan: string; interval: string; status: string; renewalDate: string | null };
+type BillingDetails = { invoices: Array<{ id: string; number: string | null; status: string | null; amountPaid: number; currency: string; created: number; hostedInvoiceUrl: string | null }>; paymentMethod: { brand: string; last4: string; expMonth: number; expYear: number } | null };
 type ReferralSummary = {
   referralLink: string;
   qualifiedCount: number;
@@ -30,12 +32,14 @@ type ReferralSummary = {
   rewards: { verifiedBadgeUnlocked?: boolean; freeProMonthsEarned?: number; customDomainUnlocked?: boolean };
   rewardExpiresAt: string | null;
 };
+type ReferralInvite = { id: string; email: string | null; status: string; createdAt: string | null };
 
 interface AccountSettingsModalProps {
   locale: Locale;
   profile: UserProfile | null;
   onClose: () => void;
   onProfileUpdated: () => Promise<void> | void;
+  onSelectLocale: (locale: Locale) => void;
   onManageBilling: () => void;
   onOpenPricing: () => void;
   onSignOut: () => Promise<void>;
@@ -49,6 +53,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   profile,
   onClose,
   onProfileUpdated,
+  onSelectLocale,
   onManageBilling,
   onOpenPricing,
   onSignOut
@@ -56,9 +61,11 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const isRtl = locale === 'ar';
   const [section, setSection] = useState<Section>('profile');
   const [profileForm, setProfileForm] = useState({ displayName: '', bio: '', pronouns: '', location: '', website: '', locale, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
-  const [preferences, setPreferences] = useState<Preferences>({ notifications: {}, privacy: {} });
+  const [preferences, setPreferences] = useState<Preferences>({ notifications: {}, privacy: {}, channels: {} });
   const [billing, setBilling] = useState<Billing | null>(null);
+  const [billingDetails, setBillingDetails] = useState<BillingDetails>({ invoices: [], paymentMethod: null });
   const [referrals, setReferrals] = useState<ReferralSummary | null>(null);
+  const [referralInvites, setReferralInvites] = useState<ReferralInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -71,6 +78,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [newEmail, setNewEmail] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(profile?.photoURL || '');
 
   const copy = useMemo(() => isRtl ? {
     title: 'إعدادات الحساب', subtitle: 'تحكّم في هويتك وأمانك وبياناتك.', profile: 'الملف الشخصي', security: 'الأمان وتسجيل الدخول', notifications: 'الإشعارات', privacy: 'الخصوصية والبيانات', billing: 'الخطة والفوترة', referrals: 'الإحالات والمكافآت', connected: 'التطبيقات المرتبطة', danger: 'منطقة حساسة', save: 'حفظ التغييرات', saved: 'تم حفظ التغييرات', failed: 'تعذر حفظ التغييرات', loading: 'جارٍ تحميل الإعدادات…'
@@ -104,10 +112,11 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     let cancelled = false;
     (async () => {
       try {
-        const [account, prefs, accountBilling, accountReferrals] = await Promise.all([
+        const [account, prefs, accountBilling, accountBillingDetails, accountReferrals] = await Promise.all([
           request('/api/account/profile'),
           request('/api/account/preferences'),
           request('/api/account/billing'),
+          request('/api/account/billing/details'),
           request('/api/account/referrals')
         ]);
         if (cancelled) return;
@@ -121,9 +130,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           locale: next.locale === 'ar' ? 'ar' : locale,
           timeZone: next.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
         });
-        setPreferences({ notifications: prefs.notifications || {}, privacy: prefs.privacy || {} });
+        setPreferences({ notifications: prefs.notifications || {}, privacy: prefs.privacy || {}, channels: prefs.channels || {} });
         setBilling(accountBilling.billing || null);
+        setBillingDetails(accountBillingDetails || { invoices: [], paymentMethod: null });
         setReferrals(accountReferrals.summary || null);
+        setReferralInvites(accountReferrals.invitations || []);
+        setAvatarUrl(next.photoURL || profile?.photoURL || '');
       } catch (error) {
         if (!cancelled) setStatus({ type: 'error', text: error instanceof Error ? error.message : copy.failed });
       } finally {
@@ -140,6 +152,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     try {
       const response = await request('/api/account/profile', { method: 'PUT', body: JSON.stringify(profileForm) });
       setProfileForm((current) => ({ ...current, ...(response.profile || {}) }));
+      onSelectLocale(profileForm.locale);
       await onProfileUpdated();
       setStatus({ type: 'success', text: copy.saved });
     } catch (error) {
@@ -162,6 +175,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       await uploadBytes(objectRef, file, { contentType: file.type, cacheControl: 'public,max-age=3600' });
       const photoURL = await getDownloadURL(objectRef);
       await request('/api/account/profile', { method: 'PUT', body: JSON.stringify({ photoURL }) });
+      setAvatarUrl(photoURL);
       await auth.currentUser.reload();
       await onProfileUpdated();
       setStatus({ type: 'success', text: isRtl ? 'تم تحديث الصورة.' : 'Avatar updated.' });
@@ -173,12 +187,28 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     }
   };
 
+  const removeAvatar = async () => {
+    if (!auth.currentUser || !avatarUrl) return;
+    setAvatarBusy(true);
+    try {
+      await deleteObject(storageRef(storage, `users/${auth.currentUser.uid}/avatar`)).catch(() => undefined);
+      await request('/api/account/profile', { method: 'PUT', body: JSON.stringify({ photoURL: '' }) });
+      setAvatarUrl('');
+      await onProfileUpdated();
+      setStatus({ type: 'success', text: isRtl ? 'تمت إزالة الصورة.' : 'Avatar removed.' });
+    } catch (error) {
+      setStatus({ type: 'error', text: error instanceof Error ? error.message : (isRtl ? 'تعذر إزالة الصورة.' : 'Avatar could not be removed.') });
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
   const savePreferences = async () => {
     setSaving(true);
     setStatus(null);
     try {
       const response = await request('/api/account/preferences', { method: 'PUT', body: JSON.stringify(preferences) });
-      setPreferences({ notifications: response.notifications, privacy: response.privacy });
+      setPreferences({ notifications: response.notifications, privacy: response.privacy, channels: response.channels });
       setStatus({ type: 'success', text: copy.saved });
     } catch (error) {
       setStatus({ type: 'error', text: error instanceof Error ? error.message : copy.failed });
@@ -306,6 +336,26 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     }
   };
 
+  const toggleAppleProvider = async () => {
+    if (!auth.currentUser) return;
+    setProviderBusy(true);
+    try {
+      const connected = auth.currentUser.providerData.some((provider) => provider.providerId === 'apple.com');
+      if (connected) {
+        if (auth.currentUser.providerData.length <= 1) throw new Error(isRtl ? 'أضف وسيلة دخول أخرى قبل إزالة Apple.' : 'Add another sign-in method before disconnecting Apple.');
+        await unlink(auth.currentUser, 'apple.com');
+      } else {
+        await linkWithPopup(auth.currentUser, new OAuthProvider('apple.com'));
+      }
+      await auth.currentUser.reload();
+      setStatus({ type: 'success', text: isRtl ? 'تم تحديث التطبيقات المرتبطة.' : 'Connected apps updated.' });
+    } catch (error) {
+      setStatus({ type: 'error', text: error instanceof Error ? error.message : copy.failed });
+    } finally {
+      setProviderBusy(false);
+    }
+  };
+
   const sendReferralInvite = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!auth.currentUser || !inviteEmail.trim()) return;
@@ -323,7 +373,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     }
   };
 
-  const togglePreference = (group: 'notifications' | 'privacy', key: string) => {
+  const togglePreference = (group: keyof Preferences, key: string) => {
     setPreferences((current) => ({ ...current, [group]: { ...current[group], [key]: !current[group][key] } }));
   };
 
@@ -359,9 +409,9 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 {section === 'profile' && <form onSubmit={saveProfile} className="space-y-5">
                   <div className={sectionClass}>
                     <div className="flex items-center gap-4 border-b border-slate-100 pb-5 dark:border-slate-800">
-                      {profile?.photoURL ? <img src={profile.photoURL} alt="" className="h-16 w-16 rounded-2xl object-cover" /> : <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 text-xl font-black text-white">{(profileForm.displayName || 'C')[0].toUpperCase()}</div>}
+                      {avatarUrl ? <img src={avatarUrl} alt="" className="h-16 w-16 rounded-2xl object-cover" /> : <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 text-xl font-black text-white">{(profileForm.displayName || 'C')[0].toUpperCase()}</div>}
                       <div className="min-w-0 flex-1"><h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'هويتك العامة' : 'Your public identity'}</h2><p className="mt-1 text-sm text-slate-500">{isRtl ? 'هذه البيانات تظهر في موقعك العام.' : 'These details appear on your public site.'}</p></div>
-                      <label className="min-h-11 shrink-0 cursor-pointer rounded-xl border border-slate-200 px-3 py-2 text-center text-xs font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:text-slate-200">{avatarBusy ? '…' : (isRtl ? 'تغيير الصورة' : 'Change photo')}<input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={uploadAvatar} disabled={avatarBusy} /></label>
+                      <div className="flex shrink-0 gap-2"><label className="min-h-11 cursor-pointer rounded-xl border border-slate-200 px-3 py-2 text-center text-xs font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:text-slate-200">{avatarBusy ? '…' : (isRtl ? 'تغيير الصورة' : 'Change photo')}<input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={uploadAvatar} disabled={avatarBusy} /></label>{avatarUrl && <button type="button" onClick={removeAvatar} disabled={avatarBusy} className="min-h-11 rounded-xl border border-rose-200 px-3 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-60 dark:border-rose-900 dark:text-rose-300">{isRtl ? 'إزالة' : 'Remove'}</button>}</div>
                     </div>
                     <div className="mt-5 grid gap-4 sm:grid-cols-2">
                       <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">{isRtl ? 'الاسم الظاهر' : 'Display name'}<input className={`${inputClass} mt-2`} value={profileForm.displayName} onChange={(e) => setProfileForm({ ...profileForm, displayName: e.target.value })} maxLength={80} required /></label>
@@ -381,17 +431,20 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
                 {section === 'security' && <div className="space-y-5"><div className={sectionClass}>{!auth.currentUser?.emailVerified && <div className="mb-5 flex items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><span>{isRtl ? 'لم يتم التحقق من بريدك بعد.' : 'Your email is not verified yet.'}</span><button type="button" onClick={resendVerification} disabled={securityBusy} className="min-h-10 rounded-lg bg-amber-600 px-3 text-xs font-bold text-white disabled:opacity-60">{isRtl ? 'إرسال التحقق' : 'Resend verification'}</button></div>}<h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'تحديث بيانات الدخول' : 'Update sign-in details'}</h2><p className="mt-1 text-sm text-slate-500">{isRtl ? 'يتطلب التغيير تأكيد كلمة المرور الحالية.' : 'Changes require your current password for account protection.'}</p><form onSubmit={changePassword} className="mt-5 grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'كلمة المرور الحالية' : 'Current password'}<input className={`${inputClass} mt-2`} type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" required /></label><label className="text-xs font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'كلمة المرور الجديدة' : 'New password'}<input className={`${inputClass} mt-2`} type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" minLength={6} required /></label><button type="submit" disabled={securityBusy} className="min-h-11 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white hover:bg-indigo-600 disabled:opacity-60 dark:bg-white dark:text-slate-950 sm:col-span-2">{securityBusy ? '…' : (isRtl ? 'تغيير كلمة المرور' : 'Change password')}</button></form><form onSubmit={changeEmail} className="mt-6 grid gap-3 border-t border-slate-100 pt-5 dark:border-slate-800 sm:grid-cols-2"><label className="text-xs font-bold text-slate-600 dark:text-slate-300">{isRtl ? 'البريد الجديد' : 'New email'}<input className={`${inputClass} mt-2`} type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} autoComplete="email" required /></label><div className="flex items-end"><button type="submit" disabled={securityBusy} className="min-h-11 w-full rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200">{isRtl ? 'إرسال رابط التحقق' : 'Verify new email'}</button></div></form></div></div>}
 
-                {section === 'notifications' && <PreferenceSection title={copy.notifications} description={isRtl ? 'اختر ما تريد أن يصلك.' : 'Choose what RALOA should send you.'} items={[['productUpdates', isRtl ? 'تحديثات المنتج' : 'Product updates'], ['billing', isRtl ? 'الفوترة وفشل الدفع' : 'Billing and payment failures'], ['domains', isRtl ? 'النطاقات وSSL' : 'Domains and SSL'], ['bookings', isRtl ? 'طلبات الحجز' : 'Booking requests'], ['orders', isRtl ? 'تحديثات الطلبات' : 'Order updates'], ['referrals', isRtl ? 'الإحالات والمكافآت' : 'Referral rewards'], ['analyticsSummary', isRtl ? 'ملخص التحليلات الأسبوعي' : 'Weekly analytics summary'], ['security', isRtl ? 'تنبيهات الأمان' : 'Security alerts']]} values={preferences.notifications} onToggle={(key) => togglePreference('notifications', key)} onSave={savePreferences} saving={saving} saveLabel={copy.save} />}
+                {section === 'notifications' && <div className="space-y-5"><PreferenceSection title={copy.notifications} description={isRtl ? 'اختر ما تريد أن يصلك.' : 'Choose what RALOA should send you.'} items={[['productUpdates', isRtl ? 'تحديثات المنتج' : 'Product updates'], ['billing', isRtl ? 'الفوترة وفشل الدفع' : 'Billing and payment failures'], ['domains', isRtl ? 'النطاقات وSSL' : 'Domains and SSL'], ['bookings', isRtl ? 'طلبات الحجز' : 'Booking requests'], ['orders', isRtl ? 'تحديثات الطلبات' : 'Order updates'], ['referrals', isRtl ? 'الإحالات والمكافآت' : 'Referral rewards'], ['analyticsSummary', isRtl ? 'ملخص التحليلات الأسبوعي' : 'Weekly analytics summary'], ['security', isRtl ? 'تنبيهات الأمان' : 'Security alerts']]} values={preferences.notifications} onToggle={(key) => togglePreference('notifications', key)} onSave={savePreferences} saving={saving} saveLabel={copy.save} /><PreferenceSection title={isRtl ? 'قنوات الإشعار' : 'Notification channels'} description={isRtl ? 'اختر أين تريد استلام التنبيهات.' : 'Choose where you want to receive alerts.'} items={[[ 'email', isRtl ? 'البريد الإلكتروني' : 'Email' ], [ 'inApp', isRtl ? 'داخل التطبيق' : 'In-app' ]]} values={preferences.channels} onToggle={(key) => togglePreference('channels', key)} onSave={savePreferences} saving={saving} saveLabel={copy.save} /></div>}
 
                 {section === 'privacy' && <PreferenceSection title={copy.privacy} description={isRtl ? 'تحكم في ظهور بياناتك واستخدامها.' : 'Control how your profile and analytics are used.'} items={[['profilePublished', isRtl ? 'موقعك منشور' : 'Public profile is published'], ['searchIndexing', isRtl ? 'السماح لمحركات البحث بالفهرسة' : 'Allow search engines to index my profile'], ['analyticsCollection', isRtl ? 'السماح بجمع تحليلات الزوار' : 'Allow visitor analytics collection']]} values={preferences.privacy} onToggle={(key) => togglePreference('privacy', key)} onSave={savePreferences} saving={saving} saveLabel={copy.save} />}
 
                 {section === 'billing' && <div className="space-y-5"><div className={sectionClass}><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-indigo-600">{isRtl ? 'الخطة الحالية' : 'Current plan'}</p><h2 className="mt-2 text-3xl font-black capitalize text-slate-950 dark:text-white">{billing?.plan || profile?.plan || 'free'}</h2><p className="mt-1 text-sm text-slate-500">{billing?.status || profile?.billingStatus || 'free'} · {billing?.interval || 'monthly'}</p></div><CreditCard className="h-6 w-6 text-indigo-600" /></div>{billing?.renewalDate && <p className="mt-5 rounded-xl bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">{isRtl ? 'التجديد القادم: ' : 'Renews: '}{new Date(billing.renewalDate).toLocaleDateString(locale)}</p>}<button type="button" onClick={billing?.plan === 'free' ? onOpenPricing : onManageBilling} className="mt-5 min-h-11 w-full rounded-xl bg-slate-950 px-4 text-sm font-bold text-white hover:bg-indigo-600 dark:bg-white dark:text-slate-950">{billing?.plan === 'free' ? (isRtl ? 'استعرض الخطط' : 'View plans') : (isRtl ? 'إدارة الفوترة' : 'Manage billing')}</button></div></div>}
+                {section === 'billing' && billingDetails.paymentMethod && <div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'وسيلة الدفع' : 'Payment method'}</h2><p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{billingDetails.paymentMethod.brand.toUpperCase()} ···· {billingDetails.paymentMethod.last4} · {billingDetails.paymentMethod.expMonth}/{billingDetails.paymentMethod.expYear}</p></div>}
+                {section === 'billing' && billingDetails.invoices.length > 0 && <div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'الفواتير الأخيرة' : 'Recent invoices'}</h2><div className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">{billingDetails.invoices.map((invoice) => <div key={invoice.id} className="flex items-center justify-between gap-3 py-3 text-sm"><span className="text-slate-600 dark:text-slate-300">{invoice.number || invoice.id} · {new Date(invoice.created * 1000).toLocaleDateString(locale)}</span>{invoice.hostedInvoiceUrl ? <a href={invoice.hostedInvoiceUrl} target="_blank" rel="noreferrer" className="font-bold text-indigo-600 hover:text-indigo-700">{isRtl ? 'عرض' : 'View'}</a> : <span className="text-slate-400">{invoice.status || '—'}</span>}</div>)}</div></div>}
 
                 {section === 'referrals' && <div className="space-y-5"><div className={sectionClass}><p className="text-xs font-bold uppercase tracking-[.14em] text-indigo-600">{isRtl ? 'مكافآتك' : 'Your rewards'}</p><h2 className="mt-2 text-2xl font-black text-slate-950 dark:text-white">{referrals?.qualifiedCount || 0} {isRtl ? 'إحالات مؤهلة' : 'qualified referrals'}</h2><p className="mt-1 text-sm text-slate-500">{referrals?.pendingCount || 0} {isRtl ? 'دعوات معلقة' : 'pending invitations'}</p><div className="mt-5 flex gap-2"><input className={`${inputClass} min-w-0`} value={referrals?.referralLink || ''} readOnly /><button type="button" onClick={() => referrals?.referralLink && navigator.clipboard.writeText(referrals.referralLink)} className="min-h-11 shrink-0 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white hover:bg-indigo-700">{isRtl ? 'نسخ' : 'Copy'}</button></div></div><div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'فتح المكافآت' : 'Unlocked benefits'}</h2><div className="mt-4 grid gap-3 sm:grid-cols-3">{[[Boolean(referrals?.rewards.verifiedBadgeUnlocked), isRtl ? 'شارة موثّق' : 'Verified badge'], [Boolean((referrals?.rewards.freeProMonthsEarned || 0) > 0), isRtl ? 'أشهر Pro مجانية' : 'Free Pro months'], [Boolean(referrals?.rewards.customDomainUnlocked), isRtl ? 'نطاق مخصص' : 'Custom domain']].map(([active, label]) => <div key={String(label)} className={`rounded-xl border p-3 text-sm font-semibold ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-slate-200 text-slate-400 dark:border-slate-800'}`}>{active ? '✓ ' : ''}{label}</div>)}</div></div></div>}
 
                 {section === 'referrals' && <form onSubmit={sendReferralInvite} className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'دعوة صديق' : 'Invite a friend'}</h2><p className="mt-1 text-sm text-slate-500">{isRtl ? 'احفظ بريد صديق لمتابعة دعوته.' : 'Save a friend’s email to track the invitation.'}</p><div className="mt-4 flex gap-2"><input className={`${inputClass} min-w-0`} type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="friend@example.com" required /><button type="submit" disabled={inviteBusy} className="min-h-11 shrink-0 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white hover:bg-indigo-600 disabled:opacity-60 dark:bg-white dark:text-slate-950">{inviteBusy ? '…' : (isRtl ? 'حفظ الدعوة' : 'Save invite')}</button></div></form>}
+                {section === 'referrals' && referralInvites.length > 0 && <div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'سجل الدعوات' : 'Invitation history'}</h2><div className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">{referralInvites.map((invite) => <div key={invite.id} className="flex items-center justify-between gap-3 py-3 text-sm"><span className="truncate text-slate-600 dark:text-slate-300">{invite.email || '—'}</span><span className="shrink-0 text-xs font-bold capitalize text-slate-500">{invite.status}</span></div>)}</div>{referrals?.rewardExpiresAt && <p className="mt-4 text-xs text-slate-500">{isRtl ? 'تنتهي مكافأة Pro في ' : 'Pro reward expires '}{new Date(referrals.rewardExpiresAt).toLocaleDateString(locale)}.</p>}</div>}
 
-                {section === 'connected' && <div className="space-y-5"><div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{copy.connected}</h2><p className="mt-1 text-sm text-slate-500">{isRtl ? 'إدارة طرق تسجيل الدخول المرتبطة بحسابك.' : 'Manage the sign-in providers connected to your account.'}</p><div className="mt-5 flex items-center justify-between gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800"><div><p className="text-sm font-bold text-slate-900 dark:text-white">Google</p><p className="mt-1 text-xs text-slate-500">{auth.currentUser?.providerData.some((provider) => provider.providerId === 'google.com') ? (isRtl ? 'مرتبط' : 'Connected') : (isRtl ? 'غير مرتبط' : 'Not connected')}</p></div><button type="button" onClick={toggleGoogleProvider} disabled={providerBusy} className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200">{providerBusy ? '…' : auth.currentUser?.providerData.some((provider) => provider.providerId === 'google.com') ? (isRtl ? 'إزالة' : 'Disconnect') : (isRtl ? 'ربط' : 'Connect')}</button></div><p className="text-xs leading-5 text-slate-500">{isRtl ? 'لن تتمكن من إزالة آخر وسيلة دخول مرتبطة بالحساب.' : 'You cannot remove the last sign-in method from your account.'}</p></div></div>}
+                {section === 'connected' && <div className="space-y-5"><div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{copy.connected}</h2><p className="mt-1 text-sm text-slate-500">{isRtl ? 'إدارة طرق تسجيل الدخول المرتبطة بحسابك.' : 'Manage the sign-in providers connected to your account.'}</p><ProviderRow name="Google" connected={Boolean(auth.currentUser?.providerData.some((provider) => provider.providerId === 'google.com'))} busy={providerBusy} onToggle={toggleGoogleProvider} isRtl={isRtl} /><ProviderRow name="Apple" connected={Boolean(auth.currentUser?.providerData.some((provider) => provider.providerId === 'apple.com'))} busy={providerBusy} onToggle={toggleAppleProvider} isRtl={isRtl} /><p className="mt-3 text-xs leading-5 text-slate-500">{isRtl ? 'لن تتمكن من إزالة آخر وسيلة دخول مرتبطة بالحساب.' : 'You cannot remove the last sign-in method from your account.'}</p></div></div>}
 
                 {section === 'danger' && <div className="space-y-5"><div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{isRtl ? 'نسخة من بياناتك' : 'A copy of your data'}</h2><p className="mt-2 max-w-xl text-sm leading-6 text-slate-600 dark:text-slate-400">{isRtl ? 'نزّل ملف JSON يحتوي على بيانات حسابك وموقعك وإحالاتك.' : 'Download a JSON copy of your account, site, and referral data.'}</p><button type="button" onClick={exportAccountData} disabled={saving} className="mt-5 min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">{isRtl ? 'تنزيل بياناتي' : 'Download my data'}</button></div><div className={`${sectionClass} border-rose-200 dark:border-rose-900`}><h2 className="font-bold text-rose-800 dark:text-rose-300">{isRtl ? 'طلب حذف الحساب' : 'Request account deletion'}</h2><p className="mt-2 max-w-xl text-sm leading-6 text-slate-600 dark:text-slate-400">{isRtl ? 'سنرسل طلبك إلى فريق الدعم للتأكد من الفوترة والبيانات قبل الحذف النهائي.' : 'We record your request so support can confirm billing and data requirements before permanent deletion.'}</p><button type="button" onClick={requestDeletion} disabled={saving || deleteRequested} className="mt-5 min-h-11 rounded-xl border border-rose-300 px-4 text-sm font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-800 dark:text-rose-300">{deleteRequested ? (isRtl ? 'تم تسجيل الطلب' : 'Request recorded') : (isRtl ? 'طلب حذف الحساب' : 'Request deletion')}</button></div></div>}
               </>
@@ -405,4 +458,11 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
 const PreferenceSection: React.FC<{ title: string; description: string; items: Array<[string, string]>; values: Record<string, boolean>; onToggle: (key: string) => void; onSave: () => void; saving: boolean; saveLabel: string }> = ({ title, description, items, values, onToggle, onSave, saving, saveLabel }) => (
   <div className="space-y-5"><div className={sectionClass}><h2 className="font-bold text-slate-950 dark:text-white">{title}</h2><p className="mt-1 text-sm text-slate-500">{description}</p><div className="mt-5 divide-y divide-slate-100 dark:divide-slate-800">{items.map(([key, label]) => <label key={key} className="flex min-h-14 cursor-pointer items-center justify-between gap-4 py-3"><span className="text-sm font-semibold text-slate-700 dark:text-slate-300">{label}</span><input type="checkbox" className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" checked={Boolean(values[key])} onChange={() => onToggle(key)} /></label>)}</div></div><div className="flex justify-end"><button type="button" onClick={onSave} disabled={saving} className="min-h-11 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white hover:bg-indigo-600 disabled:opacity-60 dark:bg-white dark:text-slate-950">{saving ? '…' : saveLabel}</button></div></div>
+);
+
+const ProviderRow: React.FC<{ name: string; connected: boolean; busy: boolean; onToggle: () => void; isRtl: boolean }> = ({ name, connected, busy, onToggle, isRtl }) => (
+  <div className="mt-5 flex items-center justify-between gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+    <div><p className="text-sm font-bold text-slate-900 dark:text-white">{name}</p><p className="mt-1 text-xs text-slate-500">{connected ? (isRtl ? 'مرتبط' : 'Connected') : (isRtl ? 'غير مرتبط' : 'Not connected')}</p></div>
+    <button type="button" onClick={onToggle} disabled={busy} className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200">{busy ? '…' : connected ? (isRtl ? 'إزالة' : 'Disconnect') : (isRtl ? 'ربط' : 'Connect')}</button>
+  </div>
 );

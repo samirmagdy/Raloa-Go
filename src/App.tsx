@@ -1068,6 +1068,7 @@ function MainApp() {
             profile={profile}
             onClose={() => setAccountSettingsOpen(false)}
             onProfileUpdated={refreshProfile}
+            onSelectLocale={handleSelectLocale}
             onManageBilling={handleManageBilling}
             onOpenPricing={() => {
               setAccountSettingsOpen(false);

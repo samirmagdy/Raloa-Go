@@ -16,6 +16,16 @@ paths:
           description: Invalid request
         '401':
           description: Authentication required
+  /api/account/billing/details:
+    get:
+      operationId: get_get_api_account_billing_details
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
   /api/account/delete-request:
     post:
       operationId: post_post_api_account_delete_request
