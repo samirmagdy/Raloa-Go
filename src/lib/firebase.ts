@@ -7,6 +7,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  verifyPasswordResetCode,
+  confirmPasswordReset,
   signOut,
   User
 } from 'firebase/auth';
@@ -52,6 +54,8 @@ export async function signInWithGoogle(): Promise<User> {
   try {
     const result = await signInWithPopup(auth, googleProvider);
     const user = result.user;
+    const existingProfile = await fetchUserProfile(user.uid);
+    await reserveHandle(user, existingProfile?.handle || (user.displayName || user.email?.split('@')[0] || 'creator'));
     await syncUserProfile(user);
     await establishServerSession(user);
     return user;
@@ -301,7 +305,10 @@ export async function signUpWithEmail(email: string, pass: string, handle?: stri
  */
 export async function sendPasswordReset(email: string): Promise<void> {
   try {
-    await sendPasswordResetEmail(auth, email);
+    const actionCodeSettings = typeof window !== 'undefined'
+      ? { url: `${window.location.origin}/reset-password`, handleCodeInApp: true }
+      : undefined;
+    await sendPasswordResetEmail(auth, email, actionCodeSettings);
   } catch (error) {
     const isLocalhost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
     if (!isLocalhost) throw error;
@@ -316,6 +323,12 @@ export async function sendPasswordReset(email: string): Promise<void> {
       throw error;
     }
   }
+}
+
+export async function resetFirebasePassword(oobCode: string, newPassword: string): Promise<void> {
+  if (!oobCode) throw new Error('RESET_CODE_MISSING');
+  await verifyPasswordResetCode(auth, oobCode);
+  await confirmPasswordReset(auth, oobCode, newPassword);
 }
 
 /**

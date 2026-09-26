@@ -11,7 +11,8 @@ import {
   syncUserProfile,
   saveUserMiniSiteToFirestore,
   loadUserMiniSiteFromFirestore,
-  createLocalUser
+  createLocalUser,
+  resetFirebasePassword
 } from '../lib/firebase';
 import { UserProfile, UserMiniSite } from '../types';
 
@@ -23,6 +24,7 @@ interface AuthContextType {
   signInWithEmail: (email: string, pass: string) => Promise<User>;
   signUpWithEmail: (email: string, pass: string, handle?: string) => Promise<User>;
   sendPasswordReset: (email: string) => Promise<void>;
+  resetPassword: (oobCode: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
   updatePlan: (plan: 'free' | 'pro' | 'studio', isYearly?: boolean) => Promise<void>;
   saveMiniSite: (siteData: Partial<UserMiniSite>, siteId?: string) => Promise<void>;
@@ -118,6 +120,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await fbSendPasswordReset(email);
   }, []);
 
+  const resetPassword = useCallback(async (oobCode: string, password: string) => {
+    await resetFirebasePassword(oobCode, password);
+  }, []);
+
   const logOut = useCallback(async () => {
     try {
       await fetch('/api/v1/auth/logout', { method: 'POST' });
@@ -197,6 +203,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInWithEmail,
         signUpWithEmail,
         sendPasswordReset,
+        resetPassword,
         logOut,
         updatePlan,
         saveMiniSite,

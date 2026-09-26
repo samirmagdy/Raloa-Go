@@ -25,6 +25,7 @@ export interface DomainRecord {
   hostname: string;
   userId: string;
   siteId: string;
+  siteHandle?: string;
   verificationToken: string;
   verificationStatus: 'pending' | 'verified' | 'failed';
   sslStatus: 'pending' | 'active' | 'failed';
@@ -177,6 +178,16 @@ export async function createCheckoutSession(
     customerId = customer.id;
     await updateUserBilling(user.uid, { stripeCustomerId: customerId });
   }
+
+  const activeSubscriptions = await stripe.subscriptions.list({
+    customer: customerId,
+    status: 'all',
+    limit: 10
+  });
+  const existingSubscription = activeSubscriptions.data.find((subscription) =>
+    ['active', 'trialing', 'past_due', 'incomplete'].includes(subscription.status)
+  );
+  if (existingSubscription) throw new Error('STRIPE_SUBSCRIPTION_EXISTS');
 
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',

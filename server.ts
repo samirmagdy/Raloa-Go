@@ -579,7 +579,7 @@ async function getAuthenticatedUser(req: Request): Promise<AuthenticatedUser | n
 
   const sessionToken = parseCookies(req.headers.cookie).raloa_session;
   if (process.env.NODE_ENV === 'production' && sessionToken) {
-    return verifySignedSessionCookie(sessionToken);
+    return await verifySignedSessionCookie(sessionToken);
   }
   const session = sessionToken ? ACTIVE_SESSIONS.get(sessionToken) : undefined;
   return session && session.expiresAt > Date.now()
@@ -597,6 +597,18 @@ function normalizeHostname(value: unknown): string | null {
 
 function validEmail(value: string): boolean {
   return value.length <= 320 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
+}
+
+function isSafePublicUrl(value: unknown, allowAnchor = false): value is string {
+  if (typeof value !== 'string' || value.length > 2000) return false;
+  if (allowAnchor && value.startsWith('#')) return /^#[a-zA-Z0-9_-]{1,80}$/.test(value);
+  if (/^(javascript|data|vbscript):/i.test(value) || value.startsWith('//')) return false;
+  try {
+    const parsed = new URL(value);
+    return ['https:', 'http:', 'mailto:', 'tel:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
 }
 
 function hasPaidPlan(profile: DocumentData | undefined): boolean {
@@ -639,18 +651,30 @@ function signSessionPayload(payload: string): string {
   return crypto.createHmac('sha256', AUTH_SESSION_SECRET).update(payload).digest('base64url');
 }
 
-function createSignedSessionCookie(user: AuthenticatedUser, primaryHandle: string): string {
+async function createSignedSessionCookie(user: AuthenticatedUser, primaryHandle: string): Promise<string> {
   if (!AUTH_SESSION_SECRET) throw new Error('AUTH_SESSION_SECRET_NOT_CONFIGURED');
+  const sessionId = crypto.randomUUID();
+  const expiresAt = Date.now() + 604800000;
   const payload = Buffer.from(JSON.stringify({
     uid: user.uid,
     email: user.email || '',
     primary_handle: primaryHandle,
-    expiresAt: Date.now() + 604800000
+    sessionId,
+    expiresAt
   })).toString('base64url');
+  if (isAdminConfigured()) {
+    await adminDb.collection('sessions').doc(sessionId).set({
+      sessionId,
+      userId: user.uid,
+      email: user.email || null,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(expiresAt).toISOString()
+    });
+  }
   return `${payload}.${signSessionPayload(payload)}`;
 }
 
-function verifySignedSessionCookie(token: string): AuthenticatedUser & { primary_handle: string } | null {
+async function verifySignedSessionCookie(token: string): Promise<(AuthenticatedUser & { primary_handle: string; sessionId: string }) | null> {
   if (!AUTH_SESSION_SECRET) return null;
   const [payload, signature] = token.split('.');
   if (!payload || !signature) return null;
@@ -663,13 +687,20 @@ function verifySignedSessionCookie(token: string): AuthenticatedUser & { primary
       uid?: string;
       email?: string;
       primary_handle?: string;
+      sessionId?: string;
       expiresAt?: number;
     };
-    if (!parsed.uid || !parsed.expiresAt || parsed.expiresAt <= Date.now()) return null;
+    if (!parsed.uid || !parsed.sessionId || !parsed.expiresAt || parsed.expiresAt <= Date.now()) return null;
+    if (isAdminConfigured()) {
+      const session = await adminDb.collection('sessions').doc(parsed.sessionId).get();
+      const data = session.data();
+      if (!session.exists || data?.userId !== parsed.uid || Date.parse(String(data.expiresAt || '')) <= Date.now()) return null;
+    }
     return {
       uid: parsed.uid,
       email: parsed.email,
-      primary_handle: parsed.primary_handle || parsed.email?.split('@')[0] || 'creator'
+      primary_handle: parsed.primary_handle || parsed.email?.split('@')[0] || 'creator',
+      sessionId: parsed.sessionId
     };
   } catch {
     return null;
@@ -959,8 +990,9 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
   }
 
   // Active custom domain: rewrite internally to public-render without URL path pollution
+  const siteHandle = 'siteHandle' in mapping ? mapping.siteHandle : undefined;
   const siteId = 'siteId' in mapping ? mapping.siteId : mapping.site_id;
-  req.url = `/@${siteId}`;
+  req.url = `/@${siteHandle || siteId}`;
   next();
 });
 
@@ -1436,12 +1468,19 @@ app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
  * FR-4.2 Logout Execution Endpoint
  * Invalidates session in memory and purges raloa_session cookie.
  */
-app.post('/api/v1/auth/logout', (req: Request, res: Response) => {
+app.post('/api/v1/auth/logout', async (req: Request, res: Response) => {
   const cookies = parseCookies(req.headers.cookie);
   const sessionToken = cookies['raloa_session'];
 
   if (sessionToken) {
-    ACTIVE_SESSIONS.delete(sessionToken);
+    if (process.env.NODE_ENV === 'production') {
+      const session = await verifySignedSessionCookie(sessionToken);
+      if (session?.sessionId && isAdminConfigured()) {
+        await adminDb.collection('sessions').doc(session.sessionId).delete();
+      }
+    } else {
+      ACTIVE_SESSIONS.delete(sessionToken);
+    }
   }
 
   res.setHeader(
@@ -1687,7 +1726,9 @@ app.post('/api/v1/auth/session', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return res.status(401).json({ status: 'error', message: 'Invalid Firebase session' });
   if (process.env.NODE_ENV === 'production') {
-    const cookie = createSignedSessionCookie(user, user.email?.split('@')[0] || 'creator');
+    const profile = isAdminConfigured() ? await adminDb.collection('users').doc(user.uid).get() : null;
+    const primaryHandle = String(profile?.data()?.handle || user.email?.split('@')[0] || 'creator');
+    const cookie = await createSignedSessionCookie(user, primaryHandle);
     res.setHeader('Set-Cookie', `raloa_session=${cookie}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`);
     return res.status(200).json({ status: 'success' });
   }
@@ -1715,15 +1756,30 @@ app.get('/api/account/sessions', async (req: Request, res: Response) => {
   const currentSessionToken = cookies['raloa_session'];
   const userSessions: Array<{ id: string; current: boolean; createdAt: string; userAgent: string; ip: string }> = [];
 
-  for (const [token, session] of ACTIVE_SESSIONS.entries()) {
-    if (session.userId === user.uid || session.email === user.email) {
+  if (process.env.NODE_ENV === 'production' && isAdminConfigured()) {
+    const snapshot = await adminDb.collection('sessions').where('userId', '==', user.uid).limit(50).get();
+    for (const document of snapshot.docs) {
+      const data = document.data();
+      if (Date.parse(String(data.expiresAt || '')) <= Date.now()) continue;
       userSessions.push({
-        id: token.slice(0, 8),
-        current: token === currentSessionToken,
-        createdAt: new Date(session.createdAt).toISOString(),
-        userAgent: String(req.headers['user-agent'] || 'Browser Session'),
-        ip: String(req.ip || '127.0.0.1')
+        id: document.id,
+        current: document.id === (await verifySignedSessionCookie(currentSessionToken || ''))?.sessionId,
+        createdAt: String(data.createdAt || new Date().toISOString()),
+        userAgent: String(data.userAgent || 'Browser Session'),
+        ip: String(data.ip || 'Unknown')
       });
+    }
+  } else {
+    for (const [token, session] of ACTIVE_SESSIONS.entries()) {
+      if (session.userId === user.uid || session.email === user.email) {
+        userSessions.push({
+          id: token,
+          current: token === currentSessionToken,
+          createdAt: new Date(session.createdAt).toISOString(),
+          userAgent: String(req.headers['user-agent'] || 'Browser Session'),
+          ip: String(req.ip || '127.0.0.1')
+        });
+      }
     }
   }
 
@@ -1746,9 +1802,15 @@ app.delete('/api/account/sessions/:sessionId', async (req: Request, res: Respons
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
 
   const { sessionId } = req.params;
-  for (const [token, session] of ACTIVE_SESSIONS.entries()) {
-    if ((session.userId === user.uid || session.email === user.email) && token.startsWith(sessionId)) {
-      ACTIVE_SESSIONS.delete(token);
+  if (process.env.NODE_ENV === 'production' && isAdminConfigured()) {
+    const sessionRef = adminDb.collection('sessions').doc(sessionId);
+    const snapshot = await sessionRef.get();
+    if (snapshot.exists && snapshot.data()?.userId === user.uid) await sessionRef.delete();
+  } else {
+    for (const [token, session] of ACTIVE_SESSIONS.entries()) {
+      if ((session.userId === user.uid || session.email === user.email) && token === sessionId) {
+        ACTIVE_SESSIONS.delete(token);
+      }
     }
   }
   return res.status(200).json({ status: 'revoked' });
@@ -1758,10 +1820,16 @@ app.post('/api/account/sessions/revoke-all', async (req: Request, res: Response)
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
 
-  // Revoke all in-memory sessions for this user
-  for (const [token, session] of ACTIVE_SESSIONS.entries()) {
-    if (session.userId === user.uid || session.email === user.email) {
-      ACTIVE_SESSIONS.delete(token);
+  if (process.env.NODE_ENV === 'production' && isAdminConfigured()) {
+    const snapshot = await adminDb.collection('sessions').where('userId', '==', user.uid).limit(100).get();
+    const batch = adminDb.batch();
+    snapshot.docs.forEach((document) => batch.delete(document.ref));
+    await batch.commit();
+  } else {
+    for (const [token, session] of ACTIVE_SESSIONS.entries()) {
+      if (session.userId === user.uid || session.email === user.email) {
+        ACTIVE_SESSIONS.delete(token);
+      }
     }
   }
 
@@ -2180,6 +2248,16 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
   if (!Array.isArray(merged.links) || merged.links.length > (profileData?.plan === 'free' ? 10 : 100)) {
     return apiError(res, 403, 'PLAN_LIMIT_REACHED', 'This plan does not allow this many links.');
   }
+  if (merged.links.some((link) => !link || typeof link !== 'object'
+    || typeof link.id !== 'string' || link.id.length > 200
+    || typeof link.title !== 'string' || link.title.length > 200
+    || !isSafePublicUrl(link.url, true))) {
+    return apiError(res, 400, 'INVALID_LINKS', 'Every link must have valid text and a safe public URL.');
+  }
+  if (merged.socials !== undefined && (!Array.isArray(merged.socials) || merged.socials.some((social) =>
+    !social || typeof social.platform !== 'string' || social.platform.length > 40 || !isSafePublicUrl(social.url)))) {
+    return apiError(res, 400, 'INVALID_SOCIAL_LINKS', 'Every social link must use a safe public URL.');
+  }
   const allowedKeys = new Set(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'updatedAt']);
   const sanitized = Object.fromEntries(Object.entries(merged).filter(([key]) => allowedKeys.has(key)));
   if (profileData?.plan === 'free' && (sanitized.customDomain || sanitized.hidePoweredBy === true || sanitized.ga4Id || sanitized.metaPixelId || sanitized.webhookUrl)) {
@@ -2334,6 +2412,7 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
   const hostname = normalizeHostname(req.body?.hostname);
   const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : 'default';
   if (!hostname) return res.status(400).json({ error: 'A valid customer-owned hostname is required' });
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(siteId)) return res.status(400).json({ error: 'Invalid site ID' });
 
   const userProfile = await adminDb.collection('users').doc(user.uid).get();
   if (!hasPaidPlan(userProfile.data())) return res.status(403).json({ error: 'Custom domains require a paid plan' });
@@ -2341,6 +2420,8 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
   const siteSnapshot = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
   if (!siteSnapshot.exists) return res.status(404).json({ error: 'Site not found' });
   if (siteSnapshot.data()?.isPublished !== true) return res.status(409).json({ error: 'Publish the site before attaching a domain' });
+  const siteHandle = String(siteSnapshot.data()?.username || userProfile.data()?.handle || '').trim().toLowerCase();
+  if (!/^[a-z0-9_-]{3,30}$/.test(siteHandle)) return res.status(409).json({ error: 'Site handle is not configured' });
 
   const existing = await findDomainByHostname(hostname);
   if (existing && existing.userId !== user.uid) return res.status(409).json({ error: 'Domain is already attached' });
@@ -2361,6 +2442,7 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
           hostname,
           userId: user.uid,
           siteId,
+          siteHandle,
           verificationStatus: 'pending',
           sslStatus: 'pending',
           createdAt: now,
@@ -2374,7 +2456,7 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
         method: 'POST',
         body: JSON.stringify({
           hostname,
-          custom_metadata: { raloaDomainId: domainId, userId: user.uid, siteId },
+          custom_metadata: { raloaDomainId: domainId, userId: user.uid, siteId, siteHandle },
           ssl: { method: 'http', type: 'dv', settings: { http2: 'on', min_tls_version: '1.2' } }
         })
       }
@@ -2385,6 +2467,7 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
       hostname,
       userId: user.uid,
       siteId,
+      siteHandle,
       verificationToken: crypto.randomBytes(24).toString('hex'),
       verificationStatus: 'pending',
       sslStatus: cloudflare?.ssl?.status === 'active' ? 'active' : 'pending',

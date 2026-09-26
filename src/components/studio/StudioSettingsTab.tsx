@@ -104,7 +104,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
         const provision = await fetch('/api/domains/provision', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ hostname: customDomain, siteId: handle || 'default' })
+          body: JSON.stringify({ hostname: customDomain, siteId: 'default' })
         });
         payload = await provision.json();
         if (!provision.ok) throw new Error(payload.error || 'Could not provision domain');

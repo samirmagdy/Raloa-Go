@@ -24,7 +24,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onSuccess
 }) => {
-  const { signInWithGoogle, signInWithEmail, signUpWithEmail, sendPasswordReset } = useAuth();
+  const { signInWithGoogle, signInWithEmail, signUpWithEmail, sendPasswordReset, resetPassword } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot' | 'reset'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -154,25 +154,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           setLoading(false);
           return;
         }
-        const token = resetToken || new URLSearchParams(window.location.search).get('token') || '';
-        const resp = await fetch('/api/v1/auth/reset-password', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token, new_password: password })
-        });
-        if (resp.ok) {
-          setSubmitted(true);
-          setTimeout(() => {
-            setMode('signin');
-            setSubmitted(false);
-          }, 1500);
-          return;
-        } else {
-          const data = await resp.json();
-          setError(data.message || (isRtl ? 'رمز إعادة التعيين غير صالح أو منتهي الصلاحية.' : 'Invalid or expired password reset token.'));
-          setLoading(false);
-          return;
-        }
+        const params = new URLSearchParams(window.location.search);
+        const oobCode = params.get('oobCode') || resetToken;
+        await resetPassword(oobCode, password);
+        setSubmitted(true);
+        setTimeout(() => {
+          setMode('signin');
+          setSubmitted(false);
+        }, 1500);
+        return;
       }
 
       if (!password) {

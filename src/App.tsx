@@ -110,7 +110,7 @@ function resolveInitialRoute(): {
   if (path === '/forgot-password') {
     return { route: 'home', handle: '', attempted: '', authModal: { open: true, mode: 'forgot' } };
   }
-  if (path === '/reset-password') {
+  if (path === '/reset-password' || searchParams.get('mode') === 'resetPassword') {
     return { route: 'home', handle: '', attempted: '', authModal: { open: true, mode: 'reset' } };
   }
   if (path === '/features' || path === '/pricing' || path === '/guides' || path === '/about' || path === '/contact') {
@@ -1028,7 +1028,7 @@ function MainApp() {
           initialMode={authModal.mode}
           initialHandle={studioUsername}
           initialTemplate={studioTemplate?.id}
-          resetToken={typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('token') || '' : ''}
+          resetToken={typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oobCode') || new URLSearchParams(window.location.search).get('token') || '' : ''}
           locale={locale}
           onClose={() => {
             setAuthModal({ open: false, mode: 'signin' });
