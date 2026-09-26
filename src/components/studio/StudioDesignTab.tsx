@@ -146,6 +146,7 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
   onThemeModeChange,
   accentColor,
   onAccentColorChange,
+  surfaceColor,
   onSurfaceColorChange,
   cardRadius,
   onCardRadiusChange,
@@ -209,8 +210,10 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
           {VISUAL_PRESETS.map((p) => {
             const isPresetActive =
               accentColor.toLowerCase() === p.accentColor.toLowerCase() &&
+              surfaceColor.toLowerCase() === p.surfaceColor.toLowerCase() &&
               bgStyle === p.bgStyle &&
-              cardRadius === p.radius;
+              cardRadius === p.radius &&
+              borderStyle === p.borderStyle;
 
             return (
               <button
@@ -369,6 +372,42 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
                   }`}
                   style={{ backgroundColor: hex }}
                   title={hex}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Surface / Card Color */}
+        <div>
+          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+            {isRtl ? 'لون سطح البطاقات (Surface / Card Color)' : 'Surface / Card Color'}
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={surfaceColor.startsWith('#') ? surfaceColor : '#FFFFFF'}
+              onChange={(e) => onSurfaceColorChange(e.target.value)}
+              className="w-10 h-10 rounded-xl cursor-pointer border border-slate-300 dark:border-slate-700 p-0.5 shrink-0"
+            />
+            <div className="flex flex-wrap gap-1.5 flex-1">
+              {[
+                { hex: '#FFFFFF', label: 'White' },
+                { hex: '#F8FAFC', label: 'Slate 50' },
+                { hex: '#FFFBEB', label: 'Amber 50' },
+                { hex: '#1E293B', label: 'Slate 800' },
+                { hex: '#0F172A', label: 'Slate 900' },
+                { hex: 'rgba(255, 255, 255, 0.75)', label: 'Frost Glass' }
+              ].map((swatch) => (
+                <button
+                  key={swatch.hex}
+                  type="button"
+                  onClick={() => onSurfaceColorChange(swatch.hex)}
+                  className={`w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-700 transition-transform hover:scale-110 cursor-pointer ${
+                    surfaceColor.toLowerCase() === swatch.hex.toLowerCase() ? 'ring-2 ring-offset-2 ring-indigo-600 scale-105' : ''
+                  }`}
+                  style={{ backgroundColor: swatch.hex }}
+                  title={swatch.label}
                 />
               ))}
             </div>

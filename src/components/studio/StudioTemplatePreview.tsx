@@ -110,7 +110,7 @@ export const StudioTemplatePreview: React.FC<StudioTemplatePreviewProps> = ({
             </span>
           </div>
           <PhoneMockup
-            template={template}
+            template={effectiveTemplate}
             isRtl={isRtl}
             interactive={true}
             backgroundStyle={bgStyle}

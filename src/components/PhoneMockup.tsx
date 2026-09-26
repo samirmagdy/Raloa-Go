@@ -106,6 +106,49 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
     };
   };
 
+  const getCardContrast = () => {
+    if (!surfaceColor) {
+      return {
+        isCustom: false,
+        textColor: undefined,
+        subtextColor: undefined,
+        chevronClass: themeConfig.mode === 'dark' ? 'bg-white/10 text-white' : 'bg-black/5 text-slate-700',
+        iconBgClass: themeConfig.cardIconBg,
+        iconColorStyle: { color: effectiveThemeColor }
+      };
+    }
+
+    let isLightSurface = !isDark;
+    if (surfaceColor.startsWith('#')) {
+      const hex = surfaceColor.replace('#', '');
+      if (hex.length === 6) {
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        isLightSurface = luminance >= 0.5;
+      }
+    } else if (surfaceColor.startsWith('rgba')) {
+      const parts = surfaceColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      if (parts) {
+        const r = parseInt(parts[1], 10);
+        const g = parseInt(parts[2], 10);
+        const b = parseInt(parts[3], 10);
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        isLightSurface = luminance >= 0.5;
+      }
+    }
+
+    return {
+      isCustom: true,
+      textColor: isLightSurface ? '#0F172A' : '#FFFFFF',
+      subtextColor: isLightSurface ? '#475569' : '#94A3B8',
+      chevronClass: isLightSurface ? 'bg-black/5 text-slate-700' : 'bg-white/10 text-white',
+      iconBgClass: isLightSurface ? 'bg-black/5' : 'bg-white/10',
+      iconColorStyle: { color: effectiveThemeColor }
+    };
+  };
+
   const getCardStyle = (): React.CSSProperties => {
     const customBorder = getBorderStyles();
     const style: React.CSSProperties = {
@@ -114,20 +157,13 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
 
     if (surfaceColor) {
       style.backgroundColor = surfaceColor;
-      // Derive legible text color if a custom surface color was set
-      if (surfaceColor.startsWith('#')) {
-        const hex = surfaceColor.replace('#', '');
-        if (hex.length === 6) {
-          const r = parseInt(hex.substring(0, 2), 16);
-          const g = parseInt(hex.substring(2, 4), 16);
-          const b = parseInt(hex.substring(4, 6), 16);
-          const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-          if (luminance < 0.5) {
-            style.color = '#FFFFFF';
-          } else {
-            style.color = '#0F172A';
-          }
-        }
+      if (surfaceColor.includes('rgba')) {
+        style.backdropFilter = 'blur(16px)';
+        (style as any).WebkitBackdropFilter = 'blur(16px)';
+      }
+      const contrast = getCardContrast();
+      if (contrast.textColor) {
+        style.color = contrast.textColor;
       }
     }
 
@@ -288,6 +324,8 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                 const radiusClass = getRadiusClass();
                 const shadowClass = getShadowClass();
 
+                const contrast = getCardContrast();
+
                 return (
                   <button
                     key={link.id}
@@ -304,7 +342,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                   >
                     {link.thumbnail ? (
                       <div
-                        className={`relative w-11 h-11 ${cardRadius === 'sharp' ? 'rounded-none' : cardRadius === 'pill' ? 'rounded-full' : 'rounded-xl'} overflow-hidden shrink-0 border border-black/10 dark:border-white/10 ${themeConfig.cardIconBg} ${themeConfig.cardIconColor}`}
+                        className={`relative w-11 h-11 ${cardRadius === 'sharp' ? 'rounded-none' : cardRadius === 'pill' ? 'rounded-full' : 'rounded-xl'} overflow-hidden shrink-0 border border-black/10 dark:border-white/10 ${contrast.iconBgClass} ${themeConfig.cardIconColor}`}
                       >
                         <div className="absolute inset-0 flex items-center justify-center">
                           <PremiumMark className="w-5 h-5" style={{ color: effectiveThemeColor }} />
@@ -317,8 +355,8 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                       </div>
                     ) : (
                       <div
-                        className={`w-11 h-11 ${cardRadius === 'sharp' ? 'rounded-none' : cardRadius === 'pill' ? 'rounded-full' : 'rounded-xl'} flex items-center justify-center shrink-0 ${themeConfig.cardIconBg} ${themeConfig.cardIconColor}`}
-                        style={{ color: effectiveThemeColor }}
+                        className={`w-11 h-11 ${cardRadius === 'sharp' ? 'rounded-none' : cardRadius === 'pill' ? 'rounded-full' : 'rounded-xl'} flex items-center justify-center shrink-0 ${contrast.iconBgClass} ${themeConfig.cardIconColor}`}
+                        style={contrast.iconColorStyle}
                       >
                         <PremiumMark className="w-5 h-5" />
                       </div>
@@ -330,6 +368,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                           className={`font-bold text-[13px] truncate transition-colors ${
                             !surfaceColor ? themeConfig.cardText : ''
                           }`}
+                          style={contrast.textColor ? { color: contrast.textColor } : undefined}
                         >
                           {isRtl ? link.titleAr : link.title}
                         </span>
@@ -337,8 +376,9 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                       {(link.subtitle || link.subtitleAr) && (
                         <p
                           className={`text-[10px] truncate mt-0.5 ${
-                            !surfaceColor ? themeConfig.cardSubtext : 'opacity-70'
+                            !surfaceColor ? themeConfig.cardSubtext : ''
                           }`}
+                          style={contrast.subtextColor ? { color: contrast.subtextColor } : undefined}
                         >
                           {isRtl ? link.subtitleAr : link.subtitle}
                         </p>
@@ -347,9 +387,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
 
                     <div
                       className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-colors rtl:rotate-180 opacity-70 group-hover:opacity-100 ${
-                        themeConfig.mode === 'dark'
-                          ? 'bg-white/10 text-white'
-                          : 'bg-black/5 text-slate-700'
+                        contrast.chevronClass
                       }`}
                     >
                       <ChevronRight className="w-4 h-4" />
