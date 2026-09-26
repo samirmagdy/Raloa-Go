@@ -100,14 +100,18 @@ paths:
       responses:
         '200':
           description: Successful response
+        '400':
+          description: Invalid request
         '401':
           description: Authentication required
-  /api/account/sessions/{sessionId}:
+  /api/account/sessions/*:
     delete:
       operationId: delete_delete_api_account_sessions_sessionid
       responses:
         '200':
           description: Successful response
+        '400':
+          description: Invalid request
         '401':
           description: Authentication required
   /api/account/sessions/revoke-all:
@@ -116,6 +120,8 @@ paths:
       responses:
         '200':
           description: Successful response
+        '400':
+          description: Invalid request
         '401':
           description: Authentication required
   /api/analytics/platform:
