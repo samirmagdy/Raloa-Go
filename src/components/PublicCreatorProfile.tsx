@@ -10,7 +10,7 @@ import {
   Check
 } from 'lucide-react';
 import { TemplateItem, Locale, MediaGalleryItem } from '../types';
-import { resolveTemplateTheme, getTemplateBackgroundContainerProperties } from '../utils/templateThemes';
+import { resolveTemplateTheme, getTemplateBackgroundContainerProperties } from '../shared/rendering';
 import { PlatformIcon, PlatformIconName } from './brand/PlatformIcon';
 import { RaloaLogo } from './brand/RaloaLogo';
 import { recordLinkClick, recordPageView } from '../lib/firebase';
@@ -19,8 +19,7 @@ import { SafeImage } from './SafeImage';
 import { BookingSchedulerModal } from './modals/BookingSchedulerModal';
 import { ProductStoreModal } from './modals/ProductStoreModal';
 import { PublicBlockRenderer } from './PublicBlockRenderer';
-import { designCardGap, designCardStyle, designContentWidth, designFontFamily, designLayoutStyle, designTokensFromSite, designTypographyStyle } from '../utils/designTokens';
-import { normalizeSiteContent } from '../lib/contentSchema';
+import { designCardGap, designCardStyle, designContentWidth, designFontFamily, designLayoutStyle, designTokensFromSite, designTypographyStyle, normalizeSiteContent } from '../shared/rendering';
 import { publicSiteUrl } from '../utils/publicUrl';
 import { useModalA11y } from '../hooks/useModalA11y';
 

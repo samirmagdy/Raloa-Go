@@ -13,6 +13,13 @@ The shared boundary is `src/shared/`. It contains framework-neutral exports for:
 - public page contracts;
 - a base-URL-aware public API client for browser or Next server usage.
 
+`src/shared/rendering.ts` is the rendering package facade. It owns the imports
+for block types, normalized site content, validation, design-token resolution,
+and theme/background resolution. `PublicCreatorProfile`,
+`PublicBlockRenderer`, `StudioTemplatePreview`, and `PhoneMockup` consume that
+facade so preview and published rendering cannot silently drift to different
+normalization or theme rules.
+
 It must not import Firebase Admin, Express, Studio contexts, browser-only
 authentication state, or server repositories. Studio may continue importing the
 existing modules directly while new code uses the shared facade. A future Next

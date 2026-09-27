@@ -10,8 +10,7 @@ import { PlatformIcon, PlatformIconName } from './brand/PlatformIcon';
 import { TemplateItem, BackgroundStyle } from '../types';
 import { MediaGallery } from './MediaGallery';
 import { RaloaMark } from './brand/RaloaLogo';
-import { resolveTemplateTheme, getTemplateBackgroundContainerProperties } from '../utils/templateThemes';
-import { designCardGap, designCardStyle, designFontFamily, designTokensFromSite, designTypographyStyle, type DesignTokens } from '../utils/designTokens';
+import { resolveTemplateTheme, getTemplateBackgroundContainerProperties, designCardGap, designCardStyle, designFontFamily, designTokensFromSite, designTypographyStyle, type DesignTokens } from '../shared/rendering';
 
 interface PhoneMockupProps {
   template: TemplateItem;

@@ -10,7 +10,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { Locale, TemplateItem, BackgroundStyle, BookingConfig, ProfileSocialLink, UserMiniSite, UserMiniSiteSummary } from '../../types';
-import { DEFAULT_DESIGN_TOKENS, DesignTokens, normalizeDesignTokens } from '../../utils/designTokens';
+import { DEFAULT_DESIGN_TOKENS, DesignTokens, normalizeDesignTokens, normalizeSiteContent, validateSiteContent } from '../../shared/rendering';
 import { templatesData } from '../../data/content';
 import { useAuth } from '../../hooks/useAuth';
 import { useHistoryState } from '../../hooks/useHistoryState';
@@ -31,7 +31,6 @@ import { StudioBlockItem } from '../studio/SortableBlockList';
 import { getPlanCapabilities, isPremiumTemplate } from '../../lib/planCapabilities';
 import { auth, hasAuthenticatedSession } from '../../lib/firebase';
 import { normalizeSiteSlug } from '../../lib/siteSlug';
-import { normalizeSiteContent, validateSiteContent } from '../../lib/contentSchema';
 import { publicSiteUrl } from '../../utils/publicUrl';
 
 const StudioAnalyticsTab = lazy(() => import('../studio/StudioAnalyticsTab').then((module) => ({ default: module.StudioAnalyticsTab })));

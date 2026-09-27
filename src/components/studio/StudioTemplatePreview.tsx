@@ -3,8 +3,7 @@ import { Smartphone, Share2 } from 'lucide-react';
 import { Locale, TemplateItem, BackgroundStyle } from '../../types';
 import { PhoneMockup } from '../PhoneMockup';
 import { SocialPreviewGenerator } from './SocialPreviewGenerator';
-import { getTemplateBackgroundContainerProperties } from '../../utils/templateThemes';
-import { designTokensFromSite, type DesignTokens } from '../../utils/designTokens';
+import { getTemplateBackgroundContainerProperties, designTokensFromSite, type DesignTokens } from '../../shared/rendering';
 
 export interface StudioTemplatePreviewProps {
   template: TemplateItem;

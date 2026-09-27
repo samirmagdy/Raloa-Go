@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { AlertTriangle, ArrowLeft, ArrowRight, Calendar, Mail, MessageSquare, Music2, Play, ShoppingBag } from 'lucide-react';
-import type { MediaGalleryItem, TemplateItem, TemplateThemeConfig } from '../types';
-import type { DesignTokens } from '../utils/designTokens';
-import { designCardStyle, designTypographyStyle } from '../utils/designTokens';
+import type { MediaGalleryItem, TemplateItem, TemplateThemeConfig, DesignTokens } from '../shared/rendering';
+import { designCardStyle, designTypographyStyle } from '../shared/rendering';
 import { MediaGallery } from './MediaGallery';
 import { SafeImage } from './SafeImage';
 
