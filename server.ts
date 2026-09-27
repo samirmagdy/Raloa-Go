@@ -606,6 +606,101 @@ function validEmail(value: string): boolean {
   return value.length <= 320 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
 }
 
+type AnalyticsDimensions = {
+  eventId: string;
+  visitorIdHash: string;
+  referrerHost: string | null;
+  country: string | null;
+  device: 'mobile' | 'tablet' | 'desktop' | 'unknown';
+  browser: string;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmTerm: string | null;
+  utmContent: string | null;
+};
+
+function boundedAnalyticsValue(value: unknown, maxLength = 120): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized ? normalized.slice(0, maxLength) : null;
+}
+
+function analyticsBrowser(userAgent: string): string {
+  if (/Edg\//i.test(userAgent)) return 'Edge';
+  if (/OPR\//i.test(userAgent)) return 'Opera';
+  if (/SamsungBrowser/i.test(userAgent)) return 'Samsung Internet';
+  if (/Firefox\//i.test(userAgent)) return 'Firefox';
+  if (/CriOS\//i.test(userAgent) || /Chrome\//i.test(userAgent)) return 'Chrome';
+  if (/Safari\//i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent)) return 'Safari';
+  if (/MSIE|Trident\//i.test(userAgent)) return 'Internet Explorer';
+  return userAgent ? 'Other' : 'Unknown';
+}
+
+function analyticsDevice(userAgent: string): AnalyticsDimensions['device'] {
+  if (/iPad|Tablet|Android(?!.*Mobile)/i.test(userAgent)) return 'tablet';
+  if (/Mobile|iPhone|Android/i.test(userAgent)) return 'mobile';
+  return userAgent ? 'desktop' : 'unknown';
+}
+
+function analyticsReferrerHost(value: unknown): string | null {
+  const raw = boundedAnalyticsValue(value, 200);
+  if (!raw) return null;
+  try { return new URL(raw.includes('://') ? raw : `https://${raw}`).hostname.toLowerCase().slice(0, 120); } catch { return null; }
+}
+
+function analyticsDimensions(req: Request, body: Record<string, unknown>): AnalyticsDimensions {
+  const userAgent = String(req.headers['user-agent'] || body.userAgent || '').slice(0, 512);
+  const visitorId = boundedAnalyticsValue(body.visitorId, 200) || `${req.ip || 'unknown'}:${userAgent}`;
+  const salt = process.env.ANALYTICS_HASH_SALT || AUTH_SESSION_SECRET || 'raloa-analytics-development-salt';
+  const eventId = boundedAnalyticsValue(body.eventId, 128) || crypto.randomUUID();
+  return {
+    eventId,
+    visitorIdHash: crypto.createHash('sha256').update(`${salt}:${visitorId}`).digest('hex'),
+    referrerHost: analyticsReferrerHost(body.referrer || req.headers.referer),
+    country: boundedAnalyticsValue(req.headers['cf-ipcountry'] || req.headers['x-vercel-ip-country'] || body.country, 2)?.toUpperCase() || null,
+    device: analyticsDevice(userAgent),
+    browser: analyticsBrowser(userAgent),
+    utmSource: boundedAnalyticsValue(body.utm_source),
+    utmMedium: boundedAnalyticsValue(body.utm_medium),
+    utmCampaign: boundedAnalyticsValue(body.utm_campaign),
+    utmTerm: boundedAnalyticsValue(body.utm_term),
+    utmContent: boundedAnalyticsValue(body.utm_content)
+  };
+}
+
+async function persistAnalyticsEvent(collection: 'page_views' | 'link_clicks', siteOwnerId: string, siteHandle: string, dimensions: AnalyticsDimensions, extra: Record<string, unknown>): Promise<boolean> {
+  const eventKey = analyticsEventDocumentId(collection, siteOwnerId, dimensions.eventId);
+  const reference = adminDb.collection(collection).doc(eventKey);
+  try {
+    await reference.create({
+      eventId: dimensions.eventId,
+      siteOwnerId,
+      siteHandle,
+      visitorIdHash: dimensions.visitorIdHash,
+      referrerHost: dimensions.referrerHost,
+      country: dimensions.country,
+      device: dimensions.device,
+      browser: dimensions.browser,
+      utmSource: dimensions.utmSource,
+      utmMedium: dimensions.utmMedium,
+      utmCampaign: dimensions.utmCampaign,
+      utmTerm: dimensions.utmTerm,
+      utmContent: dimensions.utmContent,
+      timestamp: new Date().toISOString(),
+      ...extra
+    });
+    return true;
+  } catch (error: any) {
+    if (error?.code === 6 || error?.code === 'already-exists') return false;
+    throw error;
+  }
+}
+
+export function analyticsEventDocumentId(collection: 'page_views' | 'link_clicks', siteOwnerId: string, eventId: string): string {
+  return crypto.createHash('sha256').update(`${collection}:${siteOwnerId}:${eventId}`).digest('hex');
+}
+
 const PRODUCT_CURRENCIES = new Set(['usd', 'eur', 'gbp', 'sar', 'aed', 'cad', 'aud']);
 
 function validProductImage(value: unknown): value is string {
@@ -1546,7 +1641,6 @@ app.post('/api/v1/public/contact', async (req: Request, res: Response) => {
 
 app.post('/api/v1/public/telemetry/page-view', async (req: Request, res: Response) => {
   const pathValue = typeof req.body?.path === 'string' ? req.body.path.trim() : '';
-  const userAgent = typeof req.body?.userAgent === 'string' ? req.body.userAgent.slice(0, 512) : '';
   if (!pathValue || pathValue.length > 500 || !pathValue.startsWith('/')) {
     return apiError(res, 400, 'INVALID_TELEMETRY', 'A valid path is required.');
   }
@@ -1560,7 +1654,11 @@ app.post('/api/v1/public/telemetry/page-view', async (req: Request, res: Respons
     if (handle) {
       const site = await getPublishedSiteByHandle(handle);
       if (site && site.analyticsCollection === false) return res.status(202).json({ status: 'accepted' });
-      if (site) await adminDb.collection('page_views').add({ path: pathValue, siteOwnerId: site.userId, siteHandle: handle, userAgent, timestamp: new Date().toISOString() });
+      if (site) {
+        const dimensions = analyticsDimensions(req, req.body && typeof req.body === 'object' ? req.body : {});
+        const accepted = await persistAnalyticsEvent('page_views', String(site.userId), handle, dimensions, { path: pathValue });
+        return res.status(202).json({ status: 'accepted', deduplicated: !accepted });
+      }
       return res.status(202).json({ status: 'accepted' });
     }
   }
@@ -1589,7 +1687,9 @@ app.post('/api/v1/public/telemetry/link-click', async (req: Request, res: Respon
       ? socials.some((social) => `soc_${String(social.platform || '')}` === linkId && social.url === url)
       : links.some((link) => link.id === linkId && link.url === url);
     if (!validTarget) return res.status(202).json({ status: 'accepted' });
-    await adminDb.collection('link_clicks').add({ linkId, url, siteHandle, siteOwnerId: site.userId, timestamp: new Date().toISOString() });
+    const dimensions = analyticsDimensions(req, req.body && typeof req.body === 'object' ? req.body : {});
+    const accepted = await persistAnalyticsEvent('link_clicks', String(site.userId), siteHandle, dimensions, { linkId, url });
+    return res.status(202).json({ status: 'accepted', deduplicated: !accepted });
   }
   return res.status(202).json({ status: 'accepted' });
 });
@@ -2499,39 +2599,110 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured()) return apiError(res, 503, 'ANALYTICS_UNAVAILABLE', 'Platform analytics are temporarily unavailable.');
   try {
+    const requestedFrom = typeof req.query.from === 'string' ? req.query.from : '';
+    const requestedTo = typeof req.query.to === 'string' ? req.query.to : '';
+    const validDate = (value: string) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const parsed = new Date(`${value}T00:00:00.000Z`);
+      return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+    };
     const range = req.query.days === '7' ? 7 : req.query.days === 'all' ? null : 30;
-    const cutoff = range ? Date.now() - range * 24 * 60 * 60 * 1000 : 0;
+    const toDate = validDate(requestedTo) ? requestedTo : new Date().toISOString().slice(0, 10);
+    const defaultFrom = range === null ? null : new Date(Date.parse(`${toDate}T00:00:00.000Z`) - ((range || 30) - 1) * 86400000).toISOString().slice(0, 10);
+    const fromDate = validDate(requestedFrom) ? requestedFrom : defaultFrom;
+    if ((requestedFrom && !validDate(requestedFrom)) || (requestedTo && !validDate(requestedTo)) || (fromDate && fromDate > toDate)) return apiError(res, 400, 'INVALID_ANALYTICS_RANGE', 'Use a valid inclusive from/to date range.');
+    const cutoff = fromDate ? Date.parse(`${fromDate}T00:00:00.000Z`) : 0;
+    const endExclusive = Date.parse(`${toDate}T00:00:00.000Z`) + 86400000;
     const [views, clicks, sites] = await Promise.all([
-      adminDb.collection('page_views').where('siteOwnerId', '==', user.uid).limit(1000).get(),
-      adminDb.collection('link_clicks').where('siteOwnerId', '==', user.uid).limit(1000).get(),
+      adminDb.collection('page_views').where('siteOwnerId', '==', user.uid).limit(10000).get(),
+      adminDb.collection('link_clicks').where('siteOwnerId', '==', user.uid).limit(10000).get(),
       adminDb.collection('users').doc(user.uid).collection('sites').where('isPublished', '==', true).limit(1000).get()
     ]);
-    const timeline = new Map<string, { date: string; views: number; clicks: number }>();
+    const siteLinks = new Map<string, { title: string; url: string; blockType: string }>();
+    sites.docs.forEach((siteDocument) => {
+      const links = Array.isArray(siteDocument.data().links) ? siteDocument.data().links : [];
+      links.forEach((link: any) => {
+        if (typeof link?.id === 'string') siteLinks.set(link.id, { title: String(link.title || link.id), url: String(link.url || ''), blockType: String(link.type || 'link') });
+      });
+    });
+    const timeline = new Map<string, { date: string; views: number; clicks: number; visitors: Set<string> }>();
+    const uniqueVisitors = new Set<string>();
+    const linkCounts = new Map<string, { linkId: string; title: string; url: string; blockType: string; clicks: number }>();
+    const utmCounts = new Map<string, { source: string; medium: string; campaign: string; views: number; clicks: number; visitors: Set<string> }>();
+    const dimensionCounts = {
+      referrers: new Map<string, number>(),
+      devices: new Map<string, number>(),
+      browsers: new Map<string, number>(),
+      countries: new Map<string, number>()
+    };
+    const eventTimestamp = (data: Record<string, any>) => {
+      if (typeof data.timestamp === 'string') return Date.parse(data.timestamp);
+      if (data.timestamp && typeof data.timestamp.toDate === 'function') return data.timestamp.toDate().getTime();
+      return Number(data.timestamp || 0);
+    };
+    const inRange = (timestamp: number) => Number.isFinite(timestamp) && timestamp >= cutoff && timestamp < endExclusive;
+    const increment = (map: Map<string, number>, key: string | null) => { if (key) map.set(key, (map.get(key) || 0) + 1); };
+    const addUtm = (data: Record<string, any>, type: 'views' | 'clicks') => {
+      const source = String(data.utmSource || '(direct)');
+      const medium = String(data.utmMedium || '(none)');
+      const campaign = String(data.utmCampaign || '(none)');
+      const key = `${source}\u0000${medium}\u0000${campaign}`;
+      const current = utmCounts.get(key) || { source, medium, campaign, views: 0, clicks: 0, visitors: new Set<string>() };
+      current[type] += 1;
+      if (data.visitorIdHash) current.visitors.add(String(data.visitorIdHash));
+      utmCounts.set(key, current);
+    };
     for (const document of views.docs) {
-      const timestamp = Date.parse(String(document.data().timestamp || ''));
-      if (!Number.isFinite(timestamp) || timestamp < cutoff) continue;
+      const data = document.data() as Record<string, any>;
+      const timestamp = eventTimestamp(data);
+      if (!inRange(timestamp)) continue;
       const date = new Date(timestamp).toISOString().slice(0, 10);
-      const current = timeline.get(date) || { date, views: 0, clicks: 0 };
+      const current = timeline.get(date) || { date, views: 0, clicks: 0, visitors: new Set<string>() };
       current.views += 1;
+      const visitor = String(data.visitorIdHash || document.id);
+      current.visitors.add(visitor);
+      uniqueVisitors.add(visitor);
+      increment(dimensionCounts.referrers, data.referrerHost ? String(data.referrerHost) : '(direct)');
+      increment(dimensionCounts.devices, String(data.device || 'unknown'));
+      increment(dimensionCounts.browsers, String(data.browser || 'Unknown'));
+      increment(dimensionCounts.countries, data.country ? String(data.country) : '(unknown)');
+      addUtm(data, 'views');
       timeline.set(date, current);
     }
     for (const document of clicks.docs) {
-      const timestamp = Date.parse(String(document.data().timestamp || ''));
-      if (!Number.isFinite(timestamp) || timestamp < cutoff) continue;
+      const data = document.data() as Record<string, any>;
+      const timestamp = eventTimestamp(data);
+      if (!inRange(timestamp)) continue;
       const date = new Date(timestamp).toISOString().slice(0, 10);
-      const current = timeline.get(date) || { date, views: 0, clicks: 0 };
+      const current = timeline.get(date) || { date, views: 0, clicks: 0, visitors: new Set<string>() };
       current.clicks += 1;
+      const linkId = String(data.linkId || 'unknown');
+      const link = linkCounts.get(linkId) || { linkId, title: siteLinks.get(linkId)?.title || linkId, url: siteLinks.get(linkId)?.url || String(data.url || ''), blockType: siteLinks.get(linkId)?.blockType || (linkId.startsWith('soc_') ? 'social' : 'link'), clicks: 0 };
+      link.clicks += 1;
+      linkCounts.set(linkId, link);
+      addUtm(data, 'clicks');
       timeline.set(date, current);
     }
-    const timelineData = [...timeline.values()].sort((a, b) => a.date.localeCompare(b.date));
-    const totalVisits = timelineData.reduce((total, day) => total + day.views, 0);
+    const timelineData = [...timeline.values()].sort((a, b) => a.date.localeCompare(b.date)).map((day) => ({ date: day.date, views: day.views, clicks: day.clicks, uniqueVisitors: day.visitors.size }));
+    const totalPageViews = timelineData.reduce((total, day) => total + day.views, 0);
     const totalClicks = timelineData.reduce((total, day) => total + day.clicks, 0);
+    const toBreakdown = (map: Map<string, number>) => [...map.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 20);
     return res.status(200).json({
-      totalVisits,
+      totalVisits: totalPageViews,
+      totalPageViews,
+      uniqueVisitors: uniqueVisitors.size,
       totalClicks,
+      ctr: totalPageViews ? Number(((totalClicks / totalPageViews) * 100).toFixed(2)) : null,
       activeSitesCount: sites.size,
-      capped: views.size === 1000 || clicks.size === 1000 || sites.size === 1000,
-      timeline: timelineData
+      dateRange: { from: fromDate, to: toDate },
+      capped: views.size === 10000 || clicks.size === 10000 || sites.size === 1000,
+      timeline: timelineData,
+      links: [...linkCounts.values()].sort((a, b) => b.clicks - a.clicks).map((link) => ({ ...link, share: totalClicks ? Number(((link.clicks / totalClicks) * 100).toFixed(1)) : 0 })),
+      utmSources: [...utmCounts.values()].sort((a, b) => (b.clicks + b.views) - (a.clicks + a.views)).map((item) => ({ source: item.source, medium: item.medium, campaign: item.campaign, views: item.views, clicks: item.clicks, uniqueVisitors: item.visitors.size })),
+      referrers: toBreakdown(dimensionCounts.referrers),
+      devices: toBreakdown(dimensionCounts.devices),
+      browsers: toBreakdown(dimensionCounts.browsers),
+      countries: toBreakdown(dimensionCounts.countries)
     });
   } catch (error) {
     console.error('[Platform analytics]', error);

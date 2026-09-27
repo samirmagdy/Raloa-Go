@@ -1,292 +1,52 @@
-import React, { useEffect, useState } from 'react';
-import {
-  TrendingUp,
-  Eye,
-  MousePointerClick,
-  Users,
-  Compass,
-} from 'lucide-react';
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer
-} from 'recharts';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Eye, MousePointerClick, Users, Compass, type LucideIcon } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Locale } from '../../types';
 import { StudioBlockItem } from './SortableBlockList';
 import { auth } from '../../lib/firebase';
+import { PlatformMetrics } from '../../api/types';
 
-interface StudioAnalyticsTabProps {
-  links: StudioBlockItem[];
-  locale: Locale;
-}
+interface StudioAnalyticsTabProps { links: StudioBlockItem[]; locale: Locale; }
+type Range = '7d' | '30d' | 'all';
+const emptyMetrics: PlatformMetrics = { totalVisits: 0, totalPageViews: 0, uniqueVisitors: 0, totalClicks: 0, ctr: null, activeSitesCount: 0, timeline: [], links: [], utmSources: [], referrers: [], devices: [], browsers: [], countries: [] };
 
-export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({
-  links,
-  locale
-}) => {
+export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({ links, locale }) => {
   const isRtl = locale === 'ar';
-  const [timeRange, setTimeRange] = useState<'7d' | '30d' | 'all'>('30d');
-
-  const [analyticsData, setAnalyticsData] = useState<Array<{ date: string; views: number; clicks: number }>>([]);
+  const [range, setRange] = useState<Range>('30d');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [metrics, setMetrics] = useState<PlatformMetrics>(emptyMetrics);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setLoading(true); setError(false);
       try {
         const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
-        const response = await fetch(`/api/analytics/platform?days=${timeRange === 'all' ? 'all' : timeRange === '7d' ? '7' : '30'}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
+        const params = new URLSearchParams({ days: range === 'all' ? 'all' : range === '7d' ? '7' : '30' });
+        if (from) params.set('from', from); if (to) params.set('to', to);
+        const response = await fetch(`/api/analytics/platform?${params}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
         if (!response.ok) throw new Error('ANALYTICS_UNAVAILABLE');
-        const payload = await response.json();
-        if (!cancelled) setAnalyticsData(Array.isArray(payload.timeline) ? payload.timeline : []);
-      } catch {
-        if (!cancelled) setAnalyticsData([]);
-      }
+        const payload = await response.json() as Partial<PlatformMetrics>;
+        if (!cancelled) setMetrics({ ...emptyMetrics, ...payload, timeline: payload.timeline || [], links: payload.links || [], utmSources: payload.utmSources || [], referrers: payload.referrers || [], devices: payload.devices || [], browsers: payload.browsers || [], countries: payload.countries || [] });
+      } catch { if (!cancelled) { setMetrics(emptyMetrics); setError(true); } }
+      finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [timeRange]);
+  }, [range, from, to]);
 
-  const kpis = React.useMemo(() => {
-    const totalViews = analyticsData.reduce((acc, curr) => acc + curr.views, 0);
-    const totalClicks = analyticsData.reduce((acc, curr) => acc + curr.clicks, 0);
-    const uniqueVisitors = 0;
-    const ctr = totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(1) : '0.0';
-    return { totalViews, totalClicks, uniqueVisitors, ctr };
-  }, [analyticsData]);
+  const linkStats = useMemo(() => { const byId = new Map(metrics.links.map((link) => [link.linkId, link])); return links.slice(0, 5).map((link) => ({ ...link, stats: byId.get(link.id) })); }, [links, metrics.links]);
+  const hasData = metrics.totalPageViews > 0 || metrics.totalClicks > 0;
+  const totalUtmClicks = metrics.utmSources.reduce((sum, item) => sum + item.clicks, 0);
+  const breakdown = (title: string, items: Array<{ name: string; count: number }>) => <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs"><h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3">{title}</h3>{items.length === 0 ? <p className="text-xs text-slate-400">{isRtl ? 'لا توجد بيانات مسجلة بعد.' : 'No data recorded for this period.'}</p> : <div className="space-y-2">{items.slice(0, 8).map((item) => <div key={item.name} className="flex justify-between text-sm"><span className="text-slate-600 dark:text-slate-300 truncate pr-3">{item.name}</span><span className="font-mono font-bold text-slate-900 dark:text-white">{item.count.toLocaleString()}</span></div>)}</div>}</div>;
 
-  // UTM tracking attribution breakdown
-  const utmSources: Array<{ source: string; medium: string; campaign: string; clicks: number; percent: number }> = [];
-
-  return (
-    <div className="space-y-6 animate-in fade-in duration-150" dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* 1. Key KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">{isRtl ? 'إجمالي المشاهدات' : 'Total Views'}</span>
-            <Eye className="w-4 h-4 text-indigo-500" />
-          </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">{kpis.totalViews.toLocaleString()}</p>
-          <div className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>+24.6% {isRtl ? 'مقارنة بالسابق' : 'vs last period'}</span>
-          </div>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">{isRtl ? 'الزوار الفريدون' : 'Unique Visitors'}</span>
-            <Users className="w-4 h-4 text-blue-500" />
-          </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">{kpis.uniqueVisitors.toLocaleString()}</p>
-          <div className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>+19.2%</span>
-          </div>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">{isRtl ? 'إجمالي النقرات' : 'Total Clicks'}</span>
-            <MousePointerClick className="w-4 h-4 text-emerald-500" />
-          </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">{kpis.totalClicks.toLocaleString()}</p>
-          <div className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>+31.5%</span>
-          </div>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">{isRtl ? 'معدل النقر (CTR)' : 'Average CTR'}</span>
-            <Compass className="w-4 h-4 text-amber-500" />
-          </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">{kpis.ctr}%</p>
-          <p className="text-[11px] text-slate-400 font-medium mt-1">
-            {isRtl ? 'سيظهر بعد تفعيل تعريف الزوار' : 'Not collected yet'}
-          </p>
-        </div>
-      </div>
-
-      {/* 2. 30-Day Timeline Chart */}
-      <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              {isRtl ? 'الرسم البياني لتفاعل الزوار' : 'Traffic & Engagement Timeline'}
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {isRtl ? 'مقارنة يومية بين المشاهدات والنقرات الفعلية' : 'Daily views compared against actual link clicks'}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setTimeRange('7d')}
-              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                timeRange === '7d' ? 'bg-white dark:bg-slate-750 text-slate-900 dark:text-white shadow-2xs' : 'text-slate-500'
-              }`}
-            >
-              7D
-            </button>
-            <button
-              type="button"
-              onClick={() => setTimeRange('30d')}
-              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                timeRange === '30d' ? 'bg-white dark:bg-slate-750 text-slate-900 dark:text-white shadow-2xs' : 'text-slate-500'
-              }`}
-            >
-              30D
-            </button>
-            <button
-              type="button"
-              onClick={() => setTimeRange('all')}
-              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                timeRange === 'all' ? 'bg-white dark:bg-slate-750 text-slate-900 dark:text-white shadow-2xs' : 'text-slate-500'
-              }`}
-            >
-              ALL
-            </button>
-          </div>
-        </div>
-
-        <div className="h-64 w-full pt-2">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={analyticsData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="studioViewsGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#4F46E5" stopOpacity={0.0} />
-                </linearGradient>
-                <linearGradient id="studioClicksGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" opacity={0.6} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#0F172A',
-                  borderColor: '#334155',
-                  borderRadius: '12px',
-                  color: '#FFFFFF',
-                  fontSize: '11px'
-                }}
-              />
-              <Area type="monotone" dataKey="views" name={isRtl ? 'المشاهدات' : 'Views'} stroke="#4F46E5" strokeWidth={2.5} fillOpacity={1} fill="url(#studioViewsGrad)" />
-              <Area type="monotone" dataKey="clicks" name={isRtl ? 'النقرات' : 'Clicks'} stroke="#10B981" strokeWidth={2.5} fillOpacity={1} fill="url(#studioClicksGrad)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* 3. Top Performing Links Breakdown */}
-      <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3.5">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-          {isRtl ? 'أداء الروابط الأكثر نقراً' : 'Top Performing Links'}
-        </h3>
-
-        <div className="space-y-2.5">
-          {links.length === 0 ? (
-            <div className="py-6 text-center text-xs text-slate-400">
-              {isRtl ? 'لا توجد روابط مضافة بعد. أضف روابط في تبويب المحتوى لمشاهدة إحصائياتها.' : 'No links added yet. Add links in the Content tab to view analytics.'}
-            </div>
-          ) : (
-            links.slice(0, 5).map((l, index) => {
-              return (
-                <div
-                  key={l.id}
-                  className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <span className="w-5 h-5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[10px] flex items-center justify-center shrink-0">
-                      #{index + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                        {l.title}
-                      </p>
-                      <p className="text-[10px] font-mono text-slate-400 truncate">
-                        {l.url}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4 shrink-0 text-right rtl:text-left">
-                    <div>
-                      <span className="font-mono text-xs font-black text-slate-900 dark:text-white">
-                        —
-                      </span>
-                      <span className="text-[10px] text-slate-400 block">{isRtl ? 'نقرة' : 'clicks'}</span>
-                    </div>
-                    <div className="w-16">
-                      <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                        —
-                      </span>
-                      <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mt-1 overflow-hidden">
-                        <div className="h-full bg-slate-300 dark:bg-slate-600 rounded-full" style={{ width: '0%' }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      {/* 4. UTM Attribution Table */}
-      <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3.5">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-          {isRtl ? 'مصادر الزيارات وحملات UTM' : 'UTM Tracking & Referral Attribution'}
-        </h3>
-
-        <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800">
-          <table className="w-full text-left rtl:text-right border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/80 dark:border-slate-800 text-slate-400 uppercase text-[10px] font-bold tracking-wider">
-                <th className="py-2.5 px-3.5">{isRtl ? 'المصدر (Source)' : 'Source'}</th>
-                <th className="py-2.5 px-3.5">{isRtl ? 'الوسيط (Medium)' : 'Medium'}</th>
-                <th className="py-2.5 px-3.5">{isRtl ? 'الحملة (Campaign)' : 'Campaign'}</th>
-                <th className="py-2.5 px-3.5 text-right rtl:text-left">{isRtl ? 'النقرات' : 'Clicks'}</th>
-                <th className="py-2.5 px-3.5 text-right rtl:text-left">{isRtl ? 'النسبة' : 'Share'}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {utmSources.length === 0 ? (
-                <tr><td colSpan={5} className="py-6 px-3.5 text-center text-slate-400">{isRtl ? 'لا توجد بيانات UTM مسجلة بعد.' : 'No UTM attribution data recorded yet.'}</td></tr>
-              ) : utmSources.map((u, i) => (
-                <tr key={i} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                  <td className="py-2.5 px-3.5 font-bold text-slate-800 dark:text-slate-200">
-                    {u.source}
-                  </td>
-                  <td className="py-2.5 px-3.5 font-mono text-[11px] text-slate-500">
-                    {u.medium}
-                  </td>
-                  <td className="py-2.5 px-3.5 font-mono text-[11px] text-slate-400">
-                    {u.campaign}
-                  </td>
-                  <td className="py-2.5 px-3.5 font-mono font-bold text-slate-900 dark:text-white text-right rtl:text-left">
-                    {u.clicks.toLocaleString()}
-                  </td>
-                  <td className="py-2.5 px-3.5 font-mono text-emerald-600 dark:text-emerald-400 font-bold text-right rtl:text-left">
-                    {u.percent}%
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
+  return <div className="space-y-6 animate-in fade-in duration-150" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">{([['Page Views', metrics.totalPageViews, Eye, 'text-indigo-500'], ['Unique Visitors', metrics.uniqueVisitors, Users, 'text-blue-500'], ['Link Clicks', metrics.totalClicks, MousePointerClick, 'text-emerald-500'], ['CTR', metrics.ctr === null ? null : `${metrics.ctr.toFixed(1)}%`, Compass, 'text-amber-500']] as Array<[string, number | string | null, LucideIcon, string]>).map(([label, value, Icon, color]) => <div key={label} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs"><div className="flex items-center justify-between text-slate-400 mb-1"><span className="text-[11px] font-bold uppercase tracking-wider">{label}</span><Icon className={`w-4 h-4 ${color}`} /></div><p className="text-2xl font-black text-slate-900 dark:text-white">{value === null ? (isRtl ? 'لا توجد بيانات' : 'No data yet') : typeof value === 'number' ? value.toLocaleString() : value}</p><p className="text-[11px] text-slate-400 font-medium mt-1">{error ? (isRtl ? 'تعذر تحميل التحليلات' : 'Analytics unavailable') : hasData ? (isRtl ? 'بيانات الفترة المحددة' : 'Selected period') : (isRtl ? 'لم تسجل أحداث بعد' : 'No events recorded yet')}</p></div>)}</div>
+    <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">{isRtl ? 'تفاعل الزوار' : 'Traffic & Engagement Timeline'}</h3><p className="text-xs text-slate-400 mt-0.5">{isRtl ? 'المشاهدات والنقرات من الأحداث المحفوظة' : 'Views and clicks from persisted events'}</p></div><div className="flex flex-wrap items-center gap-2"><div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold">{(['7d', '30d', 'all'] as Range[]).map((item) => <button key={item} type="button" onClick={() => setRange(item)} className={`px-2.5 py-1 rounded-lg ${range === item ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs' : 'text-slate-500'}`}>{item.toUpperCase()}</button>)}</div><label className="text-xs text-slate-500">From <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="ml-1 rounded border border-slate-200 p-1 dark:bg-slate-800" /></label><label className="text-xs text-slate-500">To <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="ml-1 rounded border border-slate-200 p-1 dark:bg-slate-800" /></label></div></div><div className="h-64 w-full pt-2">{loading ? <div className="h-full flex items-center justify-center text-xs text-slate-400">Loading analytics…</div> : metrics.timeline.length === 0 ? <div className="h-full flex items-center justify-center text-xs text-slate-400">{isRtl ? 'لا توجد أحداث في هذه الفترة.' : 'No events recorded for this period.'}</div> : <ResponsiveContainer width="100%" height="100%"><AreaChart data={metrics.timeline} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}><defs><linearGradient id="studioViewsGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#4F46E5" stopOpacity={0.4} /><stop offset="95%" stopColor="#4F46E5" stopOpacity={0} /></linearGradient><linearGradient id="studioClicksGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10B981" stopOpacity={0.4} /><stop offset="95%" stopColor="#10B981" stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" opacity={0.6} /><XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} /><Tooltip /><Area type="monotone" dataKey="views" name="Views" stroke="#4F46E5" strokeWidth={2.5} fill="url(#studioViewsGrad)" /><Area type="monotone" dataKey="clicks" name="Clicks" stroke="#10B981" strokeWidth={2.5} fill="url(#studioClicksGrad)" /></AreaChart></ResponsiveContainer>}</div></div>
+    <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3.5"><h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">{isRtl ? 'أداء الروابط' : 'Link & Block Clicks'}</h3><div className="space-y-2.5">{linkStats.length === 0 ? <p className="py-6 text-center text-xs text-slate-400">{isRtl ? 'لا توجد روابط مضافة.' : 'No links added yet.'}</p> : linkStats.map((link, index) => { const clicks = link.stats?.clicks || 0; const share = link.stats?.share || 0; return <div key={link.id} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3"><div className="min-w-0"><p className="text-xs font-bold text-slate-900 dark:text-white truncate">#{index + 1} {link.title}</p><p className="text-[10px] font-mono text-slate-400 truncate">{link.url}</p></div><div className="flex items-center gap-4 shrink-0 text-right"><div><span className="font-mono text-xs font-black text-slate-900 dark:text-white">{clicks.toLocaleString()}</span><span className="text-[10px] text-slate-400 block">clicks</span></div><div className="w-16"><span className="font-mono text-xs font-bold text-emerald-600">{share.toFixed(1)}%</span><div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mt-1 overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, share)}%` }} /></div></div></div></div>; })}</div></div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">{breakdown(isRtl ? 'المصادر' : 'Referrers', metrics.referrers)}{breakdown(isRtl ? 'الأجهزة' : 'Devices', metrics.devices)}{breakdown(isRtl ? 'المتصفحات' : 'Browsers', metrics.browsers)}{breakdown(isRtl ? 'الدول' : 'Countries', metrics.countries)}</div>
+    <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3.5"><h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">{isRtl ? 'مصادر UTM' : 'UTM Attribution'}</h3><div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800"><table className="w-full text-left rtl:text-right border-collapse text-xs"><thead><tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/80 dark:border-slate-800 text-slate-400 uppercase text-[10px] font-bold tracking-wider"><th className="py-2.5 px-3.5">Source</th><th className="py-2.5 px-3.5">Medium</th><th className="py-2.5 px-3.5">Campaign</th><th className="py-2.5 px-3.5">Views</th><th className="py-2.5 px-3.5">Clicks</th><th className="py-2.5 px-3.5">Share</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{metrics.utmSources.length === 0 ? <tr><td colSpan={6} className="py-6 text-center text-slate-400">{isRtl ? 'لا توجد بيانات UTM مسجلة بعد.' : 'No UTM attribution data recorded yet.'}</td></tr> : metrics.utmSources.map((item) => <tr key={`${item.source}-${item.medium}-${item.campaign}`}><td className="py-2.5 px-3.5 font-bold">{item.source}</td><td className="py-2.5 px-3.5">{item.medium}</td><td className="py-2.5 px-3.5">{item.campaign}</td><td className="py-2.5 px-3.5">{item.views.toLocaleString()}</td><td className="py-2.5 px-3.5">{item.clicks.toLocaleString()}</td><td className="py-2.5 px-3.5">{totalUtmClicks ? `${((item.clicks / totalUtmClicks) * 100).toFixed(1)}%` : '0.0%'}</td></tr>)}</tbody></table></div></div>
+  </div>;
 };

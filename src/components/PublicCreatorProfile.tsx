@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   CheckCircle2,
@@ -41,6 +41,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
+  const recordedPageView = useRef<string | null>(null);
 
   const fixtureCreator = templatesData.find(
     (t) => t.id.toLowerCase() === cleanHandle || t.name.toLowerCase() === cleanHandle
@@ -96,7 +97,8 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   useEffect(() => {
     if (!isLoading && !creator) {
       onNotFound?.(cleanHandle);
-    } else if (creator) {
+    } else if (creator && recordedPageView.current !== cleanHandle) {
+      recordedPageView.current = cleanHandle;
       recordPageView(`/@${cleanHandle}`);
     }
   }, [cleanHandle, creator, isLoading, onNotFound]);

@@ -27,7 +27,8 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { UserProfile, UserMiniSite, ContactInquiry } from '../types';
-import { captureReferralCode } from '../utils/attribution';
+import { PlatformMetrics } from '../api/types';
+import { captureReferralCode, captureUtmParameters } from '../utils/attribution';
 
 // Initialize Firebase App instance safely (prevent duplicate initialization)
 export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -696,12 +697,14 @@ export async function recordReferralInvite(
  */
 export async function recordPageView(path: string): Promise<void> {
   try {
+    const attribution = getAnalyticsClientContext();
     await fetch('/api/v1/public/telemetry/page-view', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         path,
-        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : ''
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+        ...attribution
       })
     });
   } catch {
@@ -718,13 +721,15 @@ export async function recordLinkClick(
   siteHandle?: string
 ): Promise<void> {
   try {
+    const attribution = getAnalyticsClientContext();
     await fetch('/api/v1/public/telemetry/link-click', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         linkId,
         url,
-        siteHandle: siteHandle || 'creator'
+        siteHandle: siteHandle || 'creator',
+        ...attribution
       })
     });
   } catch {
@@ -732,34 +737,79 @@ export async function recordLinkClick(
   }
 }
 
+function getAnalyticsClientContext(): {
+  eventId: string;
+  visitorId: string;
+  referrer: string;
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
+} {
+  if (typeof window === 'undefined') {
+    return { eventId: `server-${Date.now()}-${Math.random()}`, visitorId: 'server' , referrer: '' };
+  }
+
+  const visitorStorageKey = 'raloa_analytics_visitor_id';
+  let visitorId = '';
+  try { visitorId = window.localStorage.getItem(visitorStorageKey) || ''; } catch { /* storage may be disabled */ }
+  if (!visitorId) {
+    visitorId = globalThis.crypto?.randomUUID?.() || `visitor-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try { window.localStorage.setItem(visitorStorageKey, visitorId); } catch { /* in-memory visitor ID is still usable for this session */ }
+  }
+
+  const eventId = globalThis.crypto?.randomUUID?.() || `event-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const utm = captureUtmParameters();
+  return {
+    eventId,
+    visitorId,
+    referrer: document.referrer,
+    ...(utm?.utm_source ? { utm_source: utm.utm_source } : {}),
+    ...(utm?.utm_medium ? { utm_medium: utm.utm_medium } : {}),
+    ...(utm?.utm_campaign ? { utm_campaign: utm.utm_campaign } : {}),
+    ...(utm?.utm_term ? { utm_term: utm.utm_term } : {}),
+    ...(utm?.utm_content ? { utm_content: utm.utm_content } : {})
+  };
+}
+
 /**
  * Fetch platform aggregate metrics from Firestore
  */
-export async function fetchPlatformMetrics(days: '7' | '30' | 'all' = '30'): Promise<{
-  totalVisits: number;
-  totalClicks: number;
-  activeSitesCount: number;
-  timeline: Array<{ date: string; views: number; clicks: number }>;
-}> {
+export async function fetchPlatformMetrics(days: '7' | '30' | 'all' = '30'): Promise<PlatformMetrics> {
   try {
     const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
     const response = await fetch(`/api/analytics/platform?days=${days}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     if (!response.ok) throw new Error('PLATFORM_METRICS_UNAVAILABLE');
-    const metrics = await response.json() as { totalVisits?: number; totalClicks?: number; activeSitesCount?: number; timeline?: Array<{ date: string; views: number; clicks: number }> };
+    const metrics = await response.json() as Partial<PlatformMetrics>;
 
     return {
       totalVisits: Number(metrics.totalVisits || 0),
+      totalPageViews: Number(metrics.totalPageViews || metrics.totalVisits || 0),
+      uniqueVisitors: Number(metrics.uniqueVisitors || 0),
       totalClicks: Number(metrics.totalClicks || 0),
+      ctr: typeof metrics.ctr === 'number' ? metrics.ctr : null,
       activeSitesCount: Number(metrics.activeSitesCount || 0),
-      timeline: Array.isArray(metrics.timeline) ? metrics.timeline : []
+      dateRange: metrics.dateRange,
+      capped: Boolean(metrics.capped),
+      timeline: Array.isArray(metrics.timeline) ? metrics.timeline : [],
+      links: Array.isArray(metrics.links) ? metrics.links : [],
+      utmSources: Array.isArray(metrics.utmSources) ? metrics.utmSources : [],
+      referrers: Array.isArray(metrics.referrers) ? metrics.referrers : [],
+      devices: Array.isArray(metrics.devices) ? metrics.devices : [],
+      browsers: Array.isArray(metrics.browsers) ? metrics.browsers : [],
+      countries: Array.isArray(metrics.countries) ? metrics.countries : []
     };
   } catch (error) {
     console.error('Error fetching platform metrics:', error);
     return {
       totalVisits: 0,
+      totalPageViews: 0,
+      uniqueVisitors: 0,
       totalClicks: 0,
+      ctr: null,
       activeSitesCount: 0,
-      timeline: []
+      timeline: [], links: [], utmSources: [], referrers: [], devices: [], browsers: [], countries: []
     };
   }
 }

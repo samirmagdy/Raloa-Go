@@ -100,6 +100,8 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
   const publicUrl = `https://raloa.app/@${cleanHandle}`;
   const plan = profile?.plan || 'free';
   const [analyticsData, setAnalyticsData] = useState<Array<{ label: string; views: number; clicks: number }>>([]);
+  const [analyticsSummary, setAnalyticsSummary] = useState({ pageViews: 0, uniqueVisitors: 0, clicks: 0, ctr: null as number | null });
+  const [analyticsError, setAnalyticsError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,11 +113,20 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
         });
         if (!response.ok) throw new Error('ANALYTICS_UNAVAILABLE');
         const payload = await response.json();
-        if (!cancelled) setAnalyticsData(Array.isArray(payload.timeline)
+        if (!cancelled) {
+          setAnalyticsError(false);
+          setAnalyticsSummary({
+            pageViews: Number(payload.totalPageViews ?? payload.totalVisits ?? 0),
+            uniqueVisitors: Number(payload.uniqueVisitors ?? 0),
+            clicks: Number(payload.totalClicks ?? 0),
+            ctr: typeof payload.ctr === 'number' ? payload.ctr : null
+          });
+          setAnalyticsData(Array.isArray(payload.timeline)
           ? payload.timeline.map((day: { date: string; views: number; clicks: number }) => ({ label: day.date, views: day.views, clicks: day.clicks }))
           : []);
+        }
       } catch {
-        if (!cancelled) setAnalyticsData([]);
+        if (!cancelled) { setAnalyticsError(true); setAnalyticsData([]); setAnalyticsSummary({ pageViews: 0, uniqueVisitors: 0, clicks: 0, ctr: null }); }
       }
     })();
     return () => { cancelled = true; };
@@ -245,10 +256,13 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
   }, [isRtl]);
 
   const statsTotals = useMemo(() => {
-    const views = analyticsData.reduce((total, day) => total + day.views, 0);
-    const clicks = analyticsData.reduce((total, day) => total + day.clicks, 0);
-    return { views: views.toLocaleString(), visitors: '—', clicks: clicks.toLocaleString(), ctr: views ? `${((clicks / views) * 100).toFixed(1)}%` : '—' };
-  }, [analyticsData]);
+    return {
+      views: analyticsError ? (isRtl ? 'غير متاح' : 'Unavailable') : analyticsSummary.pageViews.toLocaleString(),
+      visitors: analyticsError ? (isRtl ? 'غير متاح' : 'Unavailable') : analyticsSummary.uniqueVisitors.toLocaleString(),
+      clicks: analyticsError ? (isRtl ? 'غير متاح' : 'Unavailable') : analyticsSummary.clicks.toLocaleString(),
+      ctr: analyticsError ? (isRtl ? 'غير متاح' : 'Unavailable') : analyticsSummary.ctr === null ? (isRtl ? 'لا توجد بيانات' : 'No data yet') : `${analyticsSummary.ctr.toFixed(1)}%`
+    };
+  }, [analyticsError, analyticsSummary, isRtl]);
 
   // Onboarding progress items
   const onboardingSteps = useMemo(() => {
@@ -785,7 +799,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
             </div>
             <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-1">
               <TrendingUp className="w-3.5 h-3.5" />
-              <span>{isRtl ? 'غير متاح حالياً' : 'Not collected yet'}</span>
+              <span>{analyticsSummary.uniqueVisitors > 0 ? (isRtl ? 'زوار فريدون محسوبون' : 'Unique visitors calculated') : (isRtl ? 'لا توجد أحداث بعد' : 'No events recorded yet')}</span>
             </div>
           </div>
 
