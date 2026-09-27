@@ -29,6 +29,8 @@ export interface BackgroundJobRepository {
   claim(id: string, leaseUntil: string): Promise<BackgroundJob | null>;
   complete(id: string, completedAt: string): Promise<void>;
   fail(id: string, failure: { error: string; availableAt?: string; deadLetter: boolean; at: string }): Promise<void>;
+  listRecoverable(now: string, limit: number): Promise<BackgroundJob[]>;
+  requeue(id: string, availableAt: string, reason: string): Promise<boolean>;
 }
 
 export interface JobDispatcher {

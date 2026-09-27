@@ -1085,7 +1085,7 @@ async function processPendingBookingNotifications(): Promise<void> {
     try {
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': `notification:${jobSnapshot.id}` },
         body: JSON.stringify({ from: process.env.RESEND_FROM_EMAIL, to: [recipient], subject, html })
       });
       if (!response.ok) throw new Error(`RESEND_${response.status}`);
@@ -5147,6 +5147,14 @@ app.post('/internal/background-jobs/run', async (req: Request, res: Response) =>
     console.error('[Background job worker]', error);
     return res.status(500).json({ error: 'JOB_PROCESSING_FAILED' });
   }
+});
+
+app.post('/internal/background-jobs/reconcile', async (req: Request, res: Response) => {
+  const configuredSecret = process.env.BACKGROUND_JOB_SECRET;
+  if (!configuredSecret || req.headers['x-background-job-secret'] !== configuredSecret) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  const limit = Math.min(500, Math.max(1, Number(req.body?.limit) || 100));
+  const result = await backgroundJobs.reconcile(limit);
+  return res.status(200).json(result);
 });
 
 app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {

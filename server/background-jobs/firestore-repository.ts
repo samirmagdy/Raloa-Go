@@ -38,10 +38,35 @@ export function createFirestoreBackgroundJobRepository(db: Firestore): Backgroun
       return claimed;
     },
     async complete(id, completedAt) {
-      await collection.doc(id).set({ status: 'completed', completedAt, leaseUntil: null, updatedAt: completedAt }, { merge: true });
+      const reference = collection.doc(id);
+      await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(reference);
+        if (!snapshot.exists || snapshot.data()?.status !== 'processing') return;
+        transaction.set(reference, { status: 'completed', completedAt, leaseUntil: null, updatedAt: completedAt }, { merge: true });
+      });
     },
     async fail(id, failure) {
-      await collection.doc(id).set({ status: failure.deadLetter ? 'dead_letter' : 'retry', lastError: failure.error, availableAt: failure.availableAt || null, leaseUntil: null, deadLetteredAt: failure.deadLetter ? failure.at : null, updatedAt: failure.at }, { merge: true });
+      const reference = collection.doc(id);
+      await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(reference);
+        if (!snapshot.exists || snapshot.data()?.status !== 'processing') return;
+        transaction.set(reference, { status: failure.deadLetter ? 'dead_letter' : 'retry', lastError: failure.error, availableAt: failure.availableAt || null, leaseUntil: null, deadLetteredAt: failure.deadLetter ? failure.at : null, updatedAt: failure.at }, { merge: true });
+      });
+    },
+    async listRecoverable(now, limit) {
+      const snapshot = await collection.where('status', 'in', ['pending', 'retry', 'processing']).where('availableAt', '<=', now).limit(limit).get();
+      return snapshot.docs.map(readJob);
+    },
+    async requeue(id, availableAt, reason) {
+      const reference = collection.doc(id);
+      let changed = false;
+      await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(reference);
+        if (!snapshot.exists || ['completed', 'dead_letter'].includes(String(snapshot.data()?.status))) return;
+        transaction.set(reference, { status: 'retry', availableAt, leaseUntil: null, lastError: reason, updatedAt: new Date().toISOString() }, { merge: true });
+        changed = true;
+      });
+      return changed;
     }
   };
 }

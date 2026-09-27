@@ -16,6 +16,12 @@ Handlers claim a five-minute lease before executing. Successful work becomes
 idempotency key prevent duplicate execution. Provider calls belong inside job
 handlers, never in request lifecycles.
 
+`POST /internal/background-jobs/reconcile` is a protected repair operation for
+expired leases and pending redeliveries. It can be invoked by Cloud Scheduler
+or an operations runbook. `POST /internal/background-jobs/run` is safe to call
+more than once: completed and dead-lettered jobs are terminal, and active jobs
+require a transactional lease claim.
+
 Supported job kinds are calendar synchronization, email delivery, domain
 verification, OAuth refresh, analytics rollups, media processing, Stripe
 reconciliation, and cleanup. Operational dashboards should monitor processing

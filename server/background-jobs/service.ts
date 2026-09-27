@@ -43,6 +43,17 @@ export function createBackgroundJobService(repository: BackgroundJobRepository, 
           await dispatcher.dispatch({ ...claimed, status: 'retry', availableAt: new Date(Date.now() + delayMs).toISOString() }, delayMs);
         }
       }
+    },
+    async reconcile(limit = 100): Promise<{ requeued: number; inspected: number }> {
+      const now = new Date().toISOString();
+      const jobs = await repository.listRecoverable(now, limit);
+      let requeued = 0;
+      for (const job of jobs) {
+        const stale = job.status === 'processing' && job.leaseUntil && Date.parse(job.leaseUntil) <= Date.now();
+        if (!stale && job.status !== 'pending' && job.status !== 'retry') continue;
+        if (await repository.requeue(job.id, now, stale ? 'LEASE_EXPIRED_RECONCILED' : 'REDELIVERY_RECONCILED')) requeued += 1;
+      }
+      return { requeued, inspected: jobs.length };
     }
   };
 }
