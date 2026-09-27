@@ -1,4 +1,4 @@
-import { auth } from './firebase';
+import { auth, isE2ETestMode } from './firebase';
 
 export type MediaPurpose = 'gallery' | 'product' | 'background' | 'block' | 'avatar';
 
@@ -22,12 +22,12 @@ export function uploadMedia(
 ): Promise<UploadedMedia> {
   return new Promise(async (resolve, reject) => {
     const user = auth.currentUser;
-    if (!user) {
+    if (!user && !isE2ETestMode) {
       reject(new Error('Authentication required.'));
       return;
     }
     try {
-      const token = await user.getIdToken();
+      const token = isE2ETestMode ? 'e2e-test-token' : await user!.getIdToken();
       const request = new XMLHttpRequest();
       request.open('POST', '/api/media/upload');
       request.setRequestHeader('Authorization', `Bearer ${token}`);

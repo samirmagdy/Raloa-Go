@@ -1732,7 +1732,8 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
 app.use(async (req: Request, res: Response, next: NextFunction) => {
   if (req.path === '/studio' || req.path.startsWith('/studio/')) {
     const session = await getAuthenticatedUser(req);
-    if (!session) {
+    const e2eBypass = process.env.NODE_ENV !== 'production' && process.env.E2E_TEST_MODE === 'true' && req.query.e2e === '1';
+    if (!session && !e2eBypass) {
       return res.redirect(302, '/login?redirect=/studio');
     }
   }

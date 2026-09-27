@@ -253,6 +253,7 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
               type="text"
               value={displayName}
               onChange={(e) => onDisplayNameChange(e.target.value)}
+              aria-label={isRtl ? 'الاسم الظاهر' : 'Display Name'}
               placeholder="e.g. Alex Parks"
               className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
@@ -464,6 +465,7 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
                   required
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
+                  aria-label={isRtl ? 'عنوان الكتلة' : 'Block Title'}
                   placeholder={isRtl ? 'مثال: بودكاست الحلقة ٤٢' : 'e.g. Listen to Podcast #42'}
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
@@ -480,7 +482,7 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
                     <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only" onChange={handleGalleryUpload} disabled={uploadProgress !== null} />
                   </label>
                   {uploadError && <p role="alert" className="mt-1 text-[11px] font-semibold text-rose-600">{uploadError}</p>}
-                </> : <input type="text" required value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://..." className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />}
+                </> : <input type="text" required value={newUrl} onChange={(e) => setNewUrl(e.target.value)} aria-label={newBlockType === 'gallery' ? (isRtl ? 'روابط الصور' : 'Image URLs') : (isRtl ? 'الرابط أو الوجهة' : 'Destination URL')} placeholder="https://..." className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />}
                 {newBlockType === 'gallery' && <p className="mt-1 text-[10px] text-slate-400">{isRtl ? 'اختياري: أضف وصفاً بعد | لكل صورة.' : 'Optional: add a caption after | for each image.'}</p>}
               </div>
 

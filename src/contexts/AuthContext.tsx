@@ -15,7 +15,10 @@ import {
   resetFirebasePassword,
   listUserMiniSitesFromServer,
   createUserMiniSiteOnServer,
-  deleteUserMiniSiteFromServer
+  deleteUserMiniSiteFromServer,
+  createE2ETestUser,
+  hasAuthenticatedSession,
+  isE2ETestMode
 } from '../lib/firebase';
 import { UserProfile, UserMiniSite, UserMiniSiteSummary } from '../types';
 
@@ -55,6 +58,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    if (isE2ETestMode) {
+      const e2eUser = createE2ETestUser();
+      setUser(e2eUser);
+      setProfile({
+        uid: e2eUser.uid,
+        email: e2eUser.email,
+        displayName: e2eUser.displayName || 'E2E Creator',
+        photoURL: null,
+        handle: 'e2e_creator',
+        plan: 'studio',
+        isYearly: false,
+        referralsCount: 0,
+        referralRewards: { verifiedBadgeUnlocked: false, freeProMonthsEarned: 0, customDomainUnlocked: false },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      setLoading(false);
+      return () => {};
+    }
     const getCachedLocalUser = (): User | null => {
       if (typeof window === 'undefined') return null;
       if (!['localhost', '127.0.0.1'].includes(window.location.hostname)) return null;
@@ -163,7 +185,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return;
 
     // Only attempt Firestore write if real Firebase Auth session is active
-    if (auth.currentUser) {
+    if (hasAuthenticatedSession()) {
       return saveUserMiniSiteToFirestore(user.uid, siteData, siteId);
     }
 
@@ -179,7 +201,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!siteId) throw new Error('SITE_ID_REQUIRED');
     if (!user) return null;
     let firestoreData: UserMiniSite | null = null;
-    if (auth.currentUser) {
+    if (hasAuthenticatedSession()) {
       try {
         firestoreData = await loadUserMiniSiteFromFirestore(user.uid, siteId);
       } catch (err) {
@@ -199,7 +221,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const listMiniSites = useCallback(async () => {
     if (!user) return [];
-    if (auth.currentUser) {
+    if (hasAuthenticatedSession()) {
       try {
         return await listUserMiniSitesFromServer(user.uid);
       } catch (error) {
@@ -224,7 +246,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const createMiniSite = useCallback(async (siteData: Partial<UserMiniSite>, siteId?: string) => {
     if (!user) throw new Error('AUTH_REQUIRED');
-    if (auth.currentUser) return createUserMiniSiteOnServer(user.uid, siteData, siteId);
+    if (hasAuthenticatedSession()) return createUserMiniSiteOnServer(user.uid, siteData, siteId);
     const resolvedId = siteId || `site_${crypto.randomUUID()}`;
     await saveMiniSite(siteData, resolvedId);
     return { ...siteData, id: resolvedId, userId: user.uid } as UserMiniSite;
@@ -232,7 +254,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteMiniSite = useCallback(async (siteId: string) => {
     if (!user || !siteId) throw new Error('SITE_ID_REQUIRED');
-    if (auth.currentUser) await deleteUserMiniSiteFromServer(user.uid, siteId);
+    if (hasAuthenticatedSession()) await deleteUserMiniSiteFromServer(user.uid, siteId);
     try { localStorage.removeItem(`raloa_site_${user.uid}_${siteId}`); } catch (_) {}
   }, [user]);
 

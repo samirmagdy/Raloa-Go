@@ -30,7 +30,7 @@ import { DEFAULT_BOOKING_CONFIG } from '../studio/StudioSchedulingSettings';
 import { StudioTemplatePreview } from '../studio/StudioTemplatePreview';
 import { StudioBlockItem } from '../studio/SortableBlockList';
 import { getPlanCapabilities, isPremiumTemplate } from '../../lib/planCapabilities';
-import { auth } from '../../lib/firebase';
+import { auth, hasAuthenticatedSession } from '../../lib/firebase';
 import { normalizeSiteSlug } from '../../lib/siteSlug';
 import { normalizeSiteContent, validateSiteContent } from '../../lib/contentSchema';
 
@@ -404,7 +404,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
           }
         }
         if (!isCancelled) {
-          setSaveStatus(auth.currentUser ? (loadedRecoveryAvailable ? 'recovery' : 'saved') : 'recovery');
+          setSaveStatus(hasAuthenticatedSession() ? (loadedRecoveryAvailable ? 'recovery' : 'saved') : 'recovery');
           setPublicationState(savedSite?.isPublished === true ? 'published' : 'draft');
         }
       } catch (e) {
@@ -500,7 +500,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
           await new Promise((r) => setTimeout(r, 200));
         }
 
-        const serverPersisted = Boolean(user && auth.currentUser);
+        const serverPersisted = Boolean(user && hasAuthenticatedSession());
         if (user) {
           try {
             setSites(await listMiniSites());
@@ -630,7 +630,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 
   const publishToggle = useCallback(async () => {
     if (publicationState === 'publishing' || publicationState === 'unpublishing') return;
-    if (!auth.currentUser) {
+    if (!hasAuthenticatedSession()) {
       setPublicationState('failed');
       setEntitlementMessage('A verified server session is required to publish this site.');
       return;

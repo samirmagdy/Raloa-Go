@@ -28,6 +28,9 @@
     "test:media": "tsx test-media.ts",
     "test:billing": "NODE_ENV=test tsx test-billing.ts",
     "test:content-schema": "tsx test-content-schema.ts"
+    ,"build:e2e": "VITE_E2E_TEST_MODE=true vite build"
+    ,"test:e2e": "playwright test"
+    ,"test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -59,6 +62,7 @@
     "vite": "^8.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/canvas-confetti": "^1.9.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",

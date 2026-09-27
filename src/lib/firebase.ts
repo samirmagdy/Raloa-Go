@@ -37,6 +37,15 @@ export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
+// This is deliberately compile-time opt-in and is only used by the browser
+// E2E build. It must never be enabled in a production deployment.
+export const isE2ETestMode = import.meta.env.VITE_E2E_TEST_MODE === 'true';
+export const hasAuthenticatedSession = (): boolean => Boolean(auth.currentUser) || isE2ETestMode;
+
+export function createE2ETestUser(): User {
+  return createLocalUser('e2e.creator@raloa.test', 'e2e_creator');
+}
+
 // Initialize Firestore Database with provisioned custom Database ID if specified
 export const db = firebaseConfig.firestoreDatabaseId
   ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
@@ -560,8 +569,8 @@ export async function saveUserMiniSiteToFirestore(
   siteData: Partial<UserMiniSite>,
   siteId: string
 ): Promise<UserMiniSite> {
-  if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error('AUTH_REQUIRED');
-  const token = await auth.currentUser.getIdToken();
+  if ((!auth.currentUser && !isE2ETestMode) || (auth.currentUser && auth.currentUser.uid !== userId)) throw new Error('AUTH_REQUIRED');
+  const token = isE2ETestMode ? 'e2e-test-token' : await auth.currentUser!.getIdToken();
   const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -587,6 +596,13 @@ export async function loadUserMiniSiteFromFirestore(
   userId: string,
   siteId: string
 ): Promise<UserMiniSite | null> {
+  if (isE2ETestMode) {
+    const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}`, { headers: { Authorization: 'Bearer e2e-test-token' } });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error('SITE_LOAD_FAILED');
+    const payload = await response.json();
+    return payload.site as UserMiniSite;
+  }
   try {
     const siteDocRef = doc(db, 'users', userId, 'sites', siteId);
     const snap = await getDoc(siteDocRef);
@@ -601,8 +617,8 @@ export async function loadUserMiniSiteFromFirestore(
 }
 
 export async function listUserMiniSitesFromServer(userId: string): Promise<import('../types').UserMiniSiteSummary[]> {
-  if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error('AUTH_REQUIRED');
-  const token = await auth.currentUser.getIdToken();
+  if ((!auth.currentUser && !isE2ETestMode) || (auth.currentUser && auth.currentUser.uid !== userId)) throw new Error('AUTH_REQUIRED');
+  const token = isE2ETestMode ? 'e2e-test-token' : await auth.currentUser!.getIdToken();
   const response = await fetch('/api/sites', { headers: { Authorization: `Bearer ${token}` } });
   if (!response.ok) throw new Error('SITE_LIST_FAILED');
   const payload = await response.json();
@@ -610,8 +626,8 @@ export async function listUserMiniSitesFromServer(userId: string): Promise<impor
 }
 
 export async function createUserMiniSiteOnServer(userId: string, siteData: Partial<UserMiniSite>, siteId?: string): Promise<UserMiniSite> {
-  if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error('AUTH_REQUIRED');
-  const token = await auth.currentUser.getIdToken();
+  if ((!auth.currentUser && !isE2ETestMode) || (auth.currentUser && auth.currentUser.uid !== userId)) throw new Error('AUTH_REQUIRED');
+  const token = isE2ETestMode ? 'e2e-test-token' : await auth.currentUser!.getIdToken();
   const response = await fetch('/api/sites', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -623,8 +639,8 @@ export async function createUserMiniSiteOnServer(userId: string, siteData: Parti
 }
 
 export async function deleteUserMiniSiteFromServer(userId: string, siteId: string): Promise<void> {
-  if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error('AUTH_REQUIRED');
-  const token = await auth.currentUser.getIdToken();
+  if ((!auth.currentUser && !isE2ETestMode) || (auth.currentUser && auth.currentUser.uid !== userId)) throw new Error('AUTH_REQUIRED');
+  const token = isE2ETestMode ? 'e2e-test-token' : await auth.currentUser!.getIdToken();
   const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
   if (!response.ok) throw new Error('SITE_DELETE_FAILED');
 }

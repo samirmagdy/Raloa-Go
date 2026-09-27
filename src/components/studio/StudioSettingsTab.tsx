@@ -473,6 +473,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
                 type="text"
                 value={customDomain}
                 disabled={!capabilities.customDomains}
+                aria-label={isRtl ? 'النطاق المخصص' : 'Custom Domain'}
                   onChange={(e) => {
                   onCustomDomainChange(e.target.value.toLowerCase().trim());
                   setDomainVerified(false);
