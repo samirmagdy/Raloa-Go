@@ -23,6 +23,17 @@ export const publicPageSchemaV1 = z.object({ handle: z.string(), name: z.string(
 export const domainEventSchemaV1 = z.object({ id: z.string(), type: z.string().regex(/^[A-Za-z][A-Za-z0-9]*\.v1$/), name: z.string(), version: z.literal(1), aggregateType: z.string(), aggregateId: z.string(), occurredAt: z.string().datetime(), payload: z.record(z.string(), z.unknown()) });
 export const oauthTokenBundleSchemaV1 = z.object({ accessToken: z.string().min(1), refreshToken: z.string().min(1).optional(), expiresAt: z.number().finite().optional() });
 export const integrationConnectionSchemaV1 = z.object({ provider: z.string().min(1), scopes: z.array(z.string()), state: z.enum(['connected', 'refreshing', 'reauthorization_required', 'revoked', 'error']) });
+export const analyticsEventSchemaV1 = z.object({
+  schemaVersion: schemaVersion,
+  eventId: z.string().trim().min(8).max(200),
+  eventType: z.enum(['page_view', 'link_click']),
+  siteId: z.string().trim().min(1).max(200),
+  siteOwnerId: z.string().trim().min(1).max(200).optional(),
+  occurredAt: z.string().datetime(),
+  visitorHash: z.string().trim().min(1).max(256).optional(),
+  dimensions: z.record(z.string(), z.string().max(500)).default({}),
+  payload: z.record(z.string(), z.unknown()).default({})
+});
 
 export const publicApiPayloadSchemas = {
   contact: z.object({ name: z.string().trim().min(1).max(120), email: z.string().email(), message: z.string().trim().min(1).max(5000) }),
@@ -48,6 +59,7 @@ export type SiteConfigV1 = z.infer<typeof siteConfigSchemaV1>;
 export type PublicPageV1 = z.infer<typeof publicPageSchemaV1>;
 export type DomainEventV1 = z.infer<typeof domainEventSchemaV1>;
 export type OAuthTokenBundleV1 = z.infer<typeof oauthTokenBundleSchemaV1>;
+export type AnalyticsEventV1 = z.infer<typeof analyticsEventSchemaV1>;
 
 export function migrateSiteConfig(input: unknown): SiteConfigV1 {
   const candidate = input && typeof input === 'object' ? input as Record<string, unknown> : {};

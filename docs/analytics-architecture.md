@@ -13,28 +13,36 @@ Analytics has two separate workloads and storage lanes:
 
 ```text
 public event
-  -> validated event envelope + stable event_id
+  -> Zod validation + stable event_id + deduplication claim
+  -> durable analytics queue
   -> analytical ingestion (BigQuery partitioned raw_events)
   -> scheduled rollup job
   -> PostgreSQL analytics_daily_rollups / analytics_visitor_days
   -> Studio API
 ```
 
-The raw event path is append-only and idempotent on `event_id`. Rollup workers process a bounded
-time window, use a watermark/checkpoint, and upsert PostgreSQL aggregates by their natural keys.
+The implementation contract is in
+[`server/infrastructure/analytics/pipeline.ts`](../server/infrastructure/analytics/pipeline.ts).
+The raw event path is append-only and idempotent on `event_id`. Invalid events are rejected before
+they enter the queue; duplicate claims are acknowledged without enqueueing another copy. Rollup
+workers process a bounded time window, use a watermark/checkpoint, and upsert PostgreSQL aggregates
+by their natural keys.
 They must be replayable: rerunning a window produces the same aggregate rather than double-counting.
 Operational tables must not contain arbitrary raw payloads or unbounded dimensions.
 
 ## PostgreSQL rules
 
 `analytics_daily_rollups` and `analytics_visitor_days` are operational read models with explicit
-retention and indexes. A PostgreSQL `analytics_events` table, if enabled during migration, is only a
-short-lived ingestion buffer with a TTL cleanup job and an `event_id` uniqueness constraint. It is
-not a source for unlimited historical reporting.
+retention and indexes. Creator-facing query interfaces accept bounded date ranges and limits and
+read only these rollups; they never query BigQuery or scan raw event history synchronously. A
+PostgreSQL `analytics_events` table, if enabled during migration, is only a short-lived ingestion
+buffer with a TTL cleanup job and an `event_id` uniqueness constraint. It is not a source for
+unlimited historical reporting.
 
 Analytics writes do not extend booking, order, payment, or subscription transactions. The domain
-transaction emits an event/outbox record where required; an analytics worker exports or aggregates
-after commit. Analytics failure must not roll back the business operation.
+transaction emits an event/outbox record where required; the analytics worker exports or aggregates
+after commit. Raw persistence and rollup updates are independently retryable; analytics failure
+must not roll back the business operation.
 
 ## Privacy and operations
 
