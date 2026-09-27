@@ -226,6 +226,16 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "availableAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "outbox_events",
+      "queryScope": "COLLECTION",
+      "density": "SPARSE_ANY",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "availableAt", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

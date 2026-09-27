@@ -24,5 +24,5 @@ require a transactional lease claim.
 
 Supported job kinds are calendar synchronization, email delivery, domain
 verification, OAuth refresh, analytics rollups, media processing, Stripe
-reconciliation, and cleanup. Operational dashboards should monitor processing
+reconciliation, order processing, and cleanup. Operational dashboards should monitor processing
 latency, retry counts, dead-letter counts, and lease expiry by kind.

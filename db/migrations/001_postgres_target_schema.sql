@@ -577,9 +577,28 @@ CREATE TABLE idempotency_keys (
 );
 CREATE INDEX idempotency_expiry_idx ON idempotency_keys (expires_at);
 
+CREATE TABLE outbox_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_type text NOT NULL,
+  aggregate_type text NOT NULL,
+  aggregate_id uuid NOT NULL,
+  idempotency_key text NOT NULL UNIQUE,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(payload) = 'object'),
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'publishing', 'published', 'retry', 'dead_letter')),
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 8 CHECK (max_attempts > 0),
+  available_at timestamptz NOT NULL DEFAULT now(),
+  lease_until timestamptz,
+  last_error text,
+  published_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX outbox_events_claim_idx ON outbox_events (status, available_at, created_at);
+
 CREATE TABLE operational_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  kind text NOT NULL CHECK (kind IN ('calendar_sync', 'email_delivery', 'domain_verification', 'oauth_refresh', 'analytics_rollup', 'media_processing', 'stripe_reconciliation', 'cleanup')),
+  kind text NOT NULL CHECK (kind IN ('calendar_sync', 'email_delivery', 'domain_verification', 'oauth_refresh', 'analytics_rollup', 'media_processing', 'stripe_reconciliation', 'order_processing', 'cleanup')),
   aggregate_type text,
   aggregate_id uuid,
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -620,7 +639,7 @@ $$;
 DO $$
 DECLARE table_name text;
 BEGIN
-  FOREACH table_name IN ARRAY ARRAY['app_users', 'sites', 'booking_services', 'booking_slots', 'bookings', 'booking_attendees', 'calendar_sync_state', 'booking_idempotency_keys', 'products', 'product_variants', 'inventory', 'orders', 'order_items', 'inventory_reservations', 'payments', 'fulfillments', 'billing_price_mappings', 'billing_customers', 'subscriptions', 'billing_webhook_events', 'billing_reconciliation_runs', 'integrations', 'custom_domains', 'analytics_daily_rollups', 'idempotency_keys', 'operational_jobs'] LOOP
+  FOREACH table_name IN ARRAY ARRAY['app_users', 'sites', 'booking_services', 'booking_slots', 'bookings', 'booking_attendees', 'calendar_sync_state', 'booking_idempotency_keys', 'products', 'product_variants', 'inventory', 'orders', 'order_items', 'inventory_reservations', 'payments', 'fulfillments', 'billing_price_mappings', 'billing_customers', 'subscriptions', 'billing_webhook_events', 'billing_reconciliation_runs', 'integrations', 'custom_domains', 'analytics_daily_rollups', 'idempotency_keys', 'outbox_events', 'operational_jobs'] LOOP
     EXECUTE format('CREATE TRIGGER %I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION set_updated_at()', table_name, table_name);
   END LOOP;
 END;

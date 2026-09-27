@@ -1,6 +1,6 @@
 export const JOB_KINDS = [
   'calendar_sync', 'email_delivery', 'domain_verification', 'oauth_refresh',
-  'analytics_rollup', 'media_processing', 'stripe_reconciliation', 'cleanup'
+  'analytics_rollup', 'media_processing', 'stripe_reconciliation', 'order_processing', 'cleanup'
 ] as const;
 
 export type JobKind = typeof JOB_KINDS[number];

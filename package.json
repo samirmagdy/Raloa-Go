@@ -35,6 +35,7 @@
     "test:order-state-machine": "tsx test-order-state-machine.ts",
     "test:oauth-service": "tsx test-oauth-service.ts",
     "test:background-jobs": "tsx test-background-jobs.ts",
+    "test:outbox": "tsx test-outbox.ts",
     "test:content-schema": "tsx test-content-schema.ts",
     "test:integration:staging": "node scripts/staging-integration-checks.mjs",
     "release:verify": "npm run validate:production && npm run lint && npm run build && npm run check:performance && npm run check:api && npm run test:production-config && npm run test:content-schema && npm run test:entitlements && npm run test:analytics && npm run test:audience && npm run test:media && npm run test:calendar && npm run test:integrations && npm run test:billing && npm run test:multi-site && npm run test:site-slugs && npm run test:block-types && npm run test:design-parity && npm run test:public-fallback && npm run test:seo && npm run test:e2e && npm run test:integration:staging && npm run smoke:release"

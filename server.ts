@@ -49,7 +49,8 @@ import { stripeAdapter } from './server/adapters/stripe';
 import { cloudflareAdapter } from './server/adapters/cloudflare';
 import { createBillingController } from './server/domains/billing/controller';
 import { assertOrderTransition, legacyOrderState } from './server/domains/orders/state-machine';
-import { createBackgroundJobService, createConfiguredDispatcher, createFirestoreBackgroundJobRepository } from './server/background-jobs';
+import { createBackgroundJobService, createConfiguredDispatcher, createFirestoreBackgroundJobRepository, type JobKind } from './server/background-jobs';
+import { appendOutboxEvent, createFirestoreOutboxRepository, createOutboxEvent, createOutboxService, outboxEventId } from './server/outbox';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,9 +71,16 @@ export const backgroundJobs = createBackgroundJobService(createFirestoreBackgrou
   media_processing: async () => sweepOrphanMedia(),
   cleanup: async () => sweepOrphanMedia(),
   stripe_reconciliation: async () => { await reconcileStripeBillingState(); },
+  order_processing: async () => undefined,
   domain_verification: async () => undefined,
   oauth_refresh: async () => undefined,
   analytics_rollup: async () => undefined
+});
+export const outbox = createOutboxService(createFirestoreOutboxRepository(adminDb), {
+  publish: async (event) => {
+    const kinds: JobKind[] = event.eventType.startsWith('booking.') ? ['email_delivery', 'calendar_sync'] : [event.eventType === 'analytics.event' ? 'analytics_rollup' : event.eventType === 'integration.sync' ? 'oauth_refresh' : event.eventType === 'notification.requested' ? 'email_delivery' : event.eventType === 'order.created' ? 'order_processing' : 'cleanup'];
+    await Promise.all(kinds.map((kind) => backgroundJobs.enqueue({ kind, idempotencyKey: `outbox:${event.id}:${kind}`, payload: { ...event.payload, eventId: event.id, eventType: event.eventType } })));
+  }
 });
 const billingController = createBillingController(domainModules.billing.service, (request) => getAuthenticatedUser(request));
 const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS || 1);
@@ -1964,19 +1972,13 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
       createdAt: now,
       updatedAt: now
     };
-    await adminDb.runTransaction(async (transaction) => {
-      const locks = await Promise.all(lockReferences.map((reference) => transaction.get(reference)));
-      if (locks.some((lock) => lock.exists)) throw new Error('BOOKING_SLOT_TAKEN');
-      for (const reference of lockReferences) transaction.create(reference, { bookingId: bookingReference.id, hostUserId: hostSite.userId, createdAt: now });
-      transaction.create(bookingReference, booking);
-    });
     const hostProfile = await adminDb.collection('users').doc(String(hostSite.userId)).get();
     const hostEmail = typeof hostProfile.data()?.email === 'string' ? hostProfile.data()?.email : '';
     const notifications = [
       { audience: 'customer', email: customerEmail, type: 'booking_request_received' },
       ...(hostEmail ? [{ audience: 'creator', email: hostEmail, type: 'booking_request' }] : [])
     ];
-    await Promise.all(notifications.map((notification) => adminDb.collection('notification_jobs').add({ ...notification, bookingId: bookingReference.id, status: 'pending', attempts: 0, maxAttempts: 8, createdAt: now })));
+    const notificationReferences = notifications.map(() => adminDb.collection('notification_jobs').doc());
     const calendarProvider = config.calendarProvider || 'none';
     const calendarReady = calendarProvider !== 'none' && calendarProviderIsConfigured(calendarProvider as CalendarProvider);
     const calendarJob: Record<string, unknown> = {
@@ -1986,9 +1988,17 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
       createdAt: now
     };
     if (calendarProvider !== 'none' && !calendarReady) calendarJob.lastError = 'CALENDAR_PROVIDER_NOT_CONFIGURED';
-    await adminDb.collection('calendar_jobs').add(calendarJob);
-    void backgroundJobs.enqueue({ kind: 'email_delivery', idempotencyKey: `booking:${bookingReference.id}:notifications`, payload: { bookingId: bookingReference.id } }).catch((error) => console.error('[Background job enqueue]', error));
-    if (calendarProvider !== 'none' && calendarReady) void backgroundJobs.enqueue({ kind: 'calendar_sync', idempotencyKey: `booking:${bookingReference.id}:calendar`, payload: { bookingId: bookingReference.id } }).catch((error) => console.error('[Background job enqueue]', error));
+    const calendarReference = adminDb.collection('calendar_jobs').doc();
+    const bookingCreatedEvent = createOutboxEvent({ id: outboxEventId(`booking:${bookingReference.id}:created`), eventType: 'booking.created', aggregateType: 'booking', aggregateId: bookingReference.id, idempotencyKey: `booking:${bookingReference.id}:created`, payload: { bookingId: bookingReference.id, hostUserId: booking.hostUserId, siteId: booking.siteId } });
+    await adminDb.runTransaction(async (transaction) => {
+      const locks = await Promise.all(lockReferences.map((reference) => transaction.get(reference)));
+      if (locks.some((lock) => lock.exists)) throw new Error('BOOKING_SLOT_TAKEN');
+      for (const reference of lockReferences) transaction.create(reference, { bookingId: bookingReference.id, hostUserId: hostSite.userId, createdAt: now });
+      transaction.create(bookingReference, booking);
+      notifications.forEach((notification, index) => transaction.create(notificationReferences[index], { ...notification, bookingId: bookingReference.id, status: 'pending', attempts: 0, maxAttempts: 8, createdAt: now }));
+      transaction.create(calendarReference, calendarJob);
+      appendOutboxEvent(transaction, adminDb, bookingCreatedEvent);
+    });
     const response = { id: bookingReference.id, status: booking.status, confirmationStatus: booking.confirmationStatus, timezone: config.timezone, slotStart: booking.slotStart, slotEnd: booking.slotEnd };
     await completeIdempotency('booking', idempotencyKey, response);
     return res.status(201).json(response);
@@ -2036,7 +2046,15 @@ app.post('/api/creator/bookings/:bookingId/confirm', async (req: Request, res: R
   const bookingSite = await getOwnedSite(user.uid, String(booking.siteId || ''));
   if (!bookingSite || (typeof req.query.siteId === 'string' && bookingSite.id !== req.query.siteId.trim())) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   if (booking.status === 'cancelled') return apiError(res, 409, 'BOOKING_CANCELLED', 'Cancelled bookings cannot be confirmed.');
-  if (booking.status !== 'confirmed') await bookingRef.set({ status: 'confirmed', confirmationStatus: 'confirmed', confirmedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true });
+  if (booking.status !== 'confirmed') {
+    const confirmedEvent = createOutboxEvent({ id: outboxEventId(`booking:${bookingRef.id}:confirmed`), eventType: 'booking.confirmed', aggregateType: 'booking', aggregateId: bookingRef.id, idempotencyKey: `booking:${bookingRef.id}:confirmed`, payload: { bookingId: bookingRef.id, siteId: String(booking.siteId || '') } });
+    await adminDb.runTransaction(async (transaction) => {
+      const current = await transaction.get(bookingRef);
+      if (!current.exists || current.data()?.status === 'cancelled') throw new Error('BOOKING_CANCELLED');
+      transaction.set(bookingRef, { status: 'confirmed', confirmationStatus: 'confirmed', confirmedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true });
+      appendOutboxEvent(transaction, adminDb, confirmedEvent);
+    });
+  }
   const customerEmail = String(booking.customerEmail || '');
   await adminDb.collection('notification_jobs').add({ audience: 'customer', email: customerEmail, type: 'booking_confirmed', bookingId: bookingRef.id, status: 'pending', attempts: 0, maxAttempts: 8, createdAt: new Date().toISOString() });
   void backgroundJobs.enqueue({ kind: 'email_delivery', idempotencyKey: `booking:${bookingRef.id}:confirmed`, payload: { bookingId: bookingRef.id } }).catch((error) => console.error('[Background job enqueue]', error));
@@ -2062,12 +2080,14 @@ app.post('/api/creator/bookings/:bookingId/cancel', async (req: Request, res: Re
   const bookingSite = await getOwnedSite(user.uid, String(booking.siteId || ''));
   if (!bookingSite || (typeof req.query.siteId === 'string' && bookingSite.id !== req.query.siteId.trim())) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   if (booking.status === 'cancelled') return res.json({ id: bookingRef.id, status: 'cancelled', confirmationStatus: 'cancelled' });
+  const cancelledEvent = createOutboxEvent({ id: outboxEventId(`booking:${bookingRef.id}:cancelled`), eventType: 'booking.cancelled', aggregateType: 'booking', aggregateId: bookingRef.id, idempotencyKey: `booking:${bookingRef.id}:cancelled`, payload: { bookingId: bookingRef.id, siteId: String(booking.siteId || '') } });
   await adminDb.runTransaction(async (transaction) => {
     const current = await transaction.get(bookingRef);
     if (!current.exists || current.data()?.hostUserId !== user.uid || current.data()?.status === 'cancelled') return;
     const lockIds = Array.isArray(current.data()?.lockIds) ? current.data()?.lockIds : [];
     transaction.update(bookingRef, { status: 'cancelled', confirmationStatus: 'cancelled', cancelledAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     for (const lockId of lockIds) if (typeof lockId === 'string') transaction.delete(adminDb.collection('booking_locks').doc(lockId));
+    appendOutboxEvent(transaction, adminDb, cancelledEvent);
   });
   const calendarJobs = await adminDb.collection('calendar_jobs').where('bookingId', '==', bookingRef.id).limit(1).get();
   if (!calendarJobs.empty) {
@@ -4247,6 +4267,7 @@ app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: R
   if (!site) return apiError(res, 404, 'CREATOR_NOT_FOUND', 'Creator page not found.');
   const productRef = adminDb.collection('creator_products').doc(productId);
   const orderRef = adminDb.collection('orders').doc();
+  const orderCreatedEvent = createOutboxEvent({ id: outboxEventId(`order:${orderRef.id}:created`), eventType: 'order.created', aggregateType: 'order', aggregateId: orderRef.id, idempotencyKey: `order:${orderRef.id}:created`, payload: { orderId: orderRef.id, productId, siteId: String(site.id || ''), creatorId: String(site.userId) } });
   const now = new Date().toISOString();
   try {
     const claimed = await claimIdempotency('product-checkout', idempotencyKey);
@@ -4262,6 +4283,7 @@ app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: R
       const orderData = { id: orderRef.id, creatorId: String(site.userId), siteId: String(site.id || ''), creatorHandle: handle, productId, productName: String(product.name), quantity, unitPriceMinor, currency: String(product.currency), totalMinor: unitPriceMinor * quantity, customerEmail, status: 'pending_payment', fulfillmentStatus: 'unfulfilled', inventoryReservation: quantity, createdAt: now, updatedAt: now };
       transaction.update(productRef, { inventoryReserved: Number(product.inventoryReserved || 0) + quantity, updatedAt: now });
       transaction.create(orderRef, orderData);
+      appendOutboxEvent(transaction, adminDb, orderCreatedEvent);
       return { orderData, stripePriceId: String(product.stripePriceId) };
     });
     const session = await stripe.checkout.sessions.create({ mode: 'payment', line_items: [{ price: order.stripePriceId, quantity }], customer_email: customerEmail, success_url: `${APP_URL}/?order=success&order_id=${encodeURIComponent(orderRef.id)}`, cancel_url: `${APP_URL}/?order=cancelled&order_id=${encodeURIComponent(orderRef.id)}`, metadata: { orderId: orderRef.id, productId, creatorId: String(site.userId), creatorHandle: handle } }, { idempotencyKey: `creator_order_${idempotencyKey}` });
@@ -4273,8 +4295,10 @@ app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: R
   } catch (error) {
     if (error instanceof Error && ['PRODUCT_NOT_FOUND', 'OUT_OF_STOCK'].includes(error.message)) return apiError(res, error.message === 'OUT_OF_STOCK' ? 409 : 404, error.message, error.message === 'OUT_OF_STOCK' ? 'The requested quantity is no longer available.' : 'Product not found.');
     await adminDb.runTransaction(async (transaction) => {
-      const [orderSnapshot, productSnapshot] = await Promise.all([transaction.get(orderRef), transaction.get(productRef)]);
+      const outboxReference = adminDb.collection('outbox_events').doc(orderCreatedEvent.id);
+      const [orderSnapshot, productSnapshot, outboxSnapshot] = await Promise.all([transaction.get(orderRef), transaction.get(productRef), transaction.get(outboxReference)]);
       if (orderSnapshot.exists && orderSnapshot.data()?.status === 'pending_payment') transaction.delete(orderRef);
+      if (outboxSnapshot.exists && outboxSnapshot.data()?.status === 'pending') transaction.delete(outboxReference);
       if (productSnapshot.exists && productSnapshot.data()?.creatorId === String(site.userId)) transaction.update(productRef, { inventoryReserved: Math.max(0, Number(productSnapshot.data()?.inventoryReserved || 0) - quantity), updatedAt: new Date().toISOString() });
     }).catch(() => undefined);
     console.error('[Public product checkout]', error);
@@ -5155,6 +5179,13 @@ app.post('/internal/background-jobs/reconcile', async (req: Request, res: Respon
   const limit = Math.min(500, Math.max(1, Number(req.body?.limit) || 100));
   const result = await backgroundJobs.reconcile(limit);
   return res.status(200).json(result);
+});
+
+app.post('/internal/outbox/publish', async (req: Request, res: Response) => {
+  const configuredSecret = process.env.BACKGROUND_JOB_SECRET;
+  if (!configuredSecret || req.headers['x-background-job-secret'] !== configuredSecret) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  const limit = Math.min(500, Math.max(1, Number(req.body?.limit) || 100));
+  return res.status(200).json(await outbox.publishPending(limit));
 });
 
 app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
