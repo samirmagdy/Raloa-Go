@@ -76,7 +76,8 @@
   "check:ci-cd": "node scripts/check-ci-cd.mjs",
   "render:cloud-run": "node scripts/render-cloud-run-manifests.mjs",
   "deploy:rollback": "node scripts/rollback-cloud-run.mjs",
-  "check:persistence-boundary": "node scripts/check-persistence-boundary.mjs",
+    "check:persistence-boundary": "node scripts/check-persistence-boundary.mjs",
+    "check:route-persistence": "node scripts/check-route-persistence-boundary.mjs",
   "check:modular-monolith": "node scripts/check-modular-monolith.mjs",
   "check:adrs": "node scripts/check-adrs.mjs",
   "check:capacity-plan": "node scripts/check-capacity-plan.mjs",
@@ -84,7 +85,7 @@
   "check:system-architecture": "node scripts/check-system-architecture.mjs",
     "test:content-schema": "tsx test-content-schema.ts",
     "test:integration:staging": "node scripts/staging-integration-checks.mjs",
-  "release:verify": "npm run validate:production && npm run check:secrets && npm run check:deployment-topology && npm run check:ci-cd && npm run check:migrations && npm run lint && npm run build && npm run check:performance && npm run check:api && npm run test:unit && npm run test:http && npm run test:contracts && npm run test:legacy && npm run test:production-config && npm run test:secrets-provider && npm run test:envelope-encryption && npm run test:e2e && npm run test:integration:staging && npm run smoke:release",
+    "release:verify": "npm run validate:production && npm run check:secrets && npm run check:deployment-topology && npm run check:ci-cd && npm run check:migrations && npm run check:route-persistence && npm run lint && npm run build && npm run check:performance && npm run check:api && npm run test:unit && npm run test:http && npm run test:contracts && npm run test:legacy && npm run test:production-config && npm run test:secrets-provider && npm run test:envelope-encryption && npm run test:e2e && npm run test:integration:staging && npm run smoke:release",
     "build:e2e": "VITE_E2E_TEST_MODE=true vite build",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"

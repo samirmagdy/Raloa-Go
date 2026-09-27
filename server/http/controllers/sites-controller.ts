@@ -1,16 +1,16 @@
 import type { Express, Request, Response } from 'express';
-import type { Firestore } from 'firebase-admin/firestore';
 import type { AuthorizationService } from '../../core/authorization-service';
 import type { PolicyAction } from '../../core/authorization-policy';
+import type { SitePersistenceRepository } from '../../repositories/site-persistence';
 
 type SitesControllerDependencies = Record<string, any> & {
-  adminDb: Firestore;
+  sitesRepository: SitePersistenceRepository;
   templatesData: Array<{ id: string }>;
   authorizationService: AuthorizationService;
 };
 
 export function registerSitesControllerRoutes(app: Express, dependencies: SitesControllerDependencies): void {
-  const { crypto, adminDb, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter, authorizationService } = dependencies;
+  const { crypto, sitesRepository, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter, authorizationService } = dependencies;
 
   async function requireSiteAccess(user: { uid: string }, siteId: string, action: PolicyAction): Promise<boolean> {
     try {
@@ -29,10 +29,9 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
     if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
     if (!isAdminConfigured()) return apiError(res, 503, 'SERVICE_NOT_CONFIGURED', 'Site persistence is not configured.');
     try {
-      const snapshot = await adminDb.collection('users').doc(user.uid).collection('sites').limit(100).get();
-      const sites = snapshot.docs.map((document) => {
-        const data = document.data();
-        return { id: document.id, username: String(data.username || ''), displayName: String(data.displayName || ''), isPublished: data.isPublished === true, updatedAt: data.updatedAt || null };
+      const records = await sitesRepository.listOwned(user.uid, 100);
+      const sites = records.map(({ id, data }) => {
+        return { id, username: String(data.username || ''), displayName: String(data.displayName || ''), isPublished: data.isPublished === true, updatedAt: data.updatedAt || null };
       }).sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
       return res.status(200).json({ sites });
     } catch (error) {
@@ -44,12 +43,7 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
   async function siteHandleTaken(handle: string, userId: string, siteId?: string): Promise<boolean> {
     const slug = normalizeSiteSlug(handle);
     if (!validateSiteSlug(slug).valid || RESERVED_HANDLES.has(slug)) return true;
-    const [snapshot, redirect] = await Promise.all([
-      adminDb.collectionGroup('sites').where('username', '==', slug).limit(100).get(),
-      adminDb.collection('site_slug_redirects').doc(slug).get()
-    ]);
-    if (redirect.exists) return true;
-    return snapshot.docs.some((document) => document.ref.parent.parent?.id !== userId || document.id !== siteId);
+    return sitesRepository.isHandleTaken(slug, userId, siteId);
   }
   
   app.post('/api/sites', async (req: Request, res: Response) => {
@@ -58,10 +52,9 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
     if (!isAdminConfigured()) return apiError(res, 503, 'SERVICE_NOT_CONFIGURED', 'Site persistence is not configured.');
     const siteId = String(req.body?.siteId || `site_${crypto.randomUUID()}`).trim();
     if (!/^[a-zA-Z0-9_-]{1,64}$/.test(siteId)) return apiError(res, 400, 'INVALID_SITE_ID', 'Invalid site ID.');
-    const profile = await adminDb.collection('users').doc(user.uid).get();
-    if (!profile.exists) return apiError(res, 404, 'PROFILE_NOT_FOUND', 'User profile not found.');
-    const reference = adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId);
-    if ((await reference.get()).exists) return apiError(res, 409, 'SITE_EXISTS', 'A site with this ID already exists.');
+    const profile = await sitesRepository.getProfile(user.uid);
+    if (!profile) return apiError(res, 404, 'PROFILE_NOT_FOUND', 'User profile not found.');
+    if (await sitesRepository.getOwned(user.uid, siteId)) return apiError(res, 409, 'SITE_EXISTS', 'A site with this ID already exists.');
     const incoming = req.body && typeof req.body === 'object' ? req.body : {};
     const username = normalizeSiteSlug(incoming.username);
     const slugValidation = validateSiteSlug(username);
@@ -96,7 +89,7 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
     if (ownedMediaError) return apiError(res, 400, 'INVALID_MEDIA_REFERENCE', ownedMediaError);
     const entitlement = validateSiteEntitlements(site, profile.data());
     if (entitlement) return entitlementError(res, entitlement.feature, entitlement.message, entitlement.details);
-    await reference.create(site);
+    await sitesRepository.create(user.uid, siteId, site);
     await auditService.recordBestEffort({ actorUserId: user.uid, siteId, resourceType: 'site', resourceId: siteId, action: 'site.created', requestId: auditRequestId(req), metadata: { handle: username, templateId: requestedTemplateId } });
     return res.status(201).json({ site });
   });
@@ -108,19 +101,12 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
     const siteId = String(req.params.siteId || '').trim();
     if (!/^[a-zA-Z0-9_-]{1,64}$/.test(siteId)) return apiError(res, 400, 'INVALID_SITE_ID', 'Invalid site ID.');
     if (!(await requireSiteAccess(user, siteId, 'site:write'))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
-    const reference = adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId);
-    const snapshot = await reference.get();
-    if (!snapshot.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
-    if (snapshot.data()?.isPublished === true) return apiError(res, 409, 'SITE_PUBLISHED', 'Unpublish the site before deleting it.');
-    if (typeof snapshot.data()?.customDomain === 'string' && snapshot.data()?.customDomain.trim()) return apiError(res, 409, 'SITE_DOMAIN_ATTACHED', 'Remove the custom domain before deleting the site.');
-    const redirects = await adminDb.collection('site_slug_redirects').where('siteId', '==', siteId).where('userId', '==', user.uid).limit(100).get();
-    if (!redirects.empty) {
-      const batch = adminDb.batch();
-      redirects.docs.forEach((document) => batch.delete(document.ref));
-      await batch.commit();
-    }
-    await reference.delete();
-    await auditService.recordBestEffort({ actorUserId: user.uid, siteId, resourceType: 'site', resourceId: siteId, action: 'site.deleted', requestId: auditRequestId(req), metadata: { handle: String(snapshot.data()?.username || '') } });
+    const existing = await sitesRepository.getOwned(user.uid, siteId);
+    if (!existing) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+    if (existing.data.isPublished === true) return apiError(res, 409, 'SITE_PUBLISHED', 'Unpublish the site before deleting it.');
+    if (typeof existing.data.customDomain === 'string' && existing.data.customDomain.trim()) return apiError(res, 409, 'SITE_DOMAIN_ATTACHED', 'Remove the custom domain before deleting the site.');
+    await sitesRepository.delete(user.uid, siteId);
+    await auditService.recordBestEffort({ actorUserId: user.uid, siteId, resourceType: 'site', resourceId: siteId, action: 'site.deleted', requestId: auditRequestId(req), metadata: { handle: String(existing.data.username || '') } });
     return res.status(204).send();
   });
   
@@ -132,12 +118,11 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
     if (!/^[a-zA-Z0-9_-]{1,64}$/.test(siteId)) return apiError(res, 400, 'INVALID_SITE_ID', 'Invalid site ID.');
     if (!(await requireSiteAccess(user, siteId, 'site:write'))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
     const incoming = req.body && typeof req.body === 'object' ? req.body : {};
-    const profile = await adminDb.collection('users').doc(user.uid).get();
-    const profileData = profile.data();
-    if (!profile.exists) return apiError(res, 404, 'PROFILE_NOT_FOUND', 'User profile not found.');
-    const existingRef = adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId);
-    const existing = await existingRef.get();
-    const current = existing.data() || {};
+    const profileData = await sitesRepository.getProfile(user.uid);
+    if (!profileData) return apiError(res, 404, 'PROFILE_NOT_FOUND', 'User profile not found.');
+    const existing = await sitesRepository.getOwned(user.uid, siteId);
+    if (!existing) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+    const current = existing.data;
     const expectedRevisionRaw = incoming.expectedRevision;
     const expectedRevision = expectedRevisionRaw === undefined || expectedRevisionRaw === null || expectedRevisionRaw === ''
       ? undefined
@@ -200,54 +185,12 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
       return apiError(res, 400, 'PUBLISH_REQUIREMENTS_NOT_MET', 'Complete your handle, display name, and bio before publishing.');
     }
     const previousHandle = normalizeSiteSlug(current.username);
-    const slugChanged = existing.exists && previousHandle && previousHandle !== handle;
-    const redirectRef = slugChanged ? adminDb.collection('site_slug_redirects').doc(previousHandle) : null;
-    if (redirectRef) {
-      try {
-        await adminDb.runTransaction(async (transaction) => {
-          const currentSnapshot = await transaction.get(existingRef);
-          const redirectSnapshot = await transaction.get(redirectRef);
-          if (!currentSnapshot.exists) throw new Error('SITE_NOT_FOUND');
-          const transactionRevision = Number(currentSnapshot.data()?.revision || 0);
-          if (expectedRevision !== undefined && transactionRevision !== expectedRevision) throw new Error('SITE_VERSION_CONFLICT');
-          if (redirectSnapshot.exists && String(redirectSnapshot.data()?.siteId || '') !== siteId) throw new Error('HANDLE_REDIRECT_CONFLICT');
-          transaction.set(redirectRef, {
-            oldSlug: previousHandle,
-            newSlug: handle,
-            siteId,
-            userId: user.uid,
-            createdAt: redirectSnapshot.data()?.createdAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
-          transaction.set(existingRef, sanitized, { merge: true });
-        });
-      } catch (error) {
-        if (error instanceof Error && error.message === 'HANDLE_REDIRECT_CONFLICT') {
-          return apiError(res, 409, 'HANDLE_REDIRECT_CONFLICT', 'The previous site handle is already reserved by another site.');
-        }
-        if (error instanceof Error && error.message === 'SITE_VERSION_CONFLICT') {
-          const latest = await existingRef.get();
-          const latestData = latest.data() || {};
-          return res.status(409).json({ status: 'error', error: 'SITE_VERSION_CONFLICT', code: 'SITE_VERSION_CONFLICT', message: 'This site changed elsewhere. Reload the server version before saving again.', site: { ...latestData, id: siteId, userId: user.uid, revision: Number(latestData.revision || 0) } });
-        }
-        throw error;
-      }
-    } else {
-      try {
-        await adminDb.runTransaction(async (transaction) => {
-          const currentSnapshot = await transaction.get(existingRef);
-          const transactionRevision = Number(currentSnapshot.data()?.revision || 0);
-          if (expectedRevision !== undefined && transactionRevision !== expectedRevision) throw new Error('SITE_VERSION_CONFLICT');
-          transaction.set(existingRef, sanitized, { merge: true });
-        });
-      } catch (error) {
-        if (error instanceof Error && error.message === 'SITE_VERSION_CONFLICT') {
-          const latest = await existingRef.get();
-          const latestData = latest.data() || {};
-          return res.status(409).json({ status: 'error', error: 'SITE_VERSION_CONFLICT', code: 'SITE_VERSION_CONFLICT', message: 'This site changed elsewhere. Reload the server version before saving again.', site: { ...latestData, id: siteId, userId: user.uid, revision: Number(latestData.revision || 0) } });
-        }
-        throw error;
-      }
+    const saved = await sitesRepository.saveVersioned({ userId: user.uid, siteId, site: sanitized, previousHandle, nextHandle: handle, expectedRevision });
+    if (saved.status === 'handle_redirect_conflict') return apiError(res, 409, 'HANDLE_REDIRECT_CONFLICT', 'The previous site handle is already reserved by another site.');
+    if (saved.status === 'site_not_found') return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+    if (saved.status === 'version_conflict') {
+      const latestData = saved.site || {};
+      return res.status(409).json({ status: 'error', error: 'SITE_VERSION_CONFLICT', code: 'SITE_VERSION_CONFLICT', message: 'This site changed elsewhere. Reload the server version before saving again.', site: { ...latestData, id: siteId, userId: user.uid, revision: Number(latestData.revision || 0) } });
     }
     await Promise.all([publicCreatorAdapter.invalidate(handle), previousHandle && previousHandle !== handle ? publicCreatorAdapter.invalidate(previousHandle) : Promise.resolve()]);
     const publicationChanged = Boolean(current.isPublished) !== Boolean(sanitized.isPublished);
@@ -257,7 +200,7 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
       requestId: auditRequestId(req),
       metadata: { fromPublished: Boolean(current.isPublished), toPublished: Boolean(sanitized.isPublished), handle, revision: sanitized.revision }
     });
-    return res.status(existing.exists ? 200 : 201).json({ site: sanitized });
+    return res.status(200).json({ site: sanitized });
   });
   
 }

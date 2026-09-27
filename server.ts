@@ -82,6 +82,7 @@ import { registerHealthRoutes } from './server/http/controllers/health-controlle
 import { createAuthorizationService } from './server/core/authorization-service';
 import type { PolicyAction } from './server/core/authorization-policy';
 import { createFirestoreBillingRepository } from './server/repositories/firestore';
+import { createFirestoreSitePersistenceRepository } from './server/repositories/site-persistence';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -103,6 +104,7 @@ const entitlementService = createEntitlementService({ billing: billingRepository
 const publicCache = new MemoryCacheStore();
 export const publicCreatorAdapter = createPublicCreatorAdapter({ getPublishedSiteByHandle, cache: publicCache });
 export const auditService = createAuditService(createFirestoreAuditRepository(adminDb));
+const sitesPersistenceRepository = createFirestoreSitePersistenceRepository(adminDb);
 export const authorizationService = createAuthorizationService({
   async loadAccount(userId) {
     const snapshot = await adminDb.collection('users').doc(userId).get();
@@ -3925,7 +3927,7 @@ app.get('/api/media/public/:mediaId', async (req: Request, res: Response) => {
 
 registerPublishingControllerRoutes(app, { adminDb, isAdminConfigured, getRequestHost, getCachedPublicDomain, getPublishedSiteById, getPublishedSiteByHandle, resolveSiteSlugRedirect, publicCreatorAdapter, publicDemoFixturesEnabled, templatesData, apiError });
 
-registerSitesControllerRoutes(app, { crypto, adminDb, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter, authorizationService });
+registerSitesControllerRoutes(app, { crypto, sitesRepository: sitesPersistenceRepository, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter, authorizationService });
 
 
 app.get('/api/creator/products', async (req: Request, res: Response) => {

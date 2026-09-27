@@ -3,7 +3,7 @@ import type { Express, Request, Response } from 'express';
 type PublishingControllerDependencies = Record<string, any>;
 
 export function registerPublishingControllerRoutes(app: Express, dependencies: PublishingControllerDependencies): void {
-  const { adminDb, isAdminConfigured, getRequestHost, getCachedPublicDomain, getPublishedSiteById, getPublishedSiteByHandle, resolveSiteSlugRedirect, publicCreatorAdapter, publicDemoFixturesEnabled, templatesData, apiError } = dependencies;
+  const { isAdminConfigured, getRequestHost, getCachedPublicDomain, getPublishedSiteById, getPublishedSiteByHandle, resolveSiteSlugRedirect, publicCreatorAdapter, publicDemoFixturesEnabled, templatesData, apiError } = dependencies;
   app.get('/api/public/sites/:handle', async (req: Request, res: Response) => {
     const handle = String(req.params.handle || '').trim().toLowerCase();
     if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return res.status(400).json({ error: 'Invalid handle' });
