@@ -5,6 +5,7 @@ import {
   CalendarDays,
   UserRound,
   CreditCard,
+  RefreshCw,
   CheckCircle2,
   Download,
   Trash2,
@@ -43,11 +44,46 @@ interface StudioSettingsTabProps {
   onExportJson: () => void;
   onResetDefaults: () => void;
   onUpgradePlan?: () => void;
+  onManageBilling?: () => void;
   onOpenAccountSettings?: () => void;
   locale: Locale;
 }
 
 type SettingsSection = 'account' | 'domain' | 'products' | 'scheduling' | 'integrations' | 'billing';
+type StudioBilling = {
+  plan: 'free' | 'pro' | 'studio';
+  interval: 'monthly' | 'yearly' | 'unknown';
+  state: 'free' | 'trial' | 'active' | 'grace_period' | 'past_due' | 'cancellation_scheduled' | 'subscription_ending' | 'pending' | 'failed_payment' | 'canceled';
+  stripeStatus: string;
+  renewalDate: string | null;
+  trialEndsAt: string | null;
+  cancellationDate: string | null;
+  cancelAtPeriodEnd: boolean;
+  source: 'stripe' | 'account';
+  entitlements: { premiumTemplates: boolean; analytics: boolean; removeBranding: boolean; customDomains: boolean; studioControls: boolean; maxLinks: number | null; maxMedia: number | null };
+};
+
+const billingStateLabel = (state: StudioBilling['state'], isRtl: boolean) => ({
+  free: isRtl ? 'مجاني' : 'Free',
+  trial: isRtl ? 'تجربة' : 'Trial',
+  active: isRtl ? 'نشط' : 'Active',
+  grace_period: isRtl ? 'فترة سماح' : 'Grace period',
+  past_due: isRtl ? 'متأخر السداد' : 'Past due',
+  cancellation_scheduled: isRtl ? 'إلغاء مجدول' : 'Cancellation scheduled',
+  subscription_ending: isRtl ? 'الاشتراك على وشك الانتهاء' : 'Subscription ending',
+  pending: isRtl ? 'معلّق' : 'Pending',
+  failed_payment: isRtl ? 'فشل الدفع' : 'Failed payment',
+  canceled: isRtl ? 'ملغى' : 'Canceled'
+}[state]);
+
+const billingStateClass = (state: StudioBilling['state']) => state === 'active' || state === 'trial'
+  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300'
+  : state === 'free' ? 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+  : state === 'pending' || state === 'grace_period' || state === 'cancellation_scheduled' || state === 'subscription_ending'
+    ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300'
+    : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300';
+
+const billingDate = (value: string | null, locale: Locale) => value ? new Intl.DateTimeFormat(locale === 'ar' ? 'ar' : 'en', { dateStyle: 'medium' }).format(new Date(value)) : '';
 
 const normalizeSettingsSection = (value: string | null): SettingsSection => {
   switch (value) {
@@ -92,6 +128,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   onExportJson,
   onResetDefaults,
   onUpgradePlan,
+  onManageBilling,
   onOpenAccountSettings,
   locale
 }) => {
@@ -120,6 +157,9 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   const [integrations, setIntegrations] = useState<SocialIntegrationStatus[]>([]);
   const [integrationError, setIntegrationError] = useState('');
   const [integrationBusy, setIntegrationBusy] = useState('');
+  const [billing, setBilling] = useState<StudioBilling | null>(null);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingError, setBillingError] = useState('');
 
   const getApiHeaders = async (): Promise<Record<string, string>> => {
     const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
@@ -137,6 +177,23 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
 
   useEffect(() => {
     if (activeSubSection === 'integrations' || new URLSearchParams(window.location.search).get('integration') === 'github') loadIntegrations();
+  }, [activeSubSection]);
+
+  const loadBilling = async () => {
+    setBillingLoading(true);
+    setBillingError('');
+    try {
+      const response = await fetch('/api/account/billing', { headers: await getApiHeaders() });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.billing) throw new Error(payload.error?.message || payload.error || 'Could not load billing status.');
+      setBilling(payload.billing as StudioBilling);
+    } catch (error) {
+      setBillingError(error instanceof Error ? error.message : 'Could not load billing status.');
+    } finally { setBillingLoading(false); }
+  };
+
+  useEffect(() => {
+    if (activeSubSection === 'billing') void loadBilling();
   }, [activeSubSection]);
 
   useEffect(() => {
@@ -615,39 +672,34 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
       {/* 4. Billing */}
       {activeSubSection === 'billing' && (
         <div id="studio-settings-panel-billing" role="tabpanel" aria-labelledby="studio-settings-tab-billing" tabIndex={0} className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                {isRtl ? 'باقتك الحالية' : 'Current Active Plan'}
-              </span>
-              <div className="flex items-center gap-2 mt-0.5">
-                <h4 className="text-xl font-black text-slate-900 dark:text-white capitalize">
-                  {plan} Plan
-                </h4>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                  {isRtl ? 'نشط' : 'Active'}
-                </span>
-              </div>
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{isRtl ? 'حالة الفوترة الحالية' : 'Authoritative billing status'}</span>
+              {billingLoading ? <div className="mt-3 flex items-center gap-2 text-sm text-slate-500"><RefreshCw className="h-4 w-4 animate-spin" />{isRtl ? 'جارٍ التحقق من Stripe…' : 'Checking Stripe…'}</div> : billing ? <>
+                <div className="mt-1 flex flex-wrap items-center gap-2"><h4 className="text-xl font-black capitalize text-slate-900 dark:text-white">{billing.plan} {isRtl ? 'خطة' : 'plan'}</h4><span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${billingStateClass(billing.state)}`}>{billingStateLabel(billing.state, isRtl)}</span></div>
+                <p className="mt-1 text-xs text-slate-500">{billing.interval === 'unknown' ? (isRtl ? 'دورة غير معروفة' : 'Billing interval unavailable') : billing.interval} · Stripe: {billing.stripeStatus}</p>
+              </> : null}
             </div>
-
-            <button
-              type="button"
-              onClick={onUpgradePlan}
-              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
-            >
-              {isRtl ? 'ترقية الخطة' : 'Upgrade Plan'}
-            </button>
+            <div className="flex shrink-0 gap-2">
+              <button type="button" onClick={() => void loadBilling()} disabled={billingLoading} aria-label={isRtl ? 'تحديث حالة الفوترة' : 'Refresh billing status'} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"><RefreshCw className={`h-3.5 w-3.5 ${billingLoading ? 'animate-spin' : ''}`} />{isRtl ? 'تحديث' : 'Refresh'}</button>
+              <button type="button" onClick={billing?.plan === 'free' ? onUpgradePlan : onManageBilling} disabled={!billing || (billing.plan === 'free' ? !onUpgradePlan : !onManageBilling)} className="min-h-11 rounded-xl bg-indigo-600 px-4 text-xs font-bold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">{billing?.plan === 'free' ? (isRtl ? 'عرض الخطط' : 'View plans') : (isRtl ? 'إدارة الفوترة' : 'Manage billing')}</button>
+            </div>
           </div>
 
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2 text-xs text-slate-600 dark:text-slate-300">
-            <p className="font-bold text-slate-800 dark:text-white">{isRtl ? 'المميزات المتضمنة:' : 'Included features:'}</p>
-            <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
-              <li>{isRtl ? 'عدد غير محدود من الروابط والكتل' : 'Unlimited custom links & blocks'}</li>
-              <li>{isRtl ? 'ربط نطاقات مخصصة مع شهادة SSL مجانية' : 'Custom domains with automated SSL certificate'}</li>
-              <li>{isRtl ? 'إحصائيات تفاعلية لمدة ٣٠ يوماً' : '30-day interactive analytics timeline'}</li>
-              <li>{isRtl ? 'تصدير بيانات المشتركين والنماذج' : 'Direct CSV/JSON export for audience data'}</li>
-            </ul>
-          </div>
+          {billingError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">{billingError}</div>}
+          {billing && billing.state !== 'free' && billing.state !== 'active' && <div className={`rounded-xl border p-3 text-xs ${billingStateClass(billing.state)}`}>
+            {billing.state === 'trial' && billing.trialEndsAt && <p>{isRtl ? `تنتهي الفترة التجريبية في ${billingDate(billing.trialEndsAt, locale)}.` : `Your trial ends on ${billingDate(billing.trialEndsAt, locale)}.`}</p>}
+            {billing.state === 'grace_period' && <p>{isRtl ? 'تعذر تحصيل الدفعة، وما زالت مزاياك في فترة السماح. حدّث وسيلة الدفع.' : 'Payment failed, but your subscription is currently in its grace period. Update your payment method.'}</p>}
+            {billing.state === 'past_due' && <p>{isRtl ? 'الاشتراك متأخر السداد وقد تتوقف المزايا بعد معالجة Stripe.' : 'Your subscription is past due and access may be restricted after Stripe finishes processing.'}</p>}
+            {billing.state === 'cancellation_scheduled' || billing.state === 'subscription_ending' ? <p>{isRtl ? `ينتهي الاشتراك في ${billingDate(billing.cancellationDate || billing.renewalDate, locale) || 'نهاية الدورة الحالية'}.` : `Your subscription ends on ${billingDate(billing.cancellationDate || billing.renewalDate, locale) || 'the end of the current period'}.`}</p> : null}
+            {billing.state === 'pending' && <p>{isRtl ? 'الدفع أو الاشتراك ما زال قيد المعالجة.' : 'Your payment or subscription is still being processed.'}</p>}
+            {billing.state === 'failed_payment' && <p>{isRtl ? 'فشل الدفع. افتح إدارة الفوترة لتحديث وسيلة الدفع.' : 'Payment failed. Open billing management to update your payment method.'}</p>}
+            {billing.state === 'canceled' && <p>{isRtl ? 'الاشتراك ملغى. اشترك مجدداً لاستعادة المزايا المدفوعة.' : 'The subscription is canceled. Subscribe again to restore paid features.'}</p>}
+          </div>}
+
+          {billing?.renewalDate && <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">{billing.state === 'subscription_ending' || billing.state === 'cancellation_scheduled' ? (isRtl ? 'ينتهي الوصول: ' : 'Access ends: ') : (isRtl ? 'التجديد القادم: ' : 'Renews: ')}{billingDate(billing.renewalDate, locale)}</p>}
+
+          {billing?.entitlements && <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-slate-800 dark:bg-slate-800/40"><p className="font-bold text-slate-800 dark:text-white">{isRtl ? 'المزايا الحالية من الخادم' : 'Current server-derived entitlements'}</p><div className="grid gap-2 text-[11px] text-slate-500 sm:grid-cols-2"><span>{billing.entitlements.maxLinks === null ? (isRtl ? 'روابط غير محدودة' : 'Unlimited links') : `${billing.entitlements.maxLinks} ${isRtl ? 'روابط' : 'links'}`}</span><span>{billing.entitlements.maxMedia === null ? (isRtl ? 'وسائط غير محدودة' : 'Unlimited media') : `${billing.entitlements.maxMedia} ${isRtl ? 'وسائط' : 'media'}`}</span><span>{billing.entitlements.customDomains ? (isRtl ? 'النطاقات المخصصة متاحة' : 'Custom domains enabled') : (isRtl ? 'النطاقات المخصصة غير متاحة' : 'Custom domains unavailable')}</span><span>{billing.entitlements.analytics ? (isRtl ? 'التحليلات متاحة' : 'Analytics enabled') : (isRtl ? 'التحليلات غير متاحة' : 'Analytics unavailable')}</span><span>{billing.entitlements.studioControls ? (isRtl ? 'مزايا Studio متاحة' : 'Studio controls enabled') : (isRtl ? 'مزايا Studio غير متاحة' : 'Studio controls unavailable')}</span></div></div>}
         </div>
       )}
 

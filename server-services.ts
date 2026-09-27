@@ -203,6 +203,119 @@ export async function getCheckoutSessionStatus(uid: string, sessionId: string): 
   };
 }
 
+export type AuthoritativeBillingState = {
+  plan: 'free' | 'pro' | 'studio';
+  effectivePlan: 'free' | 'pro' | 'studio';
+  interval: 'monthly' | 'yearly' | 'unknown';
+  state: 'free' | 'trial' | 'active' | 'grace_period' | 'past_due' | 'cancellation_scheduled' | 'subscription_ending' | 'pending' | 'failed_payment' | 'canceled';
+  stripeStatus: string;
+  renewalDate: string | null;
+  trialEndsAt: string | null;
+  cancellationDate: string | null;
+  cancelAtPeriodEnd: boolean;
+  customerId: string | null;
+  subscriptionId: string | null;
+  source: 'stripe' | 'account';
+};
+
+function subscriptionPlan(subscription: Stripe.Subscription): 'free' | 'pro' | 'studio' {
+  const metadataPlan = subscription.metadata?.plan;
+  if (metadataPlan === 'studio' || metadataPlan === 'pro') return metadataPlan;
+  const priceId = subscription.items.data[0]?.price?.id;
+  if (priceId && priceId === getPriceId('studio', subscription.items.data[0]?.price?.recurring?.interval === 'year')) return 'studio';
+  if (priceId && priceId === getPriceId('pro', subscription.items.data[0]?.price?.recurring?.interval === 'year')) return 'pro';
+  return 'free';
+}
+
+function subscriptionInterval(subscription: Stripe.Subscription): 'monthly' | 'yearly' | 'unknown' {
+  const interval = subscription.items.data[0]?.price?.recurring?.interval;
+  return interval === 'year' ? 'yearly' : interval === 'month' ? 'monthly' : 'unknown';
+}
+
+function subscriptionCurrentPeriodEnd(subscription: Stripe.Subscription): number {
+  // Stripe moved the period fields onto SubscriptionItem in newer API typings.
+  return Number((subscription.items.data[0] as Stripe.SubscriptionItem & { current_period_end?: number } | undefined)?.current_period_end || 0);
+}
+
+export function normalizedSubscriptionState(subscription: Stripe.Subscription): AuthoritativeBillingState['state'] {
+  const periodEnd = subscriptionCurrentPeriodEnd(subscription) * 1000;
+  const cancellationScheduled = Boolean(subscription.cancel_at_period_end || (subscription.cancel_at && subscription.cancel_at * 1000 > Date.now()));
+  if (subscription.status === 'trialing') return 'trial';
+  if (subscription.status === 'active' && cancellationScheduled) return 'subscription_ending';
+  if (subscription.status === 'active') return 'active';
+  if (subscription.status === 'past_due') return periodEnd > Date.now() ? 'grace_period' : 'past_due';
+  if (subscription.status === 'incomplete' || subscription.status === 'paused') return 'pending';
+  if (subscription.status === 'unpaid' || subscription.status === 'incomplete_expired') return 'failed_payment';
+  if (subscription.status === 'canceled') return 'canceled';
+  return 'pending';
+}
+
+export async function getAuthoritativeBillingState(uid: string): Promise<AuthoritativeBillingState> {
+  const userSnapshot = await adminDb.collection('users').doc(uid).get();
+  const account = userSnapshot.data() || {};
+  const customerId = typeof account.stripeCustomerId === 'string' ? account.stripeCustomerId : null;
+
+  if (stripe && customerId) {
+    const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 20 });
+    const orderedSubscriptions = subscriptions.data.sort((a, b) => Number(b.created || 0) - Number(a.created || 0));
+    const subscription = orderedSubscriptions.find((item) => item.status !== 'canceled') || orderedSubscriptions[0];
+    if (subscription) {
+      const plan = subscriptionPlan(subscription);
+      const state = normalizedSubscriptionState(subscription);
+      const paidEntitlementStates = new Set(['trial', 'active', 'grace_period', 'cancellation_scheduled', 'subscription_ending']);
+      const effectivePlan = paidEntitlementStates.has(state) ? plan : 'free';
+      const currentPeriodEnd = subscriptionCurrentPeriodEnd(subscription);
+      const cancellationDate = subscription.cancel_at ? new Date(subscription.cancel_at * 1000).toISOString() : (subscription.cancel_at_period_end && currentPeriodEnd ? new Date(currentPeriodEnd * 1000).toISOString() : null);
+      const observed = {
+        plan: effectivePlan,
+        isYearly: subscriptionInterval(subscription) === 'yearly',
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: subscription.id,
+        billingStatus: subscription.status,
+        subscriptionCurrentPeriodEnd: currentPeriodEnd ? new Date(currentPeriodEnd * 1000).toISOString() : null,
+        subscriptionTrialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
+        subscriptionCancelAt: cancellationDate,
+        subscriptionCancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
+        billingState: state
+      };
+      await updateUserBilling(uid, observed);
+      return {
+        plan,
+        effectivePlan,
+        interval: subscriptionInterval(subscription),
+        state,
+        stripeStatus: subscription.status,
+        renewalDate: observed.subscriptionCurrentPeriodEnd,
+        trialEndsAt: observed.subscriptionTrialEnd,
+        cancellationDate,
+        cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
+        customerId,
+        subscriptionId: subscription.id,
+        source: 'stripe'
+      };
+    }
+  }
+
+  const storedPlan = account.plan === 'studio' ? 'studio' : account.plan === 'pro' ? 'pro' : 'free';
+  const referralActive = storedPlan === 'pro' && typeof account.referralProUntil === 'string' && Date.parse(account.referralProUntil) > Date.now() && !account.stripeSubscriptionId;
+  const effectivePlan = referralActive || !stripe ? storedPlan : 'free';
+  const state = effectivePlan === 'free' && !referralActive ? 'free' : 'active';
+  return {
+    plan: effectivePlan,
+    effectivePlan,
+    interval: account.isYearly ? 'yearly' : 'monthly',
+    state,
+    stripeStatus: typeof account.billingStatus === 'string' ? account.billingStatus : 'free',
+    renewalDate: typeof account.subscriptionCurrentPeriodEnd === 'string' ? account.subscriptionCurrentPeriodEnd : null,
+    trialEndsAt: typeof account.subscriptionTrialEnd === 'string' ? account.subscriptionTrialEnd : null,
+    cancellationDate: typeof account.subscriptionCancelAt === 'string' ? account.subscriptionCancelAt : null,
+    cancelAtPeriodEnd: Boolean(account.subscriptionCancelAtPeriodEnd),
+    customerId,
+    subscriptionId: typeof account.stripeSubscriptionId === 'string' ? account.stripeSubscriptionId : null,
+    source: 'account'
+  };
+}
+
 export function getCloudflareConfig(): { apiToken: string; zoneId: string } | null {
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
   const zoneId = process.env.CLOUDFLARE_ZONE_ID;
@@ -434,13 +547,21 @@ export async function handleStripeWebhook(payload: string | Buffer, signature: s
     const resolvedUid = uid || userDocument?.id;
     if (resolvedUid) {
       const plan = subscription.metadata?.plan || 'pro';
-      const active = ['active', 'trialing'].includes(subscription.status);
+      const state = normalizedSubscriptionState(subscription);
+      const active = ['active', 'trial', 'grace_period', 'cancellation_scheduled', 'subscription_ending'].includes(state);
+      const periodEnd = subscriptionCurrentPeriodEnd(subscription);
+      const cancellationDate = subscription.cancel_at ? new Date(subscription.cancel_at * 1000).toISOString() : (subscription.cancel_at_period_end && periodEnd ? new Date(periodEnd * 1000).toISOString() : null);
       await updateUserBilling(resolvedUid, {
         plan: active ? plan : 'free',
         isYearly: subscription.metadata?.isYearly === 'true',
         stripeCustomerId: String(subscription.customer),
         stripeSubscriptionId: subscription.id,
-        billingStatus: subscription.status
+        billingStatus: subscription.status,
+        billingState: state,
+        subscriptionCurrentPeriodEnd: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
+        subscriptionTrialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
+        subscriptionCancelAt: cancellationDate,
+        subscriptionCancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end)
       });
     }
   }

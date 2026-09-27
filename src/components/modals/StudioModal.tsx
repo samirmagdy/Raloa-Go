@@ -74,6 +74,7 @@ export interface StudioModalProps {
   onClose: () => void;
   onOpenAuth?: (mode?: 'signin' | 'signup') => void;
   onOpenPricing?: () => void;
+  onManageBilling?: () => void;
   onOpenAccountSettings?: () => void;
 }
 
@@ -116,6 +117,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   onClose,
   onOpenAuth,
   onOpenPricing,
+  onManageBilling,
   onOpenAccountSettings
 }) => {
   const { user, profile, loading: authLoading, saveMiniSite, loadMiniSite, listMiniSites, createMiniSite, deleteMiniSite } = useAuth();
@@ -835,6 +837,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                 bookingConfig={bookingConfig}
                 onBookingConfigChange={(val) => updateSiteConfig({ bookingConfig: val })}
                 onUpgradePlan={onOpenPricing}
+                onManageBilling={onManageBilling}
                 onOpenAccountSettings={onOpenAccountSettings}
                 onExportJson={() => {
                   const blob = new Blob([JSON.stringify(siteConfig, null, 2)], {

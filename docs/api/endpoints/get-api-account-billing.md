@@ -13,34 +13,30 @@ updated: 2026-09-25        # YYYY-MM-DD, the day the behaviour was last proven
 
 ## Summary
 
-FILL: one sentence — who calls this, and what becomes true afterwards.
+Returns the authenticated creator's server-authoritative billing state. When
+Stripe is configured, the route reads the current customer subscription and
+persists the observed state before deriving entitlements from the effective
+plan.
 
 ## Request
 
-**Path / query parameters**
+No path or query parameters are required.
 
-| Name | Type | Required | Constraints | Notes |
-| --- | --- | --- | --- | --- |
-| FILL | string | yes | 1–64 chars | FILL |
-
-**Body**
-
-```json
-{ "FILL": "field names, exact types, nullability" }
-```
-
-**Validation** — FILL: which invalid values are rejected on write, and which are stored as-is.
-State whether completeness is enforced here or only at the publish/commit boundary.
+No request body is required.
 
 ## Response
 
-FILL the real code (`200` / `201` + `Location` / `204`) — pick what the server actually sends:
+`200 OK` returns an object with this shape (Stripe identifiers and dates are
+runtime values):
 
 ```json
-{ "FILL": "the literal body, including envelope keys" }
+{ "billing": { "plan": "pro", "effectivePlan": "pro", "interval": "monthly", "state": "active", "stripeStatus": "active", "renewalDate": "<ISO date or null>", "trialEndsAt": null, "cancellationDate": null, "cancelAtPeriodEnd": false, "customerId": "<Stripe customer ID or null>", "subscriptionId": "<Stripe subscription ID or null>", "source": "stripe", "entitlements": { "maxLinks": null, "maxMedia": null, "maxUploadBytes": 26214400, "premiumTemplates": true, "analytics": true, "removeBranding": true, "customDomains": true, "studioControls": false } } }
 ```
 
-List every field the client may read, and distinguish `null` from absent.
+`state` is one of `free`, `trial`, `active`, `grace_period`, `past_due`,
+`cancellation_scheduled`, `subscription_ending`, `pending`, `failed_payment`,
+or `canceled`. Dates are ISO strings or `null`; unlimited entitlement limits
+are `null`.
 
 ## Errors
 
@@ -48,7 +44,7 @@ Every failure the frontend must handle, with the exact status and body shape:
 
 | Status | When | Body | Client behaviour |
 | --- | --- | --- | --- |
-| 400 | FILL validation failure | `{ "error": { "code": "FILL", "message": "FILL" } }` | show field error |
+| 503 | Stripe/account billing state unavailable | `{ "error": { "code": "BILLING_STATUS_UNAVAILABLE", "message": "Billing status is temporarily unavailable." } }` | show retryable billing error |
 | 401 | FILL | FILL | redirect to sign-in |
 | 409 | FILL | FILL | refetch, do not retry blindly |
 
@@ -66,14 +62,14 @@ curl -sS -w '\nHTTP %{http_code} in %{time_total}s\n' \
 { "observed": "verbatim response body" }
 ```
 
-FILL: status line, timing, row counts, and anything surprising seen while running it.
+The request requires authentication; unauthenticated requests return `401 AUTH_REQUIRED`.
 
 ## Frontend wiring
 
-- **Called by**: FILL screen/action
-- **Trigger**: FILL (mount / submit / poll)
-- **Loading state**: FILL
-- **Error state**: which `## Errors` rows map to which UI state
-- **Client stub**: FILL (generated function name, e.g. `api.users.update`)
-- **Types**: FILL (request/response type names and where they live)
-- **Idempotency / retry**: FILL — safe to retry? what does a double submit do?
+- **Called by**: `StudioSettingsTab` and `AccountSettingsModal`
+- **Trigger**: billing section mount or explicit refresh
+- **Loading state**: billing status spinner
+- **Error state**: `503` displays a retryable billing error
+- **Client stub**: direct authenticated `fetch('/api/account/billing')`
+- **Types**: `StudioBilling` in `src/components/studio/StudioSettingsTab.tsx`
+- **Idempotency / retry**: safe to retry; reads Stripe and persists the latest observation

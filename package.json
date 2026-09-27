@@ -25,7 +25,8 @@
     "test:block-types": "tsx test-block-types.ts",
     "test:multi-site": "tsx test-multi-site.ts",
     "test:site-slugs": "tsx test-site-slugs.ts",
-    "test:media": "tsx test-media.ts"
+    "test:media": "tsx test-media.ts",
+    "test:billing": "NODE_ENV=test tsx test-billing.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

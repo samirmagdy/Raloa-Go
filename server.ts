@@ -18,6 +18,7 @@ import {
   createCheckoutSession,
   createPortalSession,
   getBillingDetails,
+  getAuthoritativeBillingState,
   deleteDomain,
   findDomainByHostname,
   findDomainById,
@@ -3277,31 +3278,17 @@ app.put('/api/account/preferences', async (req: Request, res: Response) => {
 app.get('/api/account/billing', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (process.env.NODE_ENV === 'production' && !stripe) return apiError(res, 503, 'BILLING_NOT_CONFIGURED', 'Live billing is not configured.');
   try {
-    const ref = await accountDocument(user);
-    const snapshot = ref ? await ref.get() : null;
-    const data = snapshot?.data() || accountSettingsFor(user);
-    
-    // Check if promotional referral pro reward has expired, enforce downgrade
-    let currentPlan = data.plan || 'free';
-    if (currentPlan === 'pro' && data.referralProUntil && Date.parse(data.referralProUntil) <= Date.now() && !data.stripeSubscriptionId) {
-      currentPlan = 'free';
-      if (ref) {
-        await ref.set({ plan: 'free', billingStatus: 'expired' }, { merge: true });
-      } else {
-        const local = accountSettingsFor(user);
-        LOCAL_ACCOUNT_SETTINGS.set(user.uid, { ...local, plan: 'free', billingStatus: 'expired' });
-      }
-    }
-
-    return res.status(200).json({ billing: {
-      plan: currentPlan,
-      interval: data.isYearly ? 'yearly' : 'monthly',
-      status: currentPlan === 'free' && data.referralProUntil && Date.parse(data.referralProUntil) <= Date.now() ? 'expired' : (data.billingStatus || 'free'),
-      renewalDate: data.subscriptionCurrentPeriodEnd || null,
-      customerId: data.stripeCustomerId || null,
-      subscriptionId: data.stripeSubscriptionId || null
-    } });
+    const billing = await getAuthoritativeBillingState(user.uid);
+    const capabilities = getPlanCapabilities({ plan: billing.effectivePlan });
+    const entitlements = {
+      ...capabilities,
+      maxLinks: Number.isFinite(capabilities.maxLinks) ? capabilities.maxLinks : null,
+      maxMedia: Number.isFinite(capabilities.maxMedia) ? capabilities.maxMedia : null,
+      maxUploadBytes: capabilities.maxUploadBytes
+    };
+    return res.status(200).json({ billing: { ...billing, entitlements } });
   } catch (error) {
     console.error('[Account billing read]', error);
     return apiError(res, 503, 'BILLING_STATUS_UNAVAILABLE', 'Billing status is temporarily unavailable.');
