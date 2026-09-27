@@ -27,6 +27,7 @@ import { Theme } from '../utils/theme';
 import { dictionary } from '../data/content';
 import { useAuth } from '../hooks/useAuth';
 import { useMotionValueEvent, useScroll } from 'motion/react';
+import { publicSiteUrl } from '../utils/publicUrl';
 
 interface HeaderProps {
   locale: Locale;
@@ -76,13 +77,16 @@ export const Header: React.FC<HeaderProps> = ({
   // Clean user handle and public URL
   const rawUsername = profile?.handle || (user?.email ? user.email.split('@')[0] : 'creator');
   const cleanHandle = rawUsername.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  const publicProfileUrl = `https://raloa.app/@${cleanHandle}`;
+  const publicProfileUrl = publicSiteUrl(cleanHandle, typeof window !== 'undefined' ? window.location.origin : undefined);
 
-  const handleCopyLink = () => {
-    if (typeof navigator !== 'undefined') {
-      navigator.clipboard.writeText(publicProfileUrl);
+  const handleCopyLink = async () => {
+    if (typeof navigator === 'undefined' || !publicProfileUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicProfileUrl);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
+    } catch {
+      setCopiedLink(false);
     }
   };
 

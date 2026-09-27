@@ -15,9 +15,9 @@ interface AudienceResponse { data: SubscriberItem[] | SubmissionItem[]; total: n
 interface StudioAudienceTabProps { siteId: string; handle: string; locale: Locale; }
 
 function formatDate(value: string | null, locale: Locale): string {
-  if (!value) return '—';
+  if (!value) return 'Not available';
   const parsed = new Date(value);
-  if (!Number.isFinite(parsed.getTime())) return '—';
+  if (!Number.isFinite(parsed.getTime())) return 'Not available';
   return parsed.toLocaleDateString(locale === 'ar' ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
@@ -127,9 +127,9 @@ export const StudioAudienceTab: React.FC<StudioAudienceTabProps> = ({ siteId, ha
   return (
     <div className="space-y-6 animate-in fade-in duration-150" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-        <MetricCard label={isRtl ? 'المشتركون' : 'Subscribers'} value={metrics?.subscribers ?? 0} detail={metrics ? `+${metrics.newSubscribers} ${isRtl ? 'آخر 30 يوماً' : 'last 30 days'}` : '—'} icon={<Mail className="w-4 h-4 text-indigo-500" />} />
-        <MetricCard label={isRtl ? 'رسائل النماذج' : 'Form leads'} value={metrics?.submissions ?? 0} detail={metrics ? `+${metrics.newSubmissions} ${isRtl ? 'آخر 30 يوماً' : 'last 30 days'}` : '—'} icon={<MessageSquare className="w-4 h-4 text-blue-500" />} />
-        <MetricCard label={isRtl ? 'معدل التحويل' : 'Conversion'} value={metrics?.conversionRate === null || metrics?.conversionRate === undefined ? '—' : `${metrics.conversionRate}%`} detail={metrics ? `${metrics.uniqueVisitors.toLocaleString()} ${isRtl ? 'زائر فريد' : 'unique visitors'}` : (isRtl ? 'لا توجد بيانات' : 'No data yet')} icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} />
+        <MetricCard label={isRtl ? 'المشتركون' : 'Subscribers'} value={metrics?.subscribers ?? 0} detail={metrics ? `+${metrics.newSubscribers} ${isRtl ? 'آخر 30 يوماً' : 'last 30 days'}` : 'Not available'} icon={<Mail className="w-4 h-4 text-indigo-500" />} />
+        <MetricCard label={isRtl ? 'رسائل النماذج' : 'Form leads'} value={metrics?.submissions ?? 0} detail={metrics ? `+${metrics.newSubmissions} ${isRtl ? 'آخر 30 يوماً' : 'last 30 days'}` : 'Not available'} icon={<MessageSquare className="w-4 h-4 text-blue-500" />} />
+        <MetricCard label={isRtl ? 'معدل التحويل' : 'Conversion'} value={metrics?.conversionRate === null || metrics?.conversionRate === undefined ? 'Not available' : `${metrics.conversionRate}%`} detail={metrics ? `${metrics.uniqueVisitors.toLocaleString()} ${isRtl ? 'زائر فريد' : 'unique visitors'}` : (isRtl ? 'لا توجد بيانات' : 'No data yet')} icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} />
       </div>
 
       <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">

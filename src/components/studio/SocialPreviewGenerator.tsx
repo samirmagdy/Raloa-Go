@@ -21,6 +21,7 @@ import { Locale } from '../../types';
 import { RaloaMark } from '../brand/RaloaLogo';
 import { PremiumMark } from '../brand/PremiumMark';
 import { PlatformIcon } from '../brand/PlatformIcon';
+import { publicSiteUrl } from '../../utils/publicUrl';
 
 export type SocialPlatform = 'twitter' | 'linkedin' | 'imessage';
 export type OgTheme = 'gradient' | 'slate' | 'sunset' | 'emerald';
@@ -80,7 +81,7 @@ export const SocialPreviewGenerator: React.FC<SocialPreviewGeneratorProps> = ({
     );
   };
 
-  const currentUrl = `https://raloa.app/@${username}`;
+  const currentUrl = publicSiteUrl(username, typeof window !== 'undefined' ? window.location.origin : undefined);
 
   // The compact version is the live Studio preview. Keep it synchronized with
   // profile edits while preserving manual social-card edits in the full view.
@@ -572,7 +573,7 @@ export const SocialPreviewGenerator: React.FC<SocialPreviewGeneratorProps> = ({
                 <p className="text-xs mb-2">
                   {isRtl ? `تفضل بالاطلاع على موقعي المصغر الجديد:` : `Hey! Check out my new mini-site and booking page:`}
                   <br />
-                  <span className="underline opacity-90 font-mono text-[11px]">https://raloa.app/@{username}</span>
+                  <span className="underline opacity-90 font-mono text-[11px]">{currentUrl}</span>
                 </p>
 
                 {/* Rich iMessage link card preview */}

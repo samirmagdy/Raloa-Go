@@ -14,7 +14,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
   const [name, setName] = useState(user?.displayName || '');
   const [email, setEmail] = useState(user?.email || '');
   const [message, setMessage] = useState('');
-  const [, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const dialogRef = useModalA11y<HTMLDivElement>();
@@ -156,10 +156,11 @@ export const ContactModal: React.FC<ContactModalProps> = ({ locale, onClose }) =
 
               <button
                 type="submit"
+                disabled={loading}
                 className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>{isRtl ? 'إرسال الرسالة' : 'Send Inquiry'}</span>
+                <span>{loading ? (isRtl ? 'جار الإرسال...' : 'Sending...') : (isRtl ? 'إرسال الرسالة' : 'Send Inquiry')}</span>
               </button>
             </form>
           )}

@@ -32,6 +32,7 @@ import { getPlanCapabilities, isPremiumTemplate } from '../../lib/planCapabiliti
 import { auth, hasAuthenticatedSession } from '../../lib/firebase';
 import { normalizeSiteSlug } from '../../lib/siteSlug';
 import { normalizeSiteContent, validateSiteContent } from '../../lib/contentSchema';
+import { publicSiteUrl } from '../../utils/publicUrl';
 
 const StudioAnalyticsTab = lazy(() => import('../studio/StudioAnalyticsTab').then((module) => ({ default: module.StudioAnalyticsTab })));
 
@@ -868,6 +869,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       {/* Top Toolbar */}
       <StudioTopToolbar
         handle={username}
+        customDomain={siteConfig.customDomain}
         plan={profile?.plan || 'free'}
         saveStatus={saveStatus}
         isDirty={isDirty}
@@ -1212,7 +1214,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       <StudioQrModal
         isOpen={showQrModal}
         onClose={() => setShowQrModal(false)}
-        url={`https://raloa.app/@${username}`}
+        url={publicSiteUrl(username, typeof window !== 'undefined' ? window.location.origin : undefined, siteConfig.customDomain)}
         handle={username}
         locale={locale}
       />

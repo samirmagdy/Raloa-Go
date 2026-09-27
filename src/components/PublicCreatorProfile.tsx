@@ -21,6 +21,8 @@ import { ProductStoreModal } from './modals/ProductStoreModal';
 import { PublicBlockRenderer } from './PublicBlockRenderer';
 import { designCardGap, designCardStyle, designContentWidth, designFontFamily, designLayoutStyle, designTokensFromSite, designTypographyStyle } from '../utils/designTokens';
 import { normalizeSiteContent } from '../lib/contentSchema';
+import { publicSiteUrl } from '../utils/publicUrl';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 interface PublicCreatorProfileProps {
   handle: string;
@@ -41,6 +43,8 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   const cleanHandle = handle.replace(/^@/, '').toLowerCase().trim();
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<'not_found' | 'unavailable' | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
   const [audienceMode, setAudienceMode] = useState<'newsletter' | 'contact' | null>(null);
@@ -49,6 +53,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   const [audienceMessage, setAudienceMessage] = useState('');
   const [audienceStatus, setAudienceStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const recordedPageView = useRef<string | null>(null);
+  const audienceDialogRef = useModalA11y<HTMLDivElement>(Boolean(audienceMode));
 
   // Public pages must be populated by the server's persisted published record.
   // Template data belongs to the editor/demo surfaces and is not a public fallback.
@@ -57,9 +62,14 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
+    setLoadError(null);
     fetch(`/api/public/sites/${encodeURIComponent(cleanHandle)}`)
       .then(async (response) => {
-        if (!response.ok) throw new Error('PUBLIC_SITE_NOT_FOUND');
+        if (!response.ok) {
+          const error = new Error(response.status === 404 ? 'PUBLIC_SITE_NOT_FOUND' : 'PUBLIC_SITE_UNAVAILABLE') as Error & { status?: number };
+          error.status = response.status;
+          throw error;
+        }
         const payload = await response.json();
         const site = payload.site;
         const canonical = normalizeSiteContent(site);
@@ -97,23 +107,26 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
       .then((nextCreator) => {
         if (!cancelled) setCreator(nextCreator);
       })
-      .catch(() => {
-        if (!cancelled) setCreator(null);
+      .catch((error: Error & { status?: number }) => {
+        if (!cancelled) {
+          setCreator(null);
+          setLoadError(error.status === 404 || error.message === 'PUBLIC_SITE_NOT_FOUND' ? 'not_found' : 'unavailable');
+        }
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [cleanHandle]);
+  }, [cleanHandle, reloadToken]);
 
   useEffect(() => {
-    if (!isLoading && !creator) {
+    if (!isLoading && !creator && loadError === 'not_found') {
       onNotFound?.(cleanHandle);
     } else if (creator && recordedPageView.current !== cleanHandle) {
       recordedPageView.current = cleanHandle;
       recordPageView(`/@${cleanHandle}`);
     }
-  }, [cleanHandle, creator, isLoading, onNotFound]);
+  }, [cleanHandle, creator, isLoading, loadError, onNotFound]);
 
   // Dynamic OpenGraph & Meta tag hydration for public creator route (FR-3.2)
   usePageSEO({
@@ -129,7 +142,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
     ogImage: creator?.avatar || 'https://raloa.app/social/og-image-1200x630.jpg',
     canonicalUrl: typeof window !== 'undefined' && !['raloa.app', 'www.raloa.app', 'localhost', '127.0.0.1'].includes(window.location.hostname) && !window.location.hostname.endsWith('.raloa.app')
       ? `${window.location.origin}/`
-      : `https://raloa.app/@${cleanHandle}`,
+      : publicSiteUrl(cleanHandle, typeof window !== 'undefined' ? window.location.origin : undefined),
     locale
   });
 
@@ -139,7 +152,23 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   }
 
   if (!creator) {
-    return null;
+    const unavailable = loadError === 'unavailable';
+    return (
+      <main className="min-h-[100dvh] flex items-center justify-center bg-slate-50 px-4 text-center dark:bg-slate-950">
+        <section className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h1 className="text-xl font-black text-slate-900 dark:text-white">
+            {unavailable ? (isRtl ? 'الصفحة غير متاحة مؤقتاً' : 'This page is temporarily unavailable') : (isRtl ? 'الصفحة غير موجودة' : 'Page not found')}
+          </h1>
+          <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+            {unavailable ? (isRtl ? 'تعذر تحميل الموقع الآن. حاول مرة أخرى بعد قليل.' : 'The site could not be loaded right now. Try again in a moment.') : (isRtl ? 'لا يوجد موقع منشور بهذا المعرف.' : 'There is no published site for this handle.')}
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            {unavailable && <button type="button" onClick={() => setReloadToken((value) => value + 1)} className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700">{isRtl ? 'إعادة المحاولة' : 'Retry'}</button>}
+            {onReturnHome && <button type="button" onClick={onReturnHome} className="min-h-11 rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">{isRtl ? 'الرئيسية' : 'Return home'}</button>}
+          </div>
+        </section>
+      </main>
+    );
   }
 
   const designTokens = creator.designTokens || designTokensFromSite(creator);
@@ -152,11 +181,15 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
     designTokens.background.coverImage || creator.coverImage
   );
 
-  const handleShare = () => {
+  const handleShare = async () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        setCopied(false);
+      }
     }
   };
 
@@ -371,7 +404,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
 
       {/* Footer */}
       <footer className="relative z-10 w-full py-4 text-center text-xs opacity-60">
-        <p>© {new Date().getFullYear()} RALOA · Powered by Next-Gen Edge Engine</p>
+        <p>© {new Date().getFullYear()} RALOA. Built for clear, fast creator pages.</p>
       </footer>
 
       {bookingOpen && (
@@ -383,7 +416,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
       )}
       {storeOpen && <ProductStoreModal handle={cleanHandle} locale={locale} onClose={() => setStoreOpen(false)} />}
       {audienceMode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="audience-capture-title">
+        <div ref={audienceDialogRef} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="audience-capture-title">
           <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-5">
               <h2 id="audience-capture-title" className="text-lg font-bold text-slate-900 dark:text-white">{audienceMode === 'newsletter' ? (isRtl ? 'اشترك في النشرة' : 'Subscribe to the newsletter') : (isRtl ? 'أرسل رسالة' : 'Send a message')}</h2>

@@ -11,7 +11,7 @@ interface StudioProductsSettingsProps { siteId: string; locale: Locale; }
 
 const emptyDraft: ProductDraft = { name: '', description: '', imageUrls: '', price: '', currency: 'usd', active: true, inventory: '' };
 const statusLabel = (status: string, isRtl: boolean) => ({ unfulfilled: isRtl ? 'غير منفذ' : 'Unfulfilled', processing: isRtl ? 'قيد المعالجة' : 'Processing', fulfilled: isRtl ? 'تم التنفيذ' : 'Fulfilled', cancelled: isRtl ? 'ملغى' : 'Cancelled', pending_payment: isRtl ? 'بانتظار الدفع' : 'Pending payment', paid: isRtl ? 'مدفوع' : 'Paid', payment_failed: isRtl ? 'فشل الدفع' : 'Payment failed' }[status] || status);
-const formatTimestamp = (value: string | undefined, locale: Locale) => { if (!value) return '—'; const date = new Date(value); return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat(locale === 'ar' ? 'ar' : 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(date); };
+const formatTimestamp = (value: string | undefined, locale: Locale) => { if (!value) return 'Not available'; const date = new Date(value); return Number.isNaN(date.getTime()) ? 'Not available' : new Intl.DateTimeFormat(locale === 'ar' ? 'ar' : 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(date); };
 
 export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ siteId, locale }) => {
   const isRtl = locale === 'ar';

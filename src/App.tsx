@@ -805,6 +805,7 @@ function MainApp() {
               onOpenShortcuts={() => setShortcutsModalOpen(true)}
               onOpenStats={() => setProjectStatsOpen(true)}
               onOpenReferral={() => setReferralModalOpen(true)}
+              onOpenContact={() => setContactOpen(true)}
               onTriggerNotFound={handleTriggerNotFound}
             />
           </FadeInSection>
@@ -930,6 +931,7 @@ function MainApp() {
           onOpenShortcuts={() => setShortcutsModalOpen(true)}
           onOpenStats={() => setProjectStatsOpen(true)}
           onOpenReferral={() => setReferralModalOpen(true)}
+          onOpenContact={() => setContactOpen(true)}
           onTriggerNotFound={handleTriggerNotFound}
         />
       </FadeInSection>

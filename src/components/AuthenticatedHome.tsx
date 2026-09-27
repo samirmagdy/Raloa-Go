@@ -40,6 +40,7 @@ import { Theme } from '../utils/theme';
 import { useAuth } from '../hooks/useAuth';
 import { templatesData } from '../data/content';
 import { PremiumMark } from './brand/PremiumMark';
+import { publicSiteUrl } from '../utils/publicUrl';
 
 interface AuthenticatedHomeProps {
   locale: Locale;
@@ -73,6 +74,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
     bio: string;
     avatar: string;
     templateId: string;
+    customDomain: string;
     isPublished: boolean;
     linksCount: number;
     updatedAt: string;
@@ -82,12 +84,15 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
     bio: '',
     avatar: '',
     templateId: '',
+    customDomain: '',
     isPublished: false,
     linksCount: 0,
     updatedAt: ''
   });
 
   const [isLoadingSite, setIsLoadingSite] = useState(true);
+  const [siteLoadError, setSiteLoadError] = useState<string | null>(null);
+  const [siteReloadToken, setSiteReloadToken] = useState(0);
   const [isCopied, setIsCopied] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
   const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -96,7 +101,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
   // Derived user details
   const rawUsername = siteData.username || profile?.handle || (user?.email ? user.email.split('@')[0] : 'creator');
   const cleanHandle = rawUsername.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  const publicUrl = `https://raloa.app/@${cleanHandle}`;
+  const publicUrl = publicSiteUrl(cleanHandle, typeof window !== 'undefined' ? window.location.origin : undefined, siteData.customDomain);
   const plan = profile?.plan || 'free';
   const [analyticsData, setAnalyticsData] = useState<Array<{ label: string; views: number; clicks: number }>>([]);
   const [analyticsSummary, setAnalyticsSummary] = useState({ pageViews: 0, uniqueVisitors: 0, clicks: 0, ctr: null as number | null });
@@ -142,6 +147,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
 
     async function fetchSite() {
       setIsLoadingSite(true);
+      setSiteLoadError(null);
       try {
         const sites = await listMiniSites();
         const storedSiteId = typeof window !== 'undefined' ? localStorage.getItem(`raloa_active_site_${user?.uid}`) || '' : '';
@@ -154,6 +160,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
             bio: typeof saved.bio === 'string' ? saved.bio : '',
             avatar: typeof saved.avatar === 'string' ? saved.avatar : '',
             templateId: typeof saved.templateId === 'string' ? saved.templateId : '',
+            customDomain: typeof (saved as { customDomain?: string }).customDomain === 'string' ? (saved as { customDomain?: string }).customDomain || '' : '',
             isPublished: saved.isPublished ?? false,
             linksCount: Array.isArray(saved.links) ? saved.links.length : 0,
             updatedAt: typeof saved.updatedAt === 'string' ? saved.updatedAt : ''
@@ -165,6 +172,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
             bio: '',
             avatar: '',
             templateId: '',
+            customDomain: '',
             isPublished: false,
             linksCount: 0,
             updatedAt: ''
@@ -172,6 +180,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
         }
       } catch (err) {
         console.error('Failed to load user mini-site:', err);
+        if (!isCancelled) setSiteLoadError(isRtl ? 'تعذر تحميل بيانات الموقع. تحقق من الاتصال وحاول مرة أخرى.' : 'Could not load your site data. Check your connection and try again.');
       } finally {
         if (!isCancelled) setIsLoadingSite(false);
       }
@@ -183,7 +192,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [user, cleanHandle, activeTemplate, isRtl, loadMiniSite, listMiniSites]);
+  }, [user, cleanHandle, activeTemplate, isRtl, loadMiniSite, listMiniSites, siteReloadToken]);
 
   // Generate QR Code data URL when QR modal opens
   useEffect(() => {
@@ -308,6 +317,17 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
       origin: { y: 0.5 }
     });
   };
+
+  if (siteLoadError) {
+    return (
+      <div className="min-h-[100dvh] pt-24 pb-20 px-4 sm:px-6 lg:px-8 max-w-3xl mx-auto">
+        <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+          <p className="font-bold">{siteLoadError}</p>
+          <button type="button" onClick={() => setSiteReloadToken((value) => value + 1)} className="mt-4 min-h-11 rounded-xl bg-rose-700 px-4 py-2 text-sm font-bold text-white hover:bg-rose-800">{isRtl ? 'إعادة المحاولة' : 'Retry'}</button>
+        </div>
+      </div>
+    );
+  }
 
   if (!isLoadingSite && !siteData.username) {
     return (

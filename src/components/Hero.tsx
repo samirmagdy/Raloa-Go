@@ -82,7 +82,10 @@ export const Hero: React.FC<HeroProps> = ({
           setApiAvailable(false);
         }
       } catch (_) {
-        setApiAvailable(!RESERVED_HANDLES.has(clean));
+        // Availability cannot be inferred during an outage. Keep the claim
+        // action blocked until the server can verify the handle.
+        setApiAvailable(false);
+        setError(isRtl ? 'تعذر التحقق من توفر الاسم. حاول مرة أخرى.' : 'We could not verify this handle. Please try again.');
       } finally {
         setIsChecking(false);
       }
@@ -123,11 +126,16 @@ export const Hero: React.FC<HeroProps> = ({
       return;
     }
 
+    if (isChecking || apiAvailable === null) {
+      setError(isRtl ? 'انتظر حتى يتم التحقق من توفر الاسم.' : 'Wait while we verify this handle.');
+      return;
+    }
+
     if (handleStatus === 'unavailable' || apiAvailable === false) {
       setError(
         isRtl
-          ? 'عذراً، هذا الاسم محجوز بالفعل. يرجى اختيار اسم مستخدم آخر'
-          : 'This handle is already reserved. Please choose another username'
+          ? 'هذا الاسم غير متاح أو تعذر التحقق منه. اختر اسماً آخر.'
+          : 'This handle is unavailable or could not be verified. Choose another handle.'
       );
       return;
     }

@@ -11,6 +11,7 @@ interface FooterProps {
   onOpenShortcuts?: () => void;
   onOpenStats?: () => void;
   onOpenReferral?: () => void;
+  onOpenContact?: () => void;
   onTriggerNotFound?: (path: string) => void;
 }
 
@@ -20,6 +21,7 @@ export const Footer: React.FC<FooterProps> = ({
   onOpenShortcuts,
   onOpenStats,
   onOpenReferral,
+  onOpenContact,
   onTriggerNotFound
 }) => {
   const isRtl = locale === 'ar';
@@ -76,25 +78,19 @@ export const Footer: React.FC<FooterProps> = ({
         { label: locale === 'ar' ? 'الأسعار' : 'Pricing', href: '#pricing' },
         { label: locale === 'ar' ? 'اكسب رصيداً' : 'Earn Credits', href: '#referral' },
         { label: locale === 'ar' ? 'إحصائيات المشروع' : 'Project Stats', href: '#project-stats' },
-        { label: locale === 'ar' ? 'سجل التحديثات' : 'Changelog', href: '#changelog' }
       ]
     },
     company: {
       title: t.company,
       links: [
-        { label: locale === 'ar' ? 'عن رالوا' : 'About', href: '#about' },
-        { label: locale === 'ar' ? 'المدونة' : 'Blog', href: '#blog' },
-        { label: locale === 'ar' ? 'الوظائف' : 'Careers', href: '#careers' },
+        { label: locale === 'ar' ? 'عن رالوا' : 'About', href: '#benefits' },
         { label: locale === 'ar' ? 'تواصل معنا' : 'Contact', href: '#contact' }
       ]
     },
     resources: {
       title: t.resources,
       links: [
-        { label: locale === 'ar' ? 'مركز المساعدة' : 'Help Center', href: '#help' },
-        { label: locale === 'ar' ? 'أدلة الاستخدام' : 'Guides', href: '#guides' },
-        { label: locale === 'ar' ? 'مجتمع المبدعين' : 'Community', href: '#community' },
-        { label: locale === 'ar' ? 'حالة الخدمة' : 'Status', href: '#status' },
+        { label: locale === 'ar' ? 'أدلة الاستخدام' : 'Guides', href: '#how-it-works' },
       ]
     },
     legal: {
@@ -108,7 +104,7 @@ export const Footer: React.FC<FooterProps> = ({
   };
 
   const handleLinkClick = (e: React.MouseEvent, label: string, href: string) => {
-    if (label === 'Privacy' || label === 'Terms' || label === 'Cookie Policy' || label === 'سياسة الخصوصية' || label === 'الشروط والأحكام') {
+    if (label === 'Privacy' || label === 'Terms' || label === 'Cookie Policy' || label === 'سياسة الخصوصية' || label === 'الشروط والأحكام' || label === 'سياسة ملفات تعريف الارتباط') {
       e.preventDefault();
       if (onOpenPrivacyTerms) onOpenPrivacyTerms(label);
     } else if (label === 'Project Stats' || label === 'إحصائيات المشروع') {
@@ -117,6 +113,9 @@ export const Footer: React.FC<FooterProps> = ({
     } else if (label === 'Earn Credits' || label === 'اكسب رصيداً') {
       e.preventDefault();
       if (onOpenReferral) onOpenReferral();
+    } else if (label === 'Contact' || label === 'تواصل معنا') {
+      e.preventDefault();
+      if (onOpenContact) onOpenContact();
     } else if (href === '/404' || href === '#404') {
       e.preventDefault();
       if (onTriggerNotFound) onTriggerNotFound('/404');

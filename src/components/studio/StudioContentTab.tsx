@@ -279,7 +279,7 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
               <p className="mt-1 text-[11px] font-medium text-rose-600 dark:text-rose-400">
                 {slugValidation.code === 'reserved'
                   ? (isRtl ? 'هذا المعرف محجوز.' : 'This site handle is reserved.')
-                  : (isRtl ? 'استخدم 3 إلى 30 حرفاً إنجليزياً أو أرقاماً أو - أو _.' : 'Use 3–30 lowercase letters, numbers, hyphens, or underscores.')}
+                  : (isRtl ? 'استخدم 3 إلى 30 حرفاً إنجليزياً أو أرقاماً أو - أو _.' : 'Use 3-30 lowercase letters, numbers, hyphens, or underscores.')}
               </p>
             )}
           </div>

@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { Locale, TemplateItem } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
+import { publicSiteUrl } from '../../utils/publicUrl';
 import { templatesData } from '../../data/content';
 import { Theme } from '../../utils/theme';
 import { useAuth } from '../../hooks/useAuth';
@@ -117,7 +118,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   const { user, profile, logOut } = useAuth();
   const rawUsername = profile?.handle || (user?.email ? user.email.split('@')[0] : 'creator');
   const cleanHandle = rawUsername.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  const publicProfileUrl = `https://raloa.app/@${cleanHandle}`;
+  const publicProfileUrl = publicSiteUrl(cleanHandle, typeof window !== 'undefined' ? window.location.origin : undefined);
 
   // Build searchable commands list
   const allCommands = useMemo<CommandItem[]>(() => {

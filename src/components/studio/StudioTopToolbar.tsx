@@ -15,9 +15,11 @@ import {
 import { Locale, UserMiniSiteSummary } from '../../types';
 import { PremiumMark } from '../brand/PremiumMark';
 import { normalizeSiteSlug } from '../../lib/siteSlug';
+import { publicSiteUrl } from '../../utils/publicUrl';
 
 export interface StudioTopToolbarProps {
   handle: string;
+  customDomain?: string;
   plan: 'free' | 'pro' | 'studio' | string;
   saveStatus: 'saving' | 'saved' | 'error' | 'recovery';
   isDirty: boolean;
@@ -44,6 +46,7 @@ export type PublicationState = 'draft' | 'publishing' | 'published' | 'unpublish
 
 export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
   handle,
+  customDomain,
   plan = 'free',
   saveStatus,
   isDirty,
@@ -69,13 +72,16 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
   const [siteSwitcherOpen, setSiteSwitcherOpen] = useState(false);
   const isRtl = locale === 'ar';
   const cleanHandle = normalizeSiteSlug(handle);
-  const publicUrl = cleanHandle ? `https://raloa.app/@${cleanHandle}` : 'https://raloa.app/';
+  const publicUrl = publicSiteUrl(cleanHandle, typeof window !== 'undefined' ? window.location.origin : undefined, customDomain);
 
-  const handleCopyLink = () => {
-    if (typeof navigator !== 'undefined') {
-      navigator.clipboard.writeText(publicUrl);
+  const handleCopyLink = async () => {
+    if (typeof navigator === 'undefined' || !publicUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
     }
   };
 

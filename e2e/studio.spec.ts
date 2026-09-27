@@ -45,7 +45,7 @@ async function mockStudioApi(page: Page, options: { saveFailure?: boolean } = {}
 test('creator authentication, site load, edit, autosave retry, publish and unpublish', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === 'mobile-chromium', 'The desktop editor workflow is covered in the desktop project; mobile has a dedicated navigation flow below.');
   await mockStudioApi(page, { saveFailure: true });
-  await expect(page.getByRole('heading', { name: 'E2E Creator' })).toBeVisible();
+  await expect(page.getByLabel('Display Name')).toHaveValue('E2E Creator');
   const displayName = page.getByLabel('Display Name');
   await displayName.fill('Updated Creator');
   await expect(page.getByText('Saving')).toBeVisible();
@@ -101,11 +101,14 @@ test('mobile navigation, RTL layout, preview parity and permission failure are v
   await expect(page.getByRole('navigation', { name: 'تنقل الاستوديو' })).toBeVisible();
 });
 
-test('Studio preview and published page preserve persisted tokens, blocks and behavior', async ({ page }) => {
+test('Studio preview and published page preserve persisted tokens, blocks and behavior', async ({ page }, testInfo) => {
   await mockStudioApi(page);
   // Wait for the persisted site response to replace the template bootstrap;
   // otherwise the preview can legitimately show its initial loading template.
-  await expect(page.getByRole('heading', { name: 'E2E Creator' })).toBeVisible();
+  await expect(page.getByLabel('Display Name')).toHaveValue('E2E Creator');
+  if (testInfo.project.name === 'mobile-chromium') {
+    await page.getByRole('button', { name: /Show Live Preview/i }).click();
+  }
   const preview = page.getByTestId('studio-preview-surface');
   await expect(preview).toBeVisible();
   const expectedTokens = JSON.parse(await preview.getAttribute('data-design-tokens') || '{}');
