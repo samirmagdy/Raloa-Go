@@ -8,8 +8,9 @@ import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 initPerformanceTracking();
 
 const path = window.location.pathname;
+const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 const isPublicProfile = /^\/(?:@|public-render\/)[a-zA-Z0-9._-]+$/.test(path)
-  || (window.location.hostname !== 'raloa.app' && window.location.hostname !== 'www.raloa.app' && !window.location.hostname.endsWith('.raloa.app') && path === '/');
+  || (!isLocalHost && window.location.hostname !== 'raloa.app' && window.location.hostname !== 'www.raloa.app' && !window.location.hostname.endsWith('.raloa.app') && path === '/');
 
 const appImport = isPublicProfile ? import('./PublicPageApp.tsx') : import('./App.tsx');
 if (!isPublicProfile) void import('./observability/sentry.ts').then(({ initializeFrontendSentry }) => initializeFrontendSentry());

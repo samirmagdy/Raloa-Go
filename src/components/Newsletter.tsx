@@ -123,6 +123,8 @@ export const Newsletter: React.FC<NewsletterProps> = ({ locale }) => {
                       <Mail className="w-4 h-4" />
                     </div>
                     <input
+                      id="newsletter-email"
+                      name="email"
                       type="email"
                       value={email}
                       onChange={(e) => {

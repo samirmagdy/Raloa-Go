@@ -89,6 +89,8 @@ export const FinalCTA: React.FC<FinalCTAProps> = ({ locale, onOpenStudio }) => {
                     raloa.app/@
                   </span>
                   <input
+                    id="final-cta-username"
+                    name="username"
                     type="text"
                     value={username}
                     onChange={handleInputChange}

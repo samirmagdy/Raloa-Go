@@ -228,6 +228,8 @@ export const Hero: React.FC<HeroProps> = ({
                     {t.prefix}
                   </span>
                   <input
+                    id="hero-username"
+                    name="username"
                     type="text"
                     value={username}
                     onChange={handleInputChange}
