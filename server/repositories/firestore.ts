@@ -1,7 +1,9 @@
 import crypto from 'node:crypto';
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
+import type { AuthoritativeBillingState } from '../../server-services';
 import { assertOrderTransition, legacyOrderState } from '../domains/orders/state-machine';
-import type { AudienceRepository, AudienceRecord, AnalyticsRollup, AnalyticsRollupsRepository, BookingRecord, BookingsRepository, IntegrationRecord, IntegrationsRepository, InventoryRecord, InventoryRepository, OrderRecord, OrdersRepository, OrderTransitionRecord, SiteRecord, SitesRepository, SubscriptionRecord, SubscriptionsRepository } from './contracts';
+import type { MediaAsset, MediaMetadataRepository } from '../domains/media/contracts';
+import type { AudienceRepository, AudienceRecord, AnalyticsRollup, AnalyticsRollupsRepository, BillingRepository, BillingStateRecord, BookingRecord, BookingsRepository, DomainsRepository, IntegrationRecord, IntegrationsRepository, InventoryRecord, InventoryRepository, OrderRecord, OrdersRepository, OrderTransitionRecord, SiteRecord, SitesRepository, SubscriptionRecord, SubscriptionsRepository } from './contracts';
 
 async function records<T>(query: any): Promise<T[]> {
   const snapshot = await query.get();
@@ -83,4 +85,89 @@ export function createFirestoreAudienceRepository(db: Firestore): AudienceReposi
 export function createFirestoreAnalyticsRollupsRepository(db: Firestore): AnalyticsRollupsRepository {
   const query = (collection: string, owner: string, siteId?: string, fromDate?: string, toDate?: string) => { let result: any = db.collection(collection).where('siteOwnerId', '==', owner); if (siteId) result = result.where('siteId', '==', siteId); if (fromDate) result = result.where('date', '>=', fromDate); if (toDate) result = result.where('date', '<=', toDate); return result; };
   return { saveRollup: async (key, rollup) => { await db.collection('analytics_rollups').doc(key).set(rollup, { merge: true }); }, listRollups: (owner, site, from, to) => records<AnalyticsRollup>(query('analytics_rollups', owner, site, from, to)), listVisitorDays: (owner, site, from, to) => records<AnalyticsRollup>(query('analytics_visitor_days', owner, site, from, to)) };
+}
+
+export function createFirestoreBillingRepository(db: Firestore, authoritativeLoader?: (accountId: string) => Promise<AuthoritativeBillingState | null>): BillingRepository {
+  const collection = db.collection('users');
+  return {
+    async getAuthoritativeState(accountId) {
+      const loaded = authoritativeLoader ? await authoritativeLoader(accountId) : null;
+      if (loaded) return { ...loaded, accountId };
+      const snapshot = await collection.doc(accountId).get();
+      if (!snapshot.exists) return null;
+      const data = snapshot.data() || {};
+      const plan = data.plan === 'studio' || data.plan === 'pro' ? data.plan : 'free';
+      const billingState: AuthoritativeBillingState['state'] = ['free', 'trial', 'active', 'grace_period', 'past_due', 'cancellation_scheduled', 'subscription_ending', 'pending', 'failed_payment', 'canceled'].includes(String(data.billingState))
+        ? data.billingState
+        : plan === 'free' ? 'free' : 'active';
+      return {
+        accountId,
+        plan,
+        effectivePlan: plan,
+        interval: data.isYearly === true ? 'yearly' : 'monthly',
+        state: billingState,
+        stripeStatus: typeof data.billingStatus === 'string' ? data.billingStatus : 'free',
+        renewalDate: typeof data.subscriptionCurrentPeriodEnd === 'string' ? data.subscriptionCurrentPeriodEnd : null,
+        trialEndsAt: typeof data.subscriptionTrialEnd === 'string' ? data.subscriptionTrialEnd : null,
+        cancellationDate: typeof data.subscriptionCancelAt === 'string' ? data.subscriptionCancelAt : null,
+        cancelAtPeriodEnd: data.subscriptionCancelAtPeriodEnd === true,
+        customerId: typeof data.stripeCustomerId === 'string' ? data.stripeCustomerId : null,
+        subscriptionId: typeof data.stripeSubscriptionId === 'string' ? data.stripeSubscriptionId : null,
+        source: 'account'
+      };
+    },
+    async saveAuthoritativeState(accountId, state) {
+      await collection.doc(accountId).set({
+        plan: state.plan,
+        isYearly: state.interval === 'yearly',
+        stripeCustomerId: state.customerId,
+        stripeSubscriptionId: state.subscriptionId,
+        billingStatus: state.stripeStatus,
+        billingState: state.state,
+        subscriptionCurrentPeriodEnd: state.renewalDate,
+        subscriptionTrialEnd: state.trialEndsAt,
+        subscriptionCancelAt: state.cancellationDate,
+        subscriptionCancelAtPeriodEnd: state.cancelAtPeriodEnd,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
+  };
+}
+
+export function createFirestoreDomainsRepository(db: Firestore): DomainsRepository {
+  const collection = db.collection('custom_domains');
+  return {
+    get: async (id) => { const snapshot = await collection.doc(id).get(); return snapshot.exists ? { id, ...snapshot.data() } : null; },
+    findByHostname: async (hostname) => { const snapshot = await collection.where('hostname', '==', hostname).limit(1).get(); const document = snapshot.docs[0]; return document ? { id: document.id, ...document.data() } : null; },
+    findByIdempotencyKey: async (key) => { const snapshot = await collection.where('idempotencyKey', '==', key).limit(1).get(); const document = snapshot.docs[0]; return document ? { id: document.id, ...document.data() } : null; },
+    listOwned: (ownerUserId) => records<Record<string, unknown>>(collection.where('userId', '==', ownerUserId).limit(100)),
+    save: async (id, domain) => { await collection.doc(id).set(domain, { merge: true }); },
+    remove: async (id) => { await collection.doc(id).delete(); }
+  };
+}
+
+export function createFirestoreMediaMetadataRepository(db: Firestore): MediaMetadataRepository {
+  const collection = db.collection('media_assets');
+  const read = (document: any): MediaAsset => {
+    const data = document.data() || {};
+    return {
+      ...data,
+      id: document.id,
+      ownerUserId: String(data.ownerUserId || data.userId || ''),
+      siteId: String(data.siteId || ''),
+      lifecycle: data.lifecycle || (data.status === 'ready' ? 'ready' : data.status === 'deleted' ? 'deleted' : 'uploaded'),
+      original: data.original || { provider: 'firebase_storage', objectKey: String(data.originalPath || ''), contentType: String(data.mimeType || data.sourceMimeType || 'application/octet-stream'), bytes: Number(data.sourceBytes || data.bytes || 0), cdnUrl: data.publicUrl },
+      createdAt: String(data.createdAt || new Date(0).toISOString()),
+      updatedAt: String(data.updatedAt || data.createdAt || new Date(0).toISOString())
+    } as MediaAsset;
+  };
+  return {
+    create: async (asset) => { await collection.doc(asset.id).create(asset); },
+    get: async (id) => { const snapshot = await collection.doc(id).get(); return snapshot.exists ? read(snapshot) : null; },
+    listOwned: async (ownerUserId, siteId) => { const snapshot = await collection.where('siteId', '==', siteId).where('userId', '==', ownerUserId).limit(500).get(); return snapshot.docs.map(read); },
+    listAll: async () => { const snapshot = await collection.limit(5000).get(); return snapshot.docs.map(read); },
+    listAbandoned: async (cutoff) => { const snapshot = await collection.where('createdAt', '<', cutoff).where('status', 'in', ['pending_upload', 'uploaded', 'processing']).limit(500).get(); return snapshot.docs.map(read); },
+    remove: async (id) => { await collection.doc(id).delete(); },
+    update: async (id, changes) => { await collection.doc(id).set(changes, { merge: true }); const snapshot = await collection.doc(id).get(); if (!snapshot.exists) throw new Error('MEDIA_NOT_FOUND'); return read(snapshot); }
+  };
 }

@@ -81,6 +81,7 @@ import { registerPublishingControllerRoutes } from './server/http/controllers/pu
 import { registerHealthRoutes } from './server/http/controllers/health-controller';
 import { createAuthorizationService } from './server/core/authorization-service';
 import type { PolicyAction } from './server/core/authorization-policy';
+import { createFirestoreBillingRepository } from './server/repositories/firestore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -97,7 +98,8 @@ export const domainModules = createDomainModules(adminDb, {
   oauthAdapters: oauthProviderAdapters(),
   providers: calendarProviders()
 });
-const entitlementService = createEntitlementService({ billing: getAuthoritativeBillingState });
+const billingRepository = createFirestoreBillingRepository(adminDb, getAuthoritativeBillingState);
+const entitlementService = createEntitlementService({ billing: billingRepository });
 const publicCache = new MemoryCacheStore();
 export const publicCreatorAdapter = createPublicCreatorAdapter({ getPublishedSiteByHandle, cache: publicCache });
 export const auditService = createAuditService(createFirestoreAuditRepository(adminDb));

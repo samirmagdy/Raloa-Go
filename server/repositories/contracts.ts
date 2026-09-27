@@ -4,6 +4,9 @@ export interface OrderRecord { id?: string; creatorId?: string; customerEmail?: 
 export interface OrderTransitionRecord { orderId: string; from: string | null; to: string; transitionKey: string; source: string; actorUserId?: string; metadata?: Record<string, unknown> }
 export interface InventoryRecord { id?: string; productId: string; available: number; reserved: number; [key: string]: unknown }
 export interface SubscriptionRecord { id?: string; userId: string; plan: string; status: string; [key: string]: unknown }
+import type { AuthoritativeBillingState } from '../../server-services';
+
+export type BillingStateRecord = AuthoritativeBillingState & { accountId: string };
 export interface IntegrationRecord { id?: string; userId: string; provider: string; [key: string]: unknown }
 export interface AudienceRecord { id?: string; userId?: string; siteId?: string; email?: string; [key: string]: unknown }
 export interface AnalyticsRollup { id?: string; siteOwnerId: string; siteId: string; date: string; [key: string]: unknown }
@@ -61,4 +64,18 @@ export interface AnalyticsRollupsRepository {
   saveRollup(key: string, rollup: AnalyticsRollup): Promise<void>;
   listRollups(siteOwnerId: string, siteId?: string, fromDate?: string, toDate?: string): Promise<AnalyticsRollup[]>;
   listVisitorDays(siteOwnerId: string, siteId?: string, fromDate?: string, toDate?: string): Promise<AnalyticsRollup[]>;
+}
+
+export interface BillingRepository {
+  getAuthoritativeState(accountId: string): Promise<BillingStateRecord | null>;
+  saveAuthoritativeState(accountId: string, state: BillingStateRecord): Promise<void>;
+}
+
+export interface DomainsRepository {
+  get(domainId: string): Promise<Record<string, unknown> | null>;
+  findByHostname(hostname: string): Promise<Record<string, unknown> | null>;
+  findByIdempotencyKey(idempotencyKey: string): Promise<Record<string, unknown> | null>;
+  listOwned(ownerUserId: string): Promise<Record<string, unknown>[]>;
+  save(domainId: string, domain: Record<string, unknown>): Promise<void>;
+  remove(domainId: string): Promise<void>;
 }

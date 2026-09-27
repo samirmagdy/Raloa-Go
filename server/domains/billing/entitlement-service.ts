@@ -1,5 +1,6 @@
 import { normalizedEntitlementSchema, type NormalizedEntitlement } from '../../../src/shared/schema';
 import type { AuthoritativeBillingState } from '../../../server-services';
+import type { BillingRepository } from '../../repositories/contracts';
 import { getPlanCapabilities, type PlanCapabilities } from '../../../src/lib/planCapabilities';
 
 export type EntitlementFeature = 'analytics' | 'customDomains' | 'studioControls' | 'premiumTemplates' | 'removeBranding';
@@ -35,11 +36,19 @@ const normalizeCapabilities = (capabilities: PlanCapabilities): NormalizedEntitl
   }
 });
 
-export function createEntitlementService(dependencies: { billing: (accountId: string) => Promise<AuthoritativeBillingState>; clock?: () => string }): EntitlementService {
+export function createEntitlementService(dependencies: { billing: BillingRepository | ((accountId: string) => Promise<AuthoritativeBillingState>); clock?: () => string }): EntitlementService {
   const clock = dependencies.clock ?? (() => new Date().toISOString());
+  const loadBilling: (accountId: string) => Promise<AuthoritativeBillingState> = typeof dependencies.billing === 'function'
+    ? dependencies.billing
+    : async (accountId: string) => {
+      const repository = dependencies.billing as BillingRepository;
+      const state = await repository.getAuthoritativeState(accountId);
+      if (!state) throw new Error('BILLING_STATE_NOT_FOUND');
+      return state;
+    };
   return {
     async resolve(accountId) {
-      const billing = await dependencies.billing(accountId);
+      const billing = await loadBilling(accountId);
       return { accountId, billing, entitlements: normalizeCapabilities(getPlanCapabilities({ plan: billing.effectivePlan })), evaluatedAt: clock() };
     },
     async assertEntitled(accountId, feature) {
