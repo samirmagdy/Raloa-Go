@@ -12,4 +12,6 @@ events are terminal, and job enqueueing is itself idempotent.
 
 Current atomic integrations include booking creation/confirmation/cancellation,
 booking notification/calendar work, and order creation. Analytics and
-integration events use the same event contract for subsequent domain migration.
+integration events use the same versioned contract for subsequent domain
+migration. Event names are catalogued as `Name.v1`; consumers must support the
+declared version and may subscribe without importing the producing domain.

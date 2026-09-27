@@ -1,8 +1,10 @@
+import type { DomainEventType } from '../events';
+
 export type OutboxStatus = 'pending' | 'publishing' | 'published' | 'retry' | 'dead_letter';
 
 export interface OutboxEvent {
   id: string;
-  eventType: string;
+  eventType: DomainEventType;
   aggregateType: string;
   aggregateId: string;
   idempotencyKey: string;

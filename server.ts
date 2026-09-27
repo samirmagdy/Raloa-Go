@@ -51,6 +51,7 @@ import { createBillingController } from './server/domains/billing/controller';
 import { assertOrderTransition, legacyOrderState } from './server/domains/orders/state-machine';
 import { createBackgroundJobService, createConfiguredDispatcher, createFirestoreBackgroundJobRepository, type JobKind } from './server/background-jobs';
 import { appendOutboxEvent, createFirestoreOutboxRepository, createOutboxEvent, createOutboxService, outboxEventId } from './server/outbox';
+import { createDomainEventBus, DOMAIN_EVENTS, eventType, type DomainEvent } from './server/events';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -76,10 +77,21 @@ export const backgroundJobs = createBackgroundJobService(createFirestoreBackgrou
   oauth_refresh: async () => undefined,
   analytics_rollup: async () => undefined
 });
+export const domainEventBus = createDomainEventBus();
+const enqueueEventJobs = (kind: JobKind) => async (event: DomainEvent): Promise<void> => { await backgroundJobs.enqueue({ kind, idempotencyKey: `event:${event.id}:${kind}`, payload: { ...event.payload, eventId: event.id, eventType: event.type } }); };
+domainEventBus.subscribe(DOMAIN_EVENTS.BookingCreated, enqueueEventJobs('email_delivery'));
+domainEventBus.subscribe(DOMAIN_EVENTS.BookingCreated, enqueueEventJobs('calendar_sync'));
+domainEventBus.subscribe(DOMAIN_EVENTS.BookingConfirmed, enqueueEventJobs('email_delivery'));
+domainEventBus.subscribe(DOMAIN_EVENTS.BookingConfirmed, enqueueEventJobs('calendar_sync'));
+domainEventBus.subscribe(DOMAIN_EVENTS.BookingCancelled, enqueueEventJobs('email_delivery'));
+domainEventBus.subscribe(DOMAIN_EVENTS.BookingCancelled, enqueueEventJobs('calendar_sync'));
+domainEventBus.subscribe(DOMAIN_EVENTS.OrderCreated, enqueueEventJobs('order_processing'));
+domainEventBus.subscribe(DOMAIN_EVENTS.AnalyticsRecorded, enqueueEventJobs('analytics_rollup'));
+domainEventBus.subscribe(DOMAIN_EVENTS.IntegrationSynchronized, enqueueEventJobs('oauth_refresh'));
 export const outbox = createOutboxService(createFirestoreOutboxRepository(adminDb), {
   publish: async (event) => {
-    const kinds: JobKind[] = event.eventType.startsWith('booking.') ? ['email_delivery', 'calendar_sync'] : [event.eventType === 'analytics.event' ? 'analytics_rollup' : event.eventType === 'integration.sync' ? 'oauth_refresh' : event.eventType === 'notification.requested' ? 'email_delivery' : event.eventType === 'order.created' ? 'order_processing' : 'cleanup'];
-    await Promise.all(kinds.map((kind) => backgroundJobs.enqueue({ kind, idempotencyKey: `outbox:${event.id}:${kind}`, payload: { ...event.payload, eventId: event.id, eventType: event.eventType } })));
+    const [name, version] = event.eventType.split('.v');
+    await domainEventBus.publish({ id: event.id, type: event.eventType, name: name as DomainEvent['name'], version: Number(version || 1) as 1, aggregateType: event.aggregateType, aggregateId: event.aggregateId, occurredAt: event.createdAt, payload: event.payload });
   }
 });
 const billingController = createBillingController(domainModules.billing.service, (request) => getAuthenticatedUser(request));
@@ -1989,7 +2001,7 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
     };
     if (calendarProvider !== 'none' && !calendarReady) calendarJob.lastError = 'CALENDAR_PROVIDER_NOT_CONFIGURED';
     const calendarReference = adminDb.collection('calendar_jobs').doc();
-    const bookingCreatedEvent = createOutboxEvent({ id: outboxEventId(`booking:${bookingReference.id}:created`), eventType: 'booking.created', aggregateType: 'booking', aggregateId: bookingReference.id, idempotencyKey: `booking:${bookingReference.id}:created`, payload: { bookingId: bookingReference.id, hostUserId: booking.hostUserId, siteId: booking.siteId } });
+    const bookingCreatedEvent = createOutboxEvent({ id: outboxEventId(`booking:${bookingReference.id}:created`), eventType: eventType(DOMAIN_EVENTS.BookingCreated), aggregateType: 'booking', aggregateId: bookingReference.id, idempotencyKey: `booking:${bookingReference.id}:created`, payload: { bookingId: bookingReference.id, hostUserId: booking.hostUserId, siteId: booking.siteId } });
     await adminDb.runTransaction(async (transaction) => {
       const locks = await Promise.all(lockReferences.map((reference) => transaction.get(reference)));
       if (locks.some((lock) => lock.exists)) throw new Error('BOOKING_SLOT_TAKEN');
@@ -2047,7 +2059,7 @@ app.post('/api/creator/bookings/:bookingId/confirm', async (req: Request, res: R
   if (!bookingSite || (typeof req.query.siteId === 'string' && bookingSite.id !== req.query.siteId.trim())) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   if (booking.status === 'cancelled') return apiError(res, 409, 'BOOKING_CANCELLED', 'Cancelled bookings cannot be confirmed.');
   if (booking.status !== 'confirmed') {
-    const confirmedEvent = createOutboxEvent({ id: outboxEventId(`booking:${bookingRef.id}:confirmed`), eventType: 'booking.confirmed', aggregateType: 'booking', aggregateId: bookingRef.id, idempotencyKey: `booking:${bookingRef.id}:confirmed`, payload: { bookingId: bookingRef.id, siteId: String(booking.siteId || '') } });
+    const confirmedEvent = createOutboxEvent({ id: outboxEventId(`booking:${bookingRef.id}:confirmed`), eventType: eventType(DOMAIN_EVENTS.BookingConfirmed), aggregateType: 'booking', aggregateId: bookingRef.id, idempotencyKey: `booking:${bookingRef.id}:confirmed`, payload: { bookingId: bookingRef.id, siteId: String(booking.siteId || '') } });
     await adminDb.runTransaction(async (transaction) => {
       const current = await transaction.get(bookingRef);
       if (!current.exists || current.data()?.status === 'cancelled') throw new Error('BOOKING_CANCELLED');
@@ -2080,7 +2092,7 @@ app.post('/api/creator/bookings/:bookingId/cancel', async (req: Request, res: Re
   const bookingSite = await getOwnedSite(user.uid, String(booking.siteId || ''));
   if (!bookingSite || (typeof req.query.siteId === 'string' && bookingSite.id !== req.query.siteId.trim())) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   if (booking.status === 'cancelled') return res.json({ id: bookingRef.id, status: 'cancelled', confirmationStatus: 'cancelled' });
-  const cancelledEvent = createOutboxEvent({ id: outboxEventId(`booking:${bookingRef.id}:cancelled`), eventType: 'booking.cancelled', aggregateType: 'booking', aggregateId: bookingRef.id, idempotencyKey: `booking:${bookingRef.id}:cancelled`, payload: { bookingId: bookingRef.id, siteId: String(booking.siteId || '') } });
+  const cancelledEvent = createOutboxEvent({ id: outboxEventId(`booking:${bookingRef.id}:cancelled`), eventType: eventType(DOMAIN_EVENTS.BookingCancelled), aggregateType: 'booking', aggregateId: bookingRef.id, idempotencyKey: `booking:${bookingRef.id}:cancelled`, payload: { bookingId: bookingRef.id, siteId: String(booking.siteId || '') } });
   await adminDb.runTransaction(async (transaction) => {
     const current = await transaction.get(bookingRef);
     if (!current.exists || current.data()?.hostUserId !== user.uid || current.data()?.status === 'cancelled') return;
@@ -4267,7 +4279,7 @@ app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: R
   if (!site) return apiError(res, 404, 'CREATOR_NOT_FOUND', 'Creator page not found.');
   const productRef = adminDb.collection('creator_products').doc(productId);
   const orderRef = adminDb.collection('orders').doc();
-  const orderCreatedEvent = createOutboxEvent({ id: outboxEventId(`order:${orderRef.id}:created`), eventType: 'order.created', aggregateType: 'order', aggregateId: orderRef.id, idempotencyKey: `order:${orderRef.id}:created`, payload: { orderId: orderRef.id, productId, siteId: String(site.id || ''), creatorId: String(site.userId) } });
+  const orderCreatedEvent = createOutboxEvent({ id: outboxEventId(`order:${orderRef.id}:created`), eventType: eventType(DOMAIN_EVENTS.OrderCreated), aggregateType: 'order', aggregateId: orderRef.id, idempotencyKey: `order:${orderRef.id}:created`, payload: { orderId: orderRef.id, productId, siteId: String(site.id || ''), creatorId: String(site.userId) } });
   const now = new Date().toISOString();
   try {
     const claimed = await claimIdempotency('product-checkout', idempotencyKey);

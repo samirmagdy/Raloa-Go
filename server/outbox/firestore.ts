@@ -1,9 +1,12 @@
 import type { Firestore, Transaction } from 'firebase-admin/firestore';
+import type { DomainEventName, DomainEventType } from '../events';
+import { eventType } from '../events';
 import type { OutboxEvent, OutboxRepository } from './types';
 
-export function createOutboxEvent(input: Pick<OutboxEvent, 'id' | 'eventType' | 'aggregateType' | 'aggregateId' | 'idempotencyKey' | 'payload'> & Partial<Pick<OutboxEvent, 'maxAttempts' | 'availableAt'>>): OutboxEvent {
+export function createOutboxEvent(input: Pick<OutboxEvent, 'id' | 'aggregateType' | 'aggregateId' | 'idempotencyKey' | 'payload'> & { eventType: DomainEventType | DomainEventName } & Partial<Pick<OutboxEvent, 'maxAttempts' | 'availableAt'>>): OutboxEvent {
   const now = new Date().toISOString();
-  return { ...input, maxAttempts: input.maxAttempts || 8, availableAt: input.availableAt || now, status: 'pending', attempts: 0, createdAt: now, updatedAt: now };
+  const [name, version] = input.eventType.split('.v');
+  return { ...input, eventType: eventType(name as DomainEventName, Number(version || 1)), maxAttempts: input.maxAttempts || 8, availableAt: input.availableAt || now, status: 'pending', attempts: 0, createdAt: now, updatedAt: now };
 }
 
 export function appendOutboxEvent(transaction: Transaction, db: Firestore, event: OutboxEvent): void {

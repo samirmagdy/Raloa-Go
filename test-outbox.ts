@@ -15,7 +15,7 @@ const repository = new MemoryOutbox();
 const published: string[] = [];
 const publisher: OutboxPublisher = { publish: async (event) => { published.push(event.id); } };
 const service = createOutboxService(repository, publisher);
-const event = createOutboxEvent({ id: 'event-1', eventType: 'booking.created', aggregateType: 'booking', aggregateId: 'booking-1', idempotencyKey: 'booking:booking-1:created', payload: { bookingId: 'booking-1' } });
+const event = createOutboxEvent({ id: 'event-1', eventType: 'BookingCreated.v1', aggregateType: 'booking', aggregateId: 'booking-1', idempotencyKey: 'booking:booking-1:created', payload: { bookingId: 'booking-1' } });
 repository.events.set(event.id, event);
 repository.events.set(event.id, event);
 assert.equal((await service.publishPending()).published, 1);
