@@ -120,7 +120,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
         </div>
 
         {/* 3 Pricing Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[0.85fr_1.15fr_1fr] gap-4 sm:gap-6 lg:gap-8 items-stretch pt-2 sm:pt-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 items-stretch pt-2 sm:pt-4">
           {pricingPlans.map((plan) => {
             const isPopular = plan.popular;
             const price = plan.priceMonthly === 0 ? 0 : isYearly ? plan.priceYearly : plan.priceMonthly;
@@ -131,7 +131,7 @@ export const PricingTable: React.FC<PricingTableProps> = ({ locale, onSelectPlan
                 key={plan.id}
                 className={`relative bg-white dark:bg-slate-900 rounded-[24px] p-5 sm:p-8 border transition-all duration-300 flex flex-col items-start text-start justify-between ${
                   isPopular
-                    ? 'border-indigo-500 dark:border-indigo-500 ring-2 ring-indigo-500/20 dark:ring-indigo-500/40 shadow-[0_16px_40px_rgba(91,92,246,0.12)] dark:shadow-[0_16px_40px_rgba(91,92,246,0.25)] lg:-translate-y-2'
+                    ? 'border-indigo-500 dark:border-indigo-500 ring-2 ring-indigo-500/20 dark:ring-indigo-500/40 shadow-[0_16px_40px_rgba(91,92,246,0.12)] dark:shadow-[0_16px_40px_rgba(91,92,246,0.25)]'
                     : 'border-slate-200 dark:border-slate-800 shadow-[0_6px_20px_rgba(15,23,42,0.04)] dark:shadow-[0_6px_20px_rgba(0,0,0,0.3)] hover:shadow-lg dark:hover:shadow-2xl'
                 }`}
               >
