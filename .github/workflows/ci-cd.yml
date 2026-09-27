@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: "22"
 
 jobs:
   static:
@@ -20,7 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ env.NODE_VERSION }}, cache: npm }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
       - run: npm ci --legacy-peer-deps
       - run: npm run lint
       - run: npm run check:secrets
@@ -29,6 +31,7 @@ jobs:
       - run: npm run check:modular-monolith
       - run: npm run check:adrs
       - run: npm run check:capacity-plan
+      - run: npm run check:cost-architecture
       - run: npm run check:migrations
       - run: npm run check:ci-cd
       - run: npm audit --audit-level=high
@@ -40,7 +43,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ env.NODE_VERSION }}, cache: npm }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
       - run: npm ci --legacy-peer-deps
       - run: npm run test:unit
       - run: npm run test:coverage
@@ -53,21 +58,21 @@ jobs:
       - run: npm run validate:production
         env:
           NODE_ENV: production
-          SECRET_MANAGER_ENABLED: 'true'
+          SECRET_MANAGER_ENABLED: "true"
           SECRET_MANAGER_PROJECT_ID: ci-project
           APP_URL: https://raloa.app
           INTEGRATION_KMS_KEY_NAME: projects/ci-project/locations/global/keyRings/ci/cryptoKeys/integrations
           FIREBASE_PROJECT_ID: ci-project
           FIRESTORE_DATABASE_ID: ci-database
           FIREBASE_STORAGE_BUCKET: ci-project.firebasestorage.app
-          FIREBASE_ADMIN_ENABLED: 'true'
+          FIREBASE_ADMIN_ENABLED: "true"
           K_SERVICE: ci
           STRIPE_PRICE_PRO_MONTHLY: price_ci_pro_monthly
           STRIPE_PRICE_PRO_YEARLY: price_ci_pro_yearly
           STRIPE_PRICE_STUDIO_MONTHLY: price_ci_studio_monthly
           STRIPE_PRICE_STUDIO_YEARLY: price_ci_studio_yearly
           CLOUDFLARE_ZONE_ID: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-          TRUSTED_PROXY_HOPS: '1'
+          TRUSTED_PROXY_HOPS: "1"
 
   browser:
     name: Playwright browser workflows
@@ -76,7 +81,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ env.NODE_VERSION }}, cache: npm }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
       - run: npm ci --legacy-peer-deps
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e -- --project=chromium
@@ -86,13 +93,16 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: deploy-staging
     runs-on: ubuntu-latest
-    environment: staging
+    environment:
+      name: staging
     env:
       DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ env.NODE_VERSION }}, cache: npm }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
       - run: npm ci --legacy-peer-deps
       - run: npm run test:integration:staging
         env:
@@ -121,7 +131,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: google-github-actions/auth@v2
         if: github.event_name != 'pull_request'
-        with: { workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}, service_account: ${{ secrets.GCP_DEPLOYER_SERVICE_ACCOUNT }} }
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
         if: github.event_name != 'pull_request'
       - id: meta
@@ -140,11 +152,14 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: [tests, build]
     runs-on: ubuntu-latest
-    environment: staging
+    environment:
+      name: staging
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ env.NODE_VERSION }}, cache: npm }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
       - run: npm ci --legacy-peer-deps
       - run: npm run db:migrate
       - run: npm run db:migrate:verify
@@ -154,11 +169,14 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: [migrate-staging, build]
     runs-on: ubuntu-latest
-    environment: staging
+    environment:
+      name: staging
     steps:
       - uses: actions/checkout@v4
       - uses: google-github-actions/auth@v2
-        with: { workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}, service_account: ${{ secrets.GCP_DEPLOYER_SERVICE_ACCOUNT }} }
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
       - name: Render checked-in service topology
         env:
@@ -186,11 +204,14 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: [deploy-staging, staging]
     runs-on: ubuntu-latest
-    environment: staging
+    environment:
+      name: staging
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ env.NODE_VERSION }}, cache: npm }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
       - run: npm ci --legacy-peer-deps
       - run: npm run smoke:production
         env:
@@ -203,13 +224,16 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: smoke-staging
     runs-on: ubuntu-latest
-    environment: production
+    environment:
+      name: production
     env:
       DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ env.NODE_VERSION }}, cache: npm }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
       - run: npm ci --legacy-peer-deps
       - run: npm run db:migrate
       - run: npm run db:migrate:verify
@@ -219,11 +243,14 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [migrate-production, build]
     runs-on: ubuntu-latest
-    environment: production
+    environment:
+      name: production
     steps:
       - uses: actions/checkout@v4
       - uses: google-github-actions/auth@v2
-        with: { workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}, service_account: ${{ secrets.GCP_DEPLOYER_SERVICE_ACCOUNT }} }
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
       - name: Render checked-in service topology
         env:
@@ -251,11 +278,14 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: production
     runs-on: ubuntu-latest
-    environment: production
+    environment:
+      name: production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ env.NODE_VERSION }}, cache: npm }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
       - run: npm ci --legacy-peer-deps
       - run: npm run smoke:release
         env:

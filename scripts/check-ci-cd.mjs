@@ -12,6 +12,7 @@ const required = [
   'npm run check:modular-monolith',
   'npm run check:adrs',
   'npm run check:capacity-plan',
+  'npm run check:cost-architecture',
   'npm run validate:production',
   'npm run db:migrate',
   'npm run db:migrate:verify',
