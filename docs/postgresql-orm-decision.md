@@ -1,5 +1,8 @@
 # PostgreSQL ORM decision
 
+The authoritative decision is [ADR-0008](adr/0008-postgresql-orm.md). This
+document is the short implementation summary.
+
 ## Decision
 
 Use Drizzle behind `server/infrastructure/postgres`.
@@ -17,3 +20,7 @@ Use Drizzle behind `server/infrastructure/postgres`.
 The application must depend on repository contracts, not Drizzle. This permits
 Firestore implementations during migration and PostgreSQL implementations
 without rewriting services or API contracts.
+
+The current change implements only the database foundation: pooled `pg`
+connections, Drizzle's typed infrastructure schema, health checks, and the
+existing SQL migration runner. No business domain has switched persistence.

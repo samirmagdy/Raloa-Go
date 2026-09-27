@@ -6,7 +6,7 @@ export interface FirebaseStore {
 }
 
 export interface EmailProvider {
-  send(message: { to: string; subject: string; text: string; html?: string }): Promise<void>;
+  send(message: { to: string; subject: string; text: string; html?: string; idempotencyKey?: string }): Promise<void>;
 }
 
 export interface CloudflareProvider {

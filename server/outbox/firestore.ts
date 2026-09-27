@@ -1,19 +1,27 @@
 import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import type { DomainEventName, DomainEventType } from '../events';
 import { eventType } from '../events';
-import type { OutboxEvent, OutboxRepository } from './types';
-import { domainEventSchemaV1 } from '../../src/shared/schema';
+import type { OutboxEvent, OutboxEventInput, OutboxRepository, TransactionalOutboxProducer } from './types';
+import { domainEventSchemaV1, outboxEventSchemaV1 } from '../../src/shared/schema';
 
-export function createOutboxEvent(input: Pick<OutboxEvent, 'id' | 'aggregateType' | 'aggregateId' | 'idempotencyKey' | 'payload'> & { eventType: DomainEventType | DomainEventName } & Partial<Pick<OutboxEvent, 'maxAttempts' | 'availableAt'>>): OutboxEvent {
+export function createOutboxEvent(input: OutboxEventInput): OutboxEvent {
   const now = new Date().toISOString();
   const [name, version] = input.eventType.split('.v');
   const normalized = { ...input, eventType: eventType(name as DomainEventName, Number(version || 1)), maxAttempts: input.maxAttempts || 8, availableAt: input.availableAt || now, status: 'pending' as const, attempts: 0, createdAt: now, updatedAt: now };
   domainEventSchemaV1.parse({ id: normalized.id, type: normalized.eventType, name, version: Number(version || 1), aggregateType: normalized.aggregateType, aggregateId: normalized.aggregateId, occurredAt: normalized.createdAt, payload: normalized.payload });
-  return normalized;
+  return outboxEventSchemaV1.parse(normalized) as OutboxEvent;
 }
 
 export function appendOutboxEvent(transaction: Transaction, db: Firestore, event: OutboxEvent): void {
   transaction.create(db.collection('outbox_events').doc(event.id), event);
+}
+
+export function createFirestoreTransactionalOutbox(db: Firestore): TransactionalOutboxProducer {
+  return {
+    create: createOutboxEvent,
+    append: (transaction, event) => appendOutboxEvent(transaction as Transaction, db, event),
+    appendMany: (transaction, events) => events.forEach((event) => appendOutboxEvent(transaction as Transaction, db, event))
+  };
 }
 
 function read(snapshot: FirebaseFirestore.DocumentSnapshot): OutboxEvent {
@@ -58,6 +66,14 @@ export function createFirestoreOutboxRepository(db: Firestore): OutboxRepository
         const now = new Date().toISOString();
         transaction.set(reference, { status: deadLetter ? 'dead_letter' : 'retry', lastError: error, availableAt: availableAt || null, leaseUntil: null, updatedAt: now }, { merge: true });
       });
+    },
+    async cleanupPublished(publishedBefore, limit) {
+      const snapshot = await collection.where('status', '==', 'published').where('publishedAt', '<=', publishedBefore).limit(limit).get();
+      if (snapshot.empty) return 0;
+      const batch = db.batch();
+      snapshot.docs.forEach((document) => batch.delete(document.ref));
+      await batch.commit();
+      return snapshot.size;
     }
   };
 }

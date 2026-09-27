@@ -37,7 +37,7 @@ import {
 } from './server-services';
 import { templatesData } from './src/data/content';
 import { getPlanCapabilities, getPlanTier, isPremiumTemplate } from './src/lib/planCapabilities';
-import { calendarAdapter, calendarOAuthConfiguration, calendarProviderIsConfigured, decryptCalendarTokens, encryptCalendarTokens, type CalendarProvider, type CalendarBookingEvent, type CalendarTokenBundle } from './server-calendar';
+import { calendarAdapter, calendarOAuthConfiguration, calendarProviderIsConfigured, decryptCalendarTokens, encryptCalendarTokens, type CalendarProvider, type CalendarTokenBundle } from './server-calendar';
 import { isSupportedBlockType, isSupportedEmbedUrl } from './src/lib/blockTypes';
 import { canonicalSiteToLegacy, normalizeBookingConfig, normalizeProductInput, normalizeSiteContent, validateProductInput, validateSiteContent } from './src/lib/contentSchema';
 import type { BookingConfig, BookingServiceConfig } from './src/types';
@@ -52,7 +52,7 @@ import { createEntitlementService } from './server/domains/billing/entitlement-s
 import { buildRateLimitKey, RATE_LIMIT_POLICIES, type RateLimitIdentity, type RateLimitPolicyName } from './server/core/rate-limit-policy';
 import { assertOrderTransition, legacyOrderState } from './server/domains/orders/state-machine';
 import { createBackgroundJobService, createConfiguredDispatcher, createFirestoreBackgroundJobRepository, type JobKind } from './server/background-jobs';
-import { appendOutboxEvent, createFirestoreOutboxRepository, createOutboxEvent, createOutboxService, outboxEventId } from './server/outbox';
+import { createFirestoreOutboxRepository, createFirestoreTransactionalOutbox, createOutboxEvent, createOutboxService, outboxEventId } from './server/outbox';
 import { createDomainEventBus, DOMAIN_EVENTS, eventType, type DomainEvent } from './server/events';
 import { createPublicCreatorAdapter } from './server/public-site';
 import { MemoryCacheStore } from './server/infrastructure/cache/memory';
@@ -83,6 +83,14 @@ import { createAuthorizationService } from './server/core/authorization-service'
 import type { PolicyAction } from './server/core/authorization-policy';
 import { createFirestoreBillingRepository } from './server/repositories/firestore';
 import { createFirestoreSitePersistenceRepository } from './server/repositories/site-persistence';
+import { resendEmailAdapter } from './server/adapters/email';
+import { createFirestoreEmailDeliveryWorker } from './server/domains/notifications/email-worker';
+import { createCalendarSyncWorker } from './server/domains/bookings/calendar-sync-worker';
+import { createDomainVerificationWorker } from './server/domains/domains/verification-worker';
+import { createFeatureFlagService, createFirestoreFeatureFlagRepository } from './server/infrastructure/feature-flags';
+import { createConfiguredPostgresDatabase, createPostgresBookingsRepository } from './server/infrastructure/postgres';
+import { createBookingMigrationRepository } from './server/domains/bookings/migration-repository';
+import { createFirestoreBookingsRepository } from './server/repositories/firestore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -105,6 +113,18 @@ const publicCache = new MemoryCacheStore();
 export const publicCreatorAdapter = createPublicCreatorAdapter({ getPublishedSiteByHandle, cache: publicCache });
 export const auditService = createAuditService(createFirestoreAuditRepository(adminDb));
 const sitesPersistenceRepository = createFirestoreSitePersistenceRepository(adminDb);
+const bookingFeatureFlags = createFeatureFlagService(createFirestoreFeatureFlagRepository(adminDb));
+const postgresBookingRuntime = process.env.POSTGRES_ENABLED === 'true' && (process.env.POSTGRES_DATABASE_URL || process.env.DATABASE_URL)
+  ? createConfiguredPostgresDatabase()
+  : null;
+const firestoreBookingsRepository = createFirestoreBookingsRepository(adminDb);
+const postgresBookingsRepository = postgresBookingRuntime ? createPostgresBookingsRepository(postgresBookingRuntime.pool) : null;
+const bookingsMigrationRepository = postgresBookingsRepository
+  ? createBookingMigrationRepository(firestoreBookingsRepository, postgresBookingsRepository, bookingFeatureFlags, {
+    mismatch: async (operation, context, bookingId) => console.warn('[Bookings migration mismatch]', { operation, tenantId: context.tenantId, bookingId }),
+    writeFailure: async (operation, context, error) => console.error('[Bookings migration target write failed]', { operation, tenantId: context.tenantId, error: error instanceof Error ? error.message : String(error) })
+  })
+  : firestoreBookingsRepository;
 export const authorizationService = createAuthorizationService({
   async loadAccount(userId) {
     const snapshot = await adminDb.collection('users').doc(userId).get();
@@ -156,14 +176,29 @@ async function getCachedPublicDomain(hostname: string): Promise<DomainRecord | n
   if (domain) await publicCache.set(key, domain, 30);
   return domain;
 }
+const emailDeliveryWorker = createFirestoreEmailDeliveryWorker({ db: adminDb, provider: resendEmailAdapter });
+export const calendarSyncWorker = createCalendarSyncWorker({ db: adminDb });
+export const domainVerificationWorker = createDomainVerificationWorker({
+  db: adminDb,
+  verify: async (providerHostnameId) => {
+    const config = getCloudflareConfig();
+    if (!config) throw new Error('CLOUDFLARE_NOT_CONFIGURED');
+    const result = await cloudflareRequest(`/zones/${config.zoneId}/custom_hostnames/${providerHostnameId}`);
+    return { verified: result?.status === 'active', certificateStatus: result?.ssl?.status === 'active' ? 'active' : result?.ssl?.status === 'failed' ? 'failed' : 'pending' };
+  },
+  onVerified: async (domain) => {
+    await publicCache.delete(cacheKey('domainResolution', String(domain.hostname || '').toLowerCase()));
+  }
+});
+export const transactionalOutbox = createFirestoreTransactionalOutbox(adminDb);
 export const backgroundJobs = createBackgroundJobService(createFirestoreBackgroundJobRepository(adminDb), createConfiguredDispatcher(), {
-  email_delivery: async () => processPendingBookingNotifications(),
-  calendar_sync: async () => processPendingCalendarJobs(),
+  email_delivery: async (job) => emailDeliveryWorker.run(job),
+  calendar_sync: async (job) => calendarSyncWorker.run(job),
   media_processing: async () => sweepOrphanMedia(),
   cleanup: async () => sweepOrphanMedia(),
   stripe_reconciliation: async () => { await reconcileStripeBillingState(); },
   order_processing: async () => undefined,
-  domain_verification: async () => undefined,
+  domain_verification: async (job) => domainVerificationWorker.run(job),
   oauth_refresh: async () => undefined,
   analytics_rollup: async () => undefined
 }, { metrics: observabilityMetrics });
@@ -1131,6 +1166,15 @@ function minutesFromTime(value: string): number {
 
 async function bookingRecordsForHost(hostUserId: string, siteId?: string, fromMs?: number, toMs?: number): Promise<Array<Record<string, unknown>>> {
   if (!isAdminConfigured()) return [];
+  if (postgresBookingsRepository && 'listScoped' in bookingsMigrationRepository) {
+    const routed = bookingsMigrationRepository as typeof bookingsMigrationRepository & { listScoped: (host: string, site: string | undefined, limit: number, context: { tenantId?: string; siteId?: string; userId?: string }) => Promise<Array<Record<string, unknown>>> };
+    const records = await routed.listScoped(hostUserId, siteId, 500, { tenantId: siteId || hostUserId, siteId, userId: hostUserId });
+    return records.filter((booking) => {
+      if (Number.isFinite(fromMs) && Number(booking.slotEndMs || Date.parse(String(booking.slotEnd || ''))) <= Number(fromMs)) return false;
+      if (Number.isFinite(toMs) && Number(booking.slotStartMs || Date.parse(String(booking.slotStart || ''))) >= Number(toMs)) return false;
+      return true;
+    }) as Array<Record<string, unknown>>;
+  }
   let query: Query = adminDb.collection('bookings').where('hostUserId', '==', hostUserId);
   if (siteId) query = query.where('siteId', '==', siteId);
   if (Number.isFinite(toMs)) query = query.where('slotStartMs', '<', Number(toMs));
@@ -1188,105 +1232,6 @@ function availableSlots(config: BookingConfig, service: BookingServiceConfig, fr
     }
   }
   return slots;
-}
-
-function escapeEmailText(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] || character));
-}
-
-async function processPendingBookingNotifications(): Promise<void> {
-  if (!isAdminConfigured() || !process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) return;
-  const jobs = await adminDb.collection('notification_jobs').where('status', 'in', ['pending', 'retry', 'processing']).limit(50).get();
-  for (const jobSnapshot of jobs.docs) {
-    const job = jobSnapshot.data();
-    if (job.nextAttemptAt && Date.parse(String(job.nextAttemptAt)) > Date.now()) continue;
-    if (job.status === 'processing' && Date.parse(String(job.updatedAt || 0)) > Date.now() - 10 * 60 * 1000) continue;
-    const bookingSnapshot = await adminDb.collection('bookings').doc(String(job.bookingId || '')).get();
-    if (!bookingSnapshot.exists) {
-      await jobSnapshot.ref.update({ status: 'failed', lastError: 'BOOKING_NOT_FOUND', updatedAt: new Date().toISOString() });
-      continue;
-    }
-    const booking = bookingSnapshot.data() || {};
-    const claim = await adminDb.runTransaction(async (transaction) => {
-      const current = await transaction.get(jobSnapshot.ref);
-      const currentStatus = String(current.data()?.status || '');
-      const currentUpdatedAt = Date.parse(String(current.data()?.updatedAt || 0));
-      if (!current.exists || !['pending', 'retry'].includes(currentStatus) && !(currentStatus === 'processing' && currentUpdatedAt <= Date.now() - 10 * 60 * 1000)) return false;
-      transaction.update(jobSnapshot.ref, { status: 'processing', attempts: Number(current.data()?.attempts || 0) + 1, updatedAt: new Date().toISOString() });
-      return true;
-    });
-    if (!claim) continue;
-    const recipient = typeof job.email === 'string' ? job.email : '';
-    const subject = job.type === 'booking_request' ? 'New booking request received' : job.type === 'booking_confirmed' ? 'Booking confirmed' : 'Booking request received';
-    const html = `<p>${subject}</p><p>Service: ${escapeEmailText(String(booking.serviceName || 'Appointment'))}</p><p>When: ${escapeEmailText(String(booking.localDate || ''))} ${escapeEmailText(String(booking.localTime || ''))} (${escapeEmailText(String(booking.timezone || 'UTC'))})</p>`;
-    try {
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': `notification:${jobSnapshot.id}` },
-        body: JSON.stringify({ from: process.env.RESEND_FROM_EMAIL, to: [recipient], subject, html })
-      });
-      if (!response.ok) throw new Error(`RESEND_${response.status}`);
-      await jobSnapshot.ref.update({ status: 'sent', sentAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-    } catch (error) {
-      const attempts = Number(jobSnapshot.data()?.attempts || 1);
-      const terminal = attempts >= 8;
-      const delayMs = Math.min(6 * 60 * 60 * 1000, 30_000 * (2 ** Math.min(attempts - 1, 8))) + Math.floor(Math.random() * 10_000);
-      await jobSnapshot.ref.update({ status: terminal ? 'failed' : 'retry', lastError: error instanceof Error ? error.message : 'DELIVERY_FAILED', nextAttemptAt: terminal ? null : new Date(Date.now() + delayMs).toISOString(), updatedAt: new Date().toISOString() });
-    }
-  }
-}
-
-async function processPendingCalendarJobs(): Promise<void> {
-  if (!isAdminConfigured()) return;
-  const jobs = await adminDb.collection('calendar_jobs').where('status', 'in', ['pending', 'retry', 'processing']).limit(50).get();
-  for (const jobSnapshot of jobs.docs) {
-    const job = jobSnapshot.data();
-    if (job.nextAttemptAt && Date.parse(String(job.nextAttemptAt)) > Date.now()) continue;
-    if (job.status === 'processing' && Date.parse(String(job.updatedAt || 0)) > Date.now() - 10 * 60 * 1000) continue;
-    const claimed = await adminDb.runTransaction(async (transaction) => {
-      const current = await transaction.get(jobSnapshot.ref);
-      const currentStatus = String(current.data()?.status || '');
-      const currentUpdatedAt = Date.parse(String(current.data()?.updatedAt || 0));
-      if (!current.exists || !['pending', 'retry'].includes(currentStatus) && !(currentStatus === 'processing' && currentUpdatedAt <= Date.now() - 10 * 60 * 1000)) return false;
-      transaction.update(jobSnapshot.ref, { status: 'processing', attempts: Number(current.data()?.attempts || 0) + 1, updatedAt: new Date().toISOString() });
-      return true;
-    });
-    if (!claimed) continue;
-    try {
-      const bookingSnapshot = await adminDb.collection('bookings').doc(String(job.bookingId || '')).get();
-      if (!bookingSnapshot.exists) throw new Error('BOOKING_NOT_FOUND');
-      if (bookingSnapshot.data()?.status === 'cancelled' && job.operation !== 'cancel') throw new Error('BOOKING_NOT_ACTIVE');
-      const booking = bookingSnapshot.data() || {};
-      const provider = String(job.provider || '') as CalendarProvider;
-      if (!['google', 'outlook'].includes(provider)) throw new Error('CALENDAR_PROVIDER_NOT_CONFIGURED');
-      const integrationRef = adminDb.collection('calendar_integrations').doc(`${String(booking.hostUserId)}_${provider}`);
-      const integrationSnapshot = await integrationRef.get();
-      if (!integrationSnapshot.exists) throw new Error('CALENDAR_REAUTH_REQUIRED');
-      const integration = integrationSnapshot.data() || {};
-      const adapter = calendarAdapter(provider);
-      let tokens = await decryptCalendarTokens(String(integration.encryptedTokens || ''));
-      const refreshed = await adapter.refresh(tokens);
-      if (JSON.stringify(refreshed) !== JSON.stringify(tokens)) {
-        tokens = refreshed;
-        await integrationRef.set({ encryptedTokens: await encryptCalendarTokens(tokens), expiresAt: tokens.expiresAt, updatedAt: new Date().toISOString() }, { merge: true });
-      }
-      if (job.operation === 'cancel') {
-        if (typeof job.externalEventId === 'string' && job.externalEventId) await adapter.cancelEvent(tokens, job.externalEventId);
-        await jobSnapshot.ref.update({ status: 'completed', completedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-      } else {
-        const event: CalendarBookingEvent = { id: String(booking.id), title: `${String(booking.serviceName || 'Appointment')} with ${String(booking.customerName || 'Guest')}`, description: String(booking.notes || ''), start: String(booking.slotStart), end: String(booking.slotEnd), timezone: String(booking.timezone || 'UTC'), attendeeEmail: String(booking.customerEmail) };
-        const created = await adapter.createEvent(tokens, event);
-        await jobSnapshot.ref.update({ status: 'completed', externalEventId: created.externalEventId, completedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-      }
-    } catch (error) {
-      const attempts = Number(jobSnapshot.data()?.attempts || 1);
-      const message = error instanceof Error ? error.message : 'CALENDAR_DELIVERY_FAILED';
-      const requiresAuth = message === 'CALENDAR_REAUTH_REQUIRED' || message.includes('401') || message.includes('403');
-      const terminal = requiresAuth || attempts >= 8;
-      const delayMs = Math.min(6 * 60 * 60 * 1000, 30_000 * (2 ** Math.min(attempts - 1, 8))) + Math.floor(Math.random() * 10_000);
-      await jobSnapshot.ref.update({ status: terminal ? 'blocked' : 'retry', lastError: message, nextAttemptAt: terminal ? null : new Date(Date.now() + delayMs).toISOString(), updatedAt: new Date().toISOString() });
-    }
-  }
 }
 
 function hasPaidPlan(profile: DocumentData | undefined): boolean {
@@ -2113,11 +2058,15 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
     const calendarJob: Record<string, unknown> = {
       bookingId: bookingReference.id,
       provider: calendarProvider,
+      operation: 'create',
+      idempotencyKey: `calendar:${bookingReference.id}:create`,
       status: calendarProvider === 'none' ? 'skipped' : calendarReady ? 'awaiting_confirmation' : 'blocked',
+      attempts: 0,
+      maxAttempts: 8,
       createdAt: now
     };
     if (calendarProvider !== 'none' && !calendarReady) calendarJob.lastError = 'CALENDAR_PROVIDER_NOT_CONFIGURED';
-    const calendarReference = adminDb.collection('calendar_jobs').doc();
+    const calendarReference = adminDb.collection('calendar_jobs').doc(crypto.createHash('sha256').update(`calendar:${bookingReference.id}:create`).digest('hex'));
     const bookingCreatedEvent = createOutboxEvent({ id: outboxEventId(`booking:${bookingReference.id}:created`), eventType: eventType(DOMAIN_EVENTS.BookingCreated), aggregateType: 'booking', aggregateId: bookingReference.id, idempotencyKey: `booking:${bookingReference.id}:created`, payload: { bookingId: bookingReference.id, hostUserId: booking.hostUserId, siteId: booking.siteId } });
     await adminDb.runTransaction(async (transaction) => {
       const locks = await Promise.all(lockReferences.map((reference) => transaction.get(reference)));
@@ -2126,8 +2075,15 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
       transaction.create(bookingReference, booking);
       notifications.forEach((notification, index) => transaction.create(notificationReferences[index], { ...notification, bookingId: bookingReference.id, status: 'pending', attempts: 0, maxAttempts: 8, createdAt: now }));
       transaction.create(calendarReference, calendarJob);
-      appendOutboxEvent(transaction, adminDb, bookingCreatedEvent);
+      transactionalOutbox.append(transaction, bookingCreatedEvent);
     });
+    if (postgresBookingsRepository && await bookingFeatureFlags.isEnabled('bookings.postgres.writes.v2', { tenantId: String(booking.siteId), siteId: String(booking.siteId), userId: String(booking.hostUserId) })) {
+      try {
+        await postgresBookingsRepository.reserveSlot({ ...booking, idempotencyKey });
+      } catch (error) {
+        console.error('[Bookings migration target write failed]', error instanceof Error ? error.message : error);
+      }
+    }
     const response = { id: bookingReference.id, status: booking.status, confirmationStatus: booking.confirmationStatus, timezone: config.timezone, slotStart: booking.slotStart, slotEnd: booking.slotEnd };
     await completeIdempotency('booking', idempotencyKey, response);
     return res.status(201).json(response);
@@ -2181,8 +2137,11 @@ app.post('/api/creator/bookings/:bookingId/confirm', async (req: Request, res: R
       const current = await transaction.get(bookingRef);
       if (!current.exists || current.data()?.status === 'cancelled') throw new Error('BOOKING_CANCELLED');
       transaction.set(bookingRef, { status: 'confirmed', confirmationStatus: 'confirmed', confirmedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true });
-      appendOutboxEvent(transaction, adminDb, confirmedEvent);
+      transactionalOutbox.append(transaction, confirmedEvent);
     });
+    if (postgresBookingsRepository && await bookingFeatureFlags.isEnabled('bookings.postgres.writes.v2', { tenantId: String(booking.siteId), siteId: String(booking.siteId), userId: user.uid })) {
+      try { await postgresBookingsRepository.update(bookingRef.id, { status: 'confirmed' }); } catch (error) { console.error('[Bookings migration target update failed]', error instanceof Error ? error.message : error); }
+    }
   }
   const customerEmail = String(booking.customerEmail || '');
   await adminDb.collection('notification_jobs').add({ audience: 'customer', email: customerEmail, type: 'booking_confirmed', bookingId: bookingRef.id, status: 'pending', attempts: 0, maxAttempts: 8, createdAt: new Date().toISOString() });
@@ -2192,7 +2151,7 @@ app.post('/api/creator/bookings/:bookingId/confirm', async (req: Request, res: R
   if (provider !== 'none') {
     const calendarRef = adminDb.collection('calendar_jobs').where('bookingId', '==', bookingRef.id).limit(1);
     const jobs = await calendarRef.get();
-    if (!jobs.empty) await jobs.docs[0].ref.set({ status: calendarProviderIsConfigured(provider) ? 'pending' : 'blocked', operation: 'create', lastError: calendarProviderIsConfigured(provider) ? null : 'CALENDAR_PROVIDER_NOT_CONFIGURED', updatedAt: new Date().toISOString() }, { merge: true });
+    if (!jobs.empty) await jobs.docs[0].ref.set({ status: calendarProviderIsConfigured(provider) ? 'pending' : 'blocked', operation: 'create', idempotencyKey: `calendar:${bookingRef.id}:create`, lastError: calendarProviderIsConfigured(provider) ? null : 'CALENDAR_PROVIDER_NOT_CONFIGURED', updatedAt: new Date().toISOString() }, { merge: true });
     if (calendarProviderIsConfigured(provider)) void backgroundJobs.enqueue({ kind: 'calendar_sync', idempotencyKey: `booking:${bookingRef.id}:calendar`, payload: { bookingId: bookingRef.id } }).catch((error) => console.error('[Background job enqueue]', error));
   }
   return res.json({ id: bookingRef.id, status: 'confirmed', confirmationStatus: 'confirmed' });
@@ -2216,13 +2175,16 @@ app.post('/api/creator/bookings/:bookingId/cancel', async (req: Request, res: Re
     const lockIds = Array.isArray(current.data()?.lockIds) ? current.data()?.lockIds : [];
     transaction.update(bookingRef, { status: 'cancelled', confirmationStatus: 'cancelled', cancelledAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     for (const lockId of lockIds) if (typeof lockId === 'string') transaction.delete(adminDb.collection('booking_locks').doc(lockId));
-    appendOutboxEvent(transaction, adminDb, cancelledEvent);
+    transactionalOutbox.append(transaction, cancelledEvent);
   });
+  if (postgresBookingsRepository && await bookingFeatureFlags.isEnabled('bookings.postgres.writes.v2', { tenantId: String(booking.siteId), siteId: String(booking.siteId), userId: user.uid })) {
+    try { await postgresBookingsRepository.update(bookingRef.id, { status: 'cancelled' }); } catch (error) { console.error('[Bookings migration target update failed]', error instanceof Error ? error.message : error); }
+  }
   const calendarJobs = await adminDb.collection('calendar_jobs').where('bookingId', '==', bookingRef.id).limit(1).get();
   if (!calendarJobs.empty) {
     const job = calendarJobs.docs[0];
     const data = job.data();
-    await job.ref.set(data.externalEventId ? { status: 'pending', operation: 'cancel', updatedAt: new Date().toISOString() } : { status: 'cancelled', updatedAt: new Date().toISOString() }, { merge: true });
+    await job.ref.set(data.externalEventId ? { status: 'pending', operation: 'cancel', idempotencyKey: `calendar:${bookingRef.id}:cancel`, updatedAt: new Date().toISOString() } : { status: 'cancelled', updatedAt: new Date().toISOString() }, { merge: true });
   }
   await adminDb.collection('notification_jobs').add({ audience: 'customer', email: String(booking.customerEmail || ''), type: 'booking_cancelled', bookingId: bookingRef.id, status: 'pending', attempts: 0, maxAttempts: 8, createdAt: new Date().toISOString() });
   void backgroundJobs.enqueue({ kind: 'email_delivery', idempotencyKey: `booking:${bookingRef.id}:cancelled`, payload: { bookingId: bookingRef.id } }).catch((error) => console.error('[Background job enqueue]', error));
@@ -4096,7 +4058,7 @@ app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: R
       const orderData = { id: orderRef.id, creatorId: String(site.userId), siteId: String(site.id || ''), creatorHandle: handle, productId, productName: String(product.name), quantity, unitPriceMinor, currency: String(product.currency), totalMinor: unitPriceMinor * quantity, customerEmail, status: 'pending_payment', fulfillmentStatus: 'unfulfilled', inventoryReservation: quantity, createdAt: now, updatedAt: now };
       transaction.update(productRef, { inventoryReserved: Number(product.inventoryReserved || 0) + quantity, updatedAt: now });
       transaction.create(orderRef, orderData);
-      appendOutboxEvent(transaction, adminDb, orderCreatedEvent);
+      transactionalOutbox.append(transaction, orderCreatedEvent);
       return { orderData, stripePriceId: String(product.stripePriceId) };
     });
     const session = await stripe.checkout.sessions.create({ mode: 'payment', line_items: [{ price: order.stripePriceId, quantity }], customer_email: customerEmail, success_url: `${APP_URL}/?order=success&order_id=${encodeURIComponent(orderRef.id)}`, cancel_url: `${APP_URL}/?order=cancelled&order_id=${encodeURIComponent(orderRef.id)}`, metadata: { orderId: orderRef.id, productId, creatorId: String(site.userId), creatorHandle: handle } }, { idempotencyKey: `creator_order_${idempotencyKey}` });
@@ -4658,13 +4620,17 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
       }
     );
     const now = new Date().toISOString();
-    const domain: DomainRecord = {
-      domainId,
-      hostname,
-      userId: user.uid,
-      siteId,
-      siteHandle,
-      verificationToken: crypto.randomBytes(24).toString('hex'),
+      const domain: DomainRecord = {
+        domainId,
+        hostname,
+        userId: user.uid,
+        siteId,
+        siteHandle,
+        idempotencyKey: `domain:${domainId}:provision`,
+        provisioningState: 'pending',
+        verificationState: 'idle',
+        verificationAttempts: 0,
+        verificationToken: crypto.randomBytes(24).toString('hex'),
       verificationStatus: 'pending',
       sslStatus: cloudflare?.ssl?.status === 'active' ? 'active' : 'pending',
       cloudflareHostnameId: cloudflare?.id,
@@ -4674,6 +4640,7 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
     await saveDomain({ ...domain, dnsRecords: domainDnsRecords(cloudflare) });
     await publicCache.delete(cacheKey('domainResolution', hostname));
     await auditService.recordBestEffort({ actorUserId: user.uid, siteId, resourceType: 'domain', resourceId: domainId, action: 'domain.provisioned', requestId: auditRequestId(req), metadata: { hostname, provider: 'cloudflare' } });
+    await backgroundJobs.enqueue({ kind: 'domain_verification', idempotencyKey: `domain:${domainId}:verification`, payload: { domainId } });
     return res.status(201).json({ domain, dnsRecords: domainDnsRecords(cloudflare) });
   } catch (error) {
     if (error instanceof Error && error.message === 'DOMAIN_ALREADY_RESERVED') {
@@ -4706,32 +4673,13 @@ app.post('/api/domains/verify', async (req: Request, res: Response) => {
   if (!domainRate.allowed) return res.status(429).set('Retry-After', String(domainRate.retryAfter)).json({ error: 'Too many domain verification attempts', retry_after: domainRate.retryAfter });
 
   try {
-    const config = getCloudflareConfig()!;
-    const { cloudflareRequest } = await import('./server-services');
-    const result = await cloudflareRequest(`/zones/${config.zoneId}/custom_hostnames/${domain.cloudflareHostnameId}`);
-    const verificationStatus = result?.status === 'active' ? 'verified' : result?.status === 'failed' ? 'failed' : 'pending';
-    const sslStatus = result?.ssl?.status === 'active' ? 'active' : result?.ssl?.status === 'failed' ? 'failed' : 'pending';
-    const updated: DomainRecord = {
-      ...domain,
-      verificationStatus,
-      sslStatus,
-      lastError: verificationStatus === 'failed' || sslStatus === 'failed' ? 'Cloudflare reported a failed DNS or SSL state' : undefined,
-      updatedAt: new Date().toISOString()
-    };
-    await saveDomain(updated);
-    await publicCache.delete(cacheKey('domainResolution', String(domain.hostname || '').toLowerCase()));
-    if (verificationStatus === 'verified') await auditService.recordBestEffort({ actorUserId: user.uid, siteId: domain.siteId, resourceType: 'domain', resourceId: domain.domainId, action: 'domain.verified', requestId: auditRequestId(req), metadata: { hostname: domain.hostname, sslStatus } });
-    return res.status(200).json({ domain: updated });
+    const requested: DomainRecord = { ...domain, verificationState: 'queued', verificationRequestedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    await saveDomain(requested);
+    await backgroundJobs.enqueue({ kind: 'domain_verification', idempotencyKey: `domain:${domainId}:verification`, payload: { domainId } });
+    return res.status(202).json({ domain: requested, status: 'verification_queued' });
   } catch (error) {
-    await saveDomain({
-      ...domain,
-      verificationStatus: 'failed',
-      sslStatus: 'failed',
-      lastError: 'Cloudflare verification failed',
-      updatedAt: new Date().toISOString()
-    }).catch(() => undefined);
-    console.error('[Domain verify]', error);
-    return res.status(502).json({ error: 'Cloudflare verification failed' });
+    console.error('[Domain verify enqueue]', error);
+    return res.status(503).json({ error: 'Domain verification could not be queued' });
   }
 });
 
@@ -5019,11 +4967,34 @@ app.post('/internal/background-jobs/reconcile', async (req: Request, res: Respon
   return res.status(200).json(result);
 });
 
+app.post('/internal/calendar-jobs/reconcile', async (req: Request, res: Response) => {
+  const configuredSecret = process.env.BACKGROUND_JOB_SECRET;
+  if (!configuredSecret || req.headers['x-background-job-secret'] !== configuredSecret) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  const limit = Math.min(500, Math.max(1, Number(req.body?.limit) || 100));
+  return res.status(200).json(await calendarSyncWorker.reconcile(limit));
+});
+
+app.post('/internal/domain-verification/reconcile', async (req: Request, res: Response) => {
+  const configuredSecret = process.env.BACKGROUND_JOB_SECRET;
+  if (!configuredSecret || req.headers['x-background-job-secret'] !== configuredSecret) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  const limit = Math.min(500, Math.max(1, Number(req.body?.limit) || 100));
+  return res.status(200).json(await domainVerificationWorker.reconcile(limit));
+});
+
 app.post('/internal/outbox/publish', async (req: Request, res: Response) => {
   const configuredSecret = process.env.BACKGROUND_JOB_SECRET;
   if (!configuredSecret || req.headers['x-background-job-secret'] !== configuredSecret) return res.status(401).json({ error: 'UNAUTHORIZED' });
   const limit = Math.min(500, Math.max(1, Number(req.body?.limit) || 100));
   return res.status(200).json(await outbox.publishPending(limit));
+});
+
+app.post('/internal/outbox/cleanup', async (req: Request, res: Response) => {
+  const configuredSecret = process.env.BACKGROUND_JOB_SECRET;
+  if (!configuredSecret || req.headers['x-background-job-secret'] !== configuredSecret) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  const retentionDays = Math.min(365, Math.max(1, Number(req.body?.retentionDays) || 30));
+  const limit = Math.min(5000, Math.max(1, Number(req.body?.limit) || 500));
+  const publishedBefore = new Date(Date.now() - retentionDays * 86400000).toISOString();
+  return res.status(200).json({ deleted: await outbox.cleanup(publishedBefore, limit), publishedBefore });
 });
 
 app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {

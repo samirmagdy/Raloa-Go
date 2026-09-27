@@ -67,6 +67,17 @@ export function createFirestoreBackgroundJobRepository(db: Firestore): Backgroun
         changed = true;
       });
       return changed;
+    },
+    async deadLetter(id, reason, at) {
+      const reference = collection.doc(id);
+      let changed = false;
+      await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(reference);
+        if (!snapshot.exists || ['completed', 'dead_letter'].includes(String(snapshot.data()?.status))) return;
+        transaction.set(reference, { status: 'dead_letter', lastError: reason, deadLetteredAt: at, leaseUntil: null, updatedAt: at }, { merge: true });
+        changed = true;
+      });
+      return changed;
     }
   };
 }

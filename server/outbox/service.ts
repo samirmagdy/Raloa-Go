@@ -32,6 +32,10 @@ export function createOutboxService(repository: OutboxRepository, publisher: Out
         }
       }
       return { published, failed };
+    },
+    async cleanup(publishedBefore: string, limit = 500): Promise<number> {
+      if (!repository.cleanupPublished) return 0;
+      return repository.cleanupPublished(publishedBefore, limit);
     }
   };
 }

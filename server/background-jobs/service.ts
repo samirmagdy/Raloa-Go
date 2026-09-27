@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { BackgroundJob, BackgroundJobHandler, BackgroundJobRepository, JobDispatcher, JobKind } from './types';
+import type { BackgroundJob, BackgroundJobHandler, BackgroundJobQueue, BackgroundJobRepository, JobDispatcher, JobKind, JobRequest } from './types';
 import { validateBackgroundJob, validateWorkerPayload } from '../../src/shared/schema';
 import type { ObservabilityMetrics } from '../infrastructure/observability/types';
 
@@ -14,17 +14,30 @@ function retryDelay(attempts: number): number {
   return Math.min(6 * 60 * 60 * 1000, 30_000 * (2 ** Math.min(attempts - 1, 8)));
 }
 
-export function createBackgroundJobService(repository: BackgroundJobRepository, dispatcher: JobDispatcher, handlers: Partial<Record<JobKind, BackgroundJobHandler>>, observability?: { metrics?: ObservabilityMetrics }) {
+export function createBackgroundJobService(repository: BackgroundJobRepository, dispatcher: JobDispatcher, handlers: Partial<Record<JobKind, BackgroundJobHandler>>, observability?: { metrics?: ObservabilityMetrics }): BackgroundJobQueue {
   const log = (event: string, job: BackgroundJob, details: Record<string, unknown> = {}) => console.log(JSON.stringify({ event, jobId: job.id, kind: job.kind, attempts: job.attempts, ...details }));
   return {
-    async enqueue(input: { kind: JobKind; idempotencyKey: string; payload: Record<string, unknown>; maxAttempts?: number }): Promise<BackgroundJob> {
+    async schedule(input: JobRequest, runAt: string): Promise<BackgroundJob> {
+      if (!Number.isFinite(Date.parse(runAt))) throw new Error('INVALID_JOB_SCHEDULE');
       const now = new Date().toISOString();
-      const job = validateBackgroundJob(await repository.create({ id: jobId(input.kind, input.idempotencyKey), kind: input.kind, payload: validateWorkerPayload(input.kind, input.payload), idempotencyKey: input.idempotencyKey, status: 'pending', attempts: 0, maxAttempts: input.maxAttempts || DEFAULT_MAX_ATTEMPTS, availableAt: now, createdAt: now, updatedAt: now }));
-      await dispatcher.dispatch(job);
+      const job = validateBackgroundJob(await repository.create({ id: jobId(input.kind, input.idempotencyKey), kind: input.kind, payload: validateWorkerPayload(input.kind, input.payload), idempotencyKey: input.idempotencyKey, status: 'pending', attempts: 0, maxAttempts: input.maxAttempts || DEFAULT_MAX_ATTEMPTS, availableAt: runAt, createdAt: now, updatedAt: now }));
+      await dispatcher.dispatch(job, Math.max(0, Date.parse(runAt) - Date.now()));
       observability?.metrics?.increment('jobs.enqueued', { kind: job.kind });
       log('background_job_enqueued', job);
       return job;
     },
+    async enqueue(input: JobRequest): Promise<BackgroundJob> {
+      return this.schedule(input, new Date().toISOString());
+    },
+    async retry(id: string, reason = 'MANUAL_RETRY', delayMs = 0): Promise<BackgroundJob | null> {
+      const availableAt = new Date(Date.now() + Math.max(0, delayMs)).toISOString();
+      if (!(await repository.requeue(id, availableAt, reason))) return null;
+      const job = await repository.get(id);
+      if (job) await dispatcher.dispatch(job, delayMs);
+      return job;
+    },
+    status: (id: string) => repository.get(id),
+    deadLetter: (id: string, reason: string) => repository.deadLetter ? repository.deadLetter(id, reason, new Date().toISOString()) : Promise.resolve(false),
     async run(id: string): Promise<void> {
       const existing = await repository.get(id);
       if (!existing || existing.status === 'completed' || existing.status === 'dead_letter') return;

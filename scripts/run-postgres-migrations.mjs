@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.POSTGRES_DATABASE_URL || process.env.DATABASE_URL;
 if (!databaseUrl) { console.error('DATABASE_URL is required to apply PostgreSQL migrations.'); process.exit(2); }
 const { Client } = pg;
-const client = new Client({ connectionString: databaseUrl, ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false } });
+const postgresUrlSelected = Boolean(process.env.POSTGRES_DATABASE_URL);
+const client = new Client({ connectionString: databaseUrl, ssl: process.env.POSTGRES_SSL === 'true' || (!postgresUrlSelected && process.env.DATABASE_SSL !== 'false') ? { rejectUnauthorized: false } : false });
 const lockName = process.env.MIGRATION_LOCK_NAME || 'raloa:postgres:schema';
 await client.connect();
 let lockHeld = false;

@@ -9,6 +9,7 @@ export const DOMAIN_EVENTS = {
   DomainVerified: 'DomainVerified',
   SubscriptionChanged: 'SubscriptionChanged',
   MediaUploaded: 'MediaUploaded',
+  IntegrationDisconnected: 'IntegrationDisconnected',
   AnalyticsRecorded: 'AnalyticsRecorded',
   IntegrationSynchronized: 'IntegrationSynchronized'
 } as const;

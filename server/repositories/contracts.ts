@@ -1,6 +1,9 @@
 export interface SiteRecord { id?: string; userId?: string; username?: string; isPublished?: boolean; [key: string]: unknown }
 export interface BookingRecord { id?: string; hostUserId?: string; siteId?: string; [key: string]: unknown }
 export interface OrderRecord { id?: string; creatorId?: string; customerEmail?: string; productId?: string; [key: string]: unknown }
+export interface ProductRecord { id?: string; creatorId?: string; siteId?: string; name?: string; priceMinor?: number; currency?: string; inventory?: number | null; [key: string]: unknown }
+export interface PaymentRecord { id?: string; orderId: string; provider?: string; providerPaymentId?: string; status?: string; amountMinor?: number; currency?: string; [key: string]: unknown }
+export interface FulfillmentRecord { id?: string; orderId: string; status?: string; trackingNumber?: string; carrier?: string; [key: string]: unknown }
 export interface OrderTransitionRecord { orderId: string; from: string | null; to: string; transitionKey: string; source: string; actorUserId?: string; metadata?: Record<string, unknown> }
 export interface InventoryRecord { id?: string; productId: string; available: number; reserved: number; [key: string]: unknown }
 export interface SubscriptionRecord { id?: string; userId: string; plan: string; status: string; [key: string]: unknown }
@@ -34,11 +37,35 @@ export interface OrdersRepository {
   transition(orderId: string, transition: OrderTransitionRecord): Promise<OrderRecord>;
 }
 
+export interface ProductsRepository {
+  get(productId: string): Promise<ProductRecord | null>;
+  listForSite(siteId: string, creatorId?: string, limit?: number): Promise<ProductRecord[]>;
+  save(productId: string, product: Partial<ProductRecord>): Promise<void>;
+  remove(productId: string): Promise<void>;
+}
+
+export interface PaymentsRepository {
+  get(paymentId: string): Promise<PaymentRecord | null>;
+  getByProviderEvent(provider: string, providerEventId: string): Promise<PaymentRecord | null>;
+  save(paymentId: string, payment: Partial<PaymentRecord>): Promise<void>;
+}
+
+export interface FulfillmentsRepository {
+  getByOrder(orderId: string): Promise<FulfillmentRecord | null>;
+  save(orderId: string, fulfillment: Partial<FulfillmentRecord>): Promise<void>;
+}
+
 export interface InventoryRepository {
   getByProduct(productId: string): Promise<InventoryRecord | null>;
   reserve(productId: string, quantity: number): Promise<void>;
   release(productId: string, quantity: number): Promise<void>;
   decrement(productId: string, quantity: number): Promise<void>;
+}
+
+export interface TransactionalInventoryRepository extends InventoryRepository {
+  reserveWithKey(productId: string, quantity: number, idempotencyKey: string, orderId?: string): Promise<void>;
+  releaseWithKey(productId: string, quantity: number, idempotencyKey: string, orderId?: string): Promise<void>;
+  decrementWithKey(productId: string, quantity: number, idempotencyKey: string, orderId?: string): Promise<void>;
 }
 
 export interface SubscriptionsRepository {

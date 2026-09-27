@@ -5,7 +5,8 @@ const root = process.cwd();
 const allowed = `${path.sep}server${path.sep}infrastructure${path.sep}postgres${path.sep}`;
 const migrationTools = [
   `${path.sep}scripts${path.sep}run-postgres-migrations.mjs`,
-  `${path.sep}scripts${path.sep}verify-postgres-migrations.mjs`
+  `${path.sep}scripts${path.sep}verify-postgres-migrations.mjs`,
+  `${path.sep}scripts${path.sep}check-postgres-health.mjs`
 ];
 const violations = [];
 

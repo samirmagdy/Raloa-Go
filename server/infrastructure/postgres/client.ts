@@ -1,6 +1,7 @@
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool, type PoolConfig, type PoolClient } from 'pg';
 import * as schema from './schema';
+import { assertPostgresRuntimeAllowed, readPostgresRuntimeConfig } from './config';
 
 export type PostgresDatabase = NodePgDatabase<typeof schema>;
 
@@ -8,6 +9,12 @@ export function createPostgresDatabase(config: PoolConfig | string = process.env
   if (!config) throw new Error('DATABASE_URL_NOT_CONFIGURED');
   const pool = new Pool(typeof config === 'string' ? { connectionString: config } : config);
   return { db: drizzle(pool, { schema }), pool };
+}
+
+/** Explicit opt-in constructor for local/dev tooling. Production remains on its existing datastore. */
+export function createConfiguredPostgresDatabase(env: NodeJS.ProcessEnv = process.env): { db: PostgresDatabase; pool: Pool } {
+  assertPostgresRuntimeAllowed(env);
+  return createPostgresDatabase(readPostgresRuntimeConfig(env));
 }
 
 export async function withPostgresTransaction<T>(pool: Pool, work: (client: PoolClient) => Promise<T>): Promise<T> {

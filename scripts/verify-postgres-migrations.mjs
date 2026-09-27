@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.POSTGRES_DATABASE_URL || process.env.DATABASE_URL;
 if (!databaseUrl) { console.error('DATABASE_URL is required to verify PostgreSQL migrations.'); process.exit(2); }
 
 const files = fs.readdirSync(path.resolve('db/migrations')).filter((file) => /^\d+_[a-z0-9_]+\.sql$/.test(file)).sort();
@@ -11,7 +11,8 @@ const expected = files.map((file) => ({
   version: file.split('_', 1)[0],
   checksum: crypto.createHash('sha256').update(fs.readFileSync(path.join('db/migrations', file))).digest('hex')
 }));
-const client = new pg.Client({ connectionString: databaseUrl, ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false } });
+const postgresUrlSelected = Boolean(process.env.POSTGRES_DATABASE_URL);
+const client = new pg.Client({ connectionString: databaseUrl, ssl: process.env.POSTGRES_SSL === 'true' || (!postgresUrlSelected && process.env.DATABASE_SSL !== 'false') ? { rejectUnauthorized: false } : false });
 await client.connect();
 try {
   const result = await client.query('SELECT version, checksum, applied_at FROM schema_migrations ORDER BY version');

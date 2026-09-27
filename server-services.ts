@@ -47,6 +47,12 @@ export interface DomainRecord {
   verificationToken: string;
   verificationStatus: 'pending' | 'verified' | 'failed';
   sslStatus: 'pending' | 'active' | 'failed';
+  provisioningState?: 'pending' | 'provisioning' | 'verified' | 'failed' | 'deleted';
+  verificationState?: 'idle' | 'queued' | 'processing';
+  verificationAttempts?: number;
+  verificationRequestedAt?: string;
+  nextVerificationAt?: string | null;
+  idempotencyKey?: string;
   dnsRecords?: Array<{ type: 'CNAME' | 'A' | 'TXT'; name: string; value: string; is_verified: boolean }>;
   cloudflareHostnameId?: string;
   lastError?: string;

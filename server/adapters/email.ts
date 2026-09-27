@@ -7,8 +7,8 @@ export const resendEmailAdapter: EmailProvider = {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       signal: AbortSignal.timeout(10000),
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: process.env.RESEND_FROM_EMAIL || 'RALOA <noreply@raloa.app>', ...message })
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', ...(message.idempotencyKey ? { 'Idempotency-Key': message.idempotencyKey } : {}) },
+      body: JSON.stringify({ from: process.env.RESEND_FROM_EMAIL || 'RALOA <noreply@raloa.app>', ...message, idempotencyKey: undefined })
     });
     if (!response.ok) throw new Error('EMAIL_DELIVERY_FAILED');
   }

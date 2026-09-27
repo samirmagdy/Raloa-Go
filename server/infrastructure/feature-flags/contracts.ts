@@ -3,6 +3,12 @@ import { z } from 'zod';
 export const featureFlagKeys = [
   'postgres.reads.v2',
   'postgres.writes.v2',
+  'bookings.postgres.reads.v2',
+  'bookings.postgres.writes.v2',
+  'bookings.postgres.authoritative.v2',
+  'commerce.postgres.reads.v2',
+  'commerce.postgres.writes.v2',
+  'commerce.postgres.authoritative.v2',
   'public-rendering.v2',
   'background-jobs.v2',
   'integrations.v2',

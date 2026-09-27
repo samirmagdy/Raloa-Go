@@ -25,8 +25,18 @@ export interface OutboxRepository {
   claim(id: string, leaseUntil: string): Promise<OutboxEvent | null>;
   markPublished(id: string, publishedAt: string): Promise<void>;
   markFailed(id: string, error: string, availableAt: string | undefined, deadLetter: boolean): Promise<void>;
+  cleanupPublished?(publishedBefore: string, limit: number): Promise<number>;
 }
 
 export interface OutboxPublisher {
   publish(event: OutboxEvent): Promise<void>;
+}
+
+export type OutboxEventInput = Pick<OutboxEvent, 'aggregateType' | 'aggregateId' | 'idempotencyKey' | 'payload'> & { eventType: DomainEventType | string; id?: string; maxAttempts?: number; availableAt?: string };
+
+/** Transaction boundary used by bookings, orders, and future transactional domains. */
+export interface TransactionalOutboxProducer {
+  create(input: OutboxEventInput): OutboxEvent;
+  append(transaction: unknown, event: OutboxEvent): void;
+  appendMany(transaction: unknown, events: readonly OutboxEvent[]): void;
 }

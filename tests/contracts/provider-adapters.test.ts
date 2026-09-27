@@ -79,8 +79,11 @@ describe('Email and Firebase Auth adapter contracts', () => {
     vi.stubEnv('RESEND_API_KEY', 'test-resend-key');
     const fetchMock = vi.fn(async () => new Response('', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
-    await expect(resendEmailAdapter.send({ to: 'creator@example.test', subject: 'Hello', text: 'Message' })).resolves.toBeUndefined();
+    await expect(resendEmailAdapter.send({ to: 'creator@example.test', subject: 'Hello', text: 'Message', idempotencyKey: 'notification:test-1' })).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledWith('https://api.resend.com/emails', expect.objectContaining({ method: 'POST' }));
+    const request = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(request[0]).toBe('https://api.resend.com/emails');
+    expect(request[1]?.headers).toMatchObject({ 'Idempotency-Key': 'notification:test-1' });
   });
 
   it('maps Firebase Auth verification success and failure to the application identity contract', async () => {

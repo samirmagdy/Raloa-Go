@@ -9,3 +9,7 @@ export function createBookingsModule(db: Firestore): BookingsModule {
   const repository = createFirestoreBookingsRepository(db);
   return { name: 'bookings', routes: ['/api/v1/public/bookings', '/api/creator/bookings'], repository, service: createBookingsService(repository) };
 }
+
+export * from './migration';
+export * from './migration-repository';
+export * from './verification';

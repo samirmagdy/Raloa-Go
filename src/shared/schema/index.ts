@@ -136,6 +136,27 @@ export const publicProfilePayloadSchemaV1 = publicPageSchemaV1.extend({
   bookingConfig: bookingConfigSchemaV1.optional()
 });
 export const domainEventSchemaV1 = z.object({ id: z.string(), type: z.string().regex(/^[A-Za-z][A-Za-z0-9]*\.v1$/), name: z.string(), version: z.literal(1), aggregateType: z.string(), aggregateId: z.string(), occurredAt: z.string().datetime(), payload: z.record(z.string(), z.unknown()) });
+const eventIdentity = { siteId: z.string().min(1).max(200).optional() };
+export const domainEventPayloadSchemasV1 = {
+  SitePublished: z.object({ ...eventIdentity, siteId: z.string().min(1).max(200), handle: z.string().min(1).max(253), revision: z.number().int().nonnegative().optional() }).passthrough(),
+  BookingCreated: z.object({ ...eventIdentity, bookingId: z.string().min(1).max(200), hostUserId: z.string().min(1).max(200), siteId: z.string().min(1).max(200) }).passthrough(),
+  BookingCancelled: z.object({ ...eventIdentity, bookingId: z.string().min(1).max(200), siteId: z.string().min(1).max(200), reason: z.string().max(500).optional() }).passthrough(),
+  OrderCreated: z.object({ ...eventIdentity, orderId: z.string().min(1).max(200), productId: z.string().min(1).max(200), siteId: z.string().min(1).max(200), creatorId: z.string().min(1).max(200) }).passthrough(),
+  OrderPaid: z.object({ ...eventIdentity, orderId: z.string().min(1).max(200), siteId: z.string().min(1).max(200), paymentReference: z.string().max(300).optional() }).passthrough(),
+  OrderFulfilled: z.object({ ...eventIdentity, orderId: z.string().min(1).max(200), siteId: z.string().min(1).max(200), fulfillmentReference: z.string().max(300).optional() }).passthrough(),
+  SubscriptionChanged: z.object({ ...eventIdentity, accountId: z.string().min(1).max(200), plan: z.string().min(1).max(80), status: z.string().min(1).max(80), entitlementVersion: z.number().int().nonnegative().optional() }).passthrough(),
+  DomainVerified: z.object({ ...eventIdentity, domainId: z.string().min(1).max(200), hostname: z.string().min(1).max(253), sslStatus: z.enum(['pending', 'active', 'failed']) }).passthrough(),
+  MediaUploaded: z.object({ ...eventIdentity, mediaId: z.string().min(1).max(200), siteId: z.string().min(1).max(200), lifecycle: z.enum(['uploaded', 'processing', 'ready', 'failed']).optional() }).passthrough(),
+  IntegrationDisconnected: z.object({ ...eventIdentity, connectionId: z.string().min(1).max(200), provider: z.string().min(1).max(80), siteId: z.string().min(1).max(200).optional(), reason: z.string().max(500).optional() }).passthrough()
+} as const;
+export type DomainEventNameV1 = keyof typeof domainEventPayloadSchemasV1;
+export function validateDomainEventPayloadV1(name: DomainEventNameV1, payload: unknown): Record<string, unknown> {
+  return domainEventPayloadSchemasV1[name].parse(payload);
+}
+export const outboxEventSchemaV1 = z.object({
+  id: z.string().min(1), eventType: z.string().regex(/^[A-Za-z][A-Za-z0-9]*\.v1$/), aggregateType: z.string().min(1), aggregateId: z.string().min(1), idempotencyKey: z.string().min(1), payload: z.record(z.string(), z.unknown()),
+  status: z.enum(['pending', 'publishing', 'published', 'retry', 'dead_letter']), attempts: z.number().int().nonnegative(), maxAttempts: z.number().int().positive(), availableAt: z.string().datetime(), leaseUntil: z.string().datetime().optional(), lastError: z.string().optional(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(), publishedAt: z.string().datetime().optional()
+}).passthrough();
 export const providerEventSchemaV1 = z.object({
   provider: z.enum(['stripe', 'cloudflare', 'google_calendar', 'microsoft_graph', 'firebase_auth', 'email', 'storage']),
   eventId: z.string().min(1).max(300),
@@ -222,6 +243,7 @@ export type BookingCreateRequestV1 = z.infer<typeof bookingCreateRequestSchemaV1
 export type PublicPageV1 = z.infer<typeof publicPageSchemaV1>;
 export type PublicProfilePayloadV1 = z.infer<typeof publicProfilePayloadSchemaV1>;
 export type DomainEventV1 = z.infer<typeof domainEventSchemaV1>;
+export type OutboxEventV1 = z.infer<typeof outboxEventSchemaV1>;
 export type ProviderEventV1 = z.infer<typeof providerEventSchemaV1>;
 export type BackgroundJobV1 = z.infer<typeof backgroundJobSchemaV1>;
 export type OAuthTokenBundleV1 = z.infer<typeof oauthTokenBundleSchemaV1>;

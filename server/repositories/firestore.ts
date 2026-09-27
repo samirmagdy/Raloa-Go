@@ -4,7 +4,7 @@ import type { AuthoritativeBillingState } from '../../server-services';
 import { assertOrderTransition, legacyOrderState } from '../domains/orders/state-machine';
 import type { MediaAsset, MediaMetadataRepository } from '../domains/media/contracts';
 import { assertInventoryBalance, assertPositiveQuantity } from '../core/domain-invariants';
-import type { AudienceRepository, AudienceRecord, AnalyticsRollup, AnalyticsRollupsRepository, BillingRepository, BillingStateRecord, BookingRecord, BookingsRepository, DomainsRepository, IntegrationRecord, IntegrationsRepository, InventoryRecord, InventoryRepository, OrderRecord, OrdersRepository, OrderTransitionRecord, SiteRecord, SitesRepository, SubscriptionRecord, SubscriptionsRepository } from './contracts';
+import type { AudienceRepository, AudienceRecord, AnalyticsRollup, AnalyticsRollupsRepository, BillingRepository, BillingStateRecord, BookingRecord, BookingsRepository, DomainsRepository, FulfillmentRecord, FulfillmentsRepository, IntegrationRecord, IntegrationsRepository, InventoryRecord, InventoryRepository, OrderRecord, OrdersRepository, OrderTransitionRecord, PaymentRecord, PaymentsRepository, ProductRecord, ProductsRepository, SiteRecord, SitesRepository, SubscriptionRecord, SubscriptionsRepository } from './contracts';
 
 async function records<T>(query: any): Promise<T[]> {
   const snapshot = await query.get();
@@ -50,6 +50,33 @@ export function createFirestoreOrdersRepository(db: Firestore): OrdersRepository
       transaction.create(historyReference, { ...transition, createdAt: now });
       return { id, ...snapshot.data(), state: transition.to, updatedAt: now } as OrderRecord;
     })
+  };
+}
+
+export function createFirestoreProductsRepository(db: Firestore): ProductsRepository {
+  const collection = db.collection('creator_products');
+  return {
+    get: async (id) => { const snapshot = await collection.doc(id).get(); return snapshot.exists ? { id, ...snapshot.data() } as ProductRecord : null; },
+    listForSite: (siteId, creatorId, limit = 100) => records<ProductRecord>((creatorId ? collection.where('creatorId', '==', creatorId) : collection).where('siteId', '==', siteId).limit(limit)),
+    save: async (id, product) => { await collection.doc(id).set(product, { merge: true }); },
+    remove: async (id) => { await collection.doc(id).delete(); }
+  };
+}
+
+export function createFirestorePaymentsRepository(db: Firestore): PaymentsRepository {
+  const collection = db.collection('payments');
+  return {
+    get: async (id) => { const snapshot = await collection.doc(id).get(); return snapshot.exists ? { id, ...snapshot.data() } as PaymentRecord : null; },
+    getByProviderEvent: async (provider, providerEventId) => { const snapshot = await collection.where('provider', '==', provider).where('providerEventId', '==', providerEventId).limit(1).get(); const document = snapshot.docs[0]; return document ? { id: document.id, ...document.data() } as PaymentRecord : null; },
+    save: async (id, payment) => { await collection.doc(id).set(payment, { merge: true }); }
+  };
+}
+
+export function createFirestoreFulfillmentsRepository(db: Firestore): FulfillmentsRepository {
+  const collection = db.collection('fulfillments');
+  return {
+    getByOrder: async (orderId) => { const snapshot = await collection.where('orderId', '==', orderId).limit(1).get(); const document = snapshot.docs[0]; return document ? { id: document.id, ...document.data() } as FulfillmentRecord : null; },
+    save: async (orderId, fulfillment) => { await collection.doc(orderId).set({ orderId, ...fulfillment }, { merge: true }); }
   };
 }
 

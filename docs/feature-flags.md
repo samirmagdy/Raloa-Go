@@ -8,6 +8,12 @@ Feature flags are evaluated by the backend through [`server/infrastructure/featu
 | --- | --- |
 | `postgres.reads.v2` | Move tenant reads to PostgreSQL after shadow-read equivalence checks. |
 | `postgres.writes.v2` | Move tenant writes to PostgreSQL after dual-write reconciliation. |
+| `bookings.postgres.reads.v2` | Compare or serve booking reads from PostgreSQL for an approved booking cohort. |
+| `bookings.postgres.writes.v2` | Dual-write bookings while Firestore remains authoritative. |
+| `bookings.postgres.authoritative.v2` | Make PostgreSQL authoritative for the approved booking cohort; disable to roll back. |
+| `commerce.postgres.reads.v2` | Shadow or serve products/orders/inventory reads from PostgreSQL. |
+| `commerce.postgres.writes.v2` | Dual-write commerce state while Firestore remains authoritative. |
+| `commerce.postgres.authoritative.v2` | Make PostgreSQL authoritative for the approved commerce cohort; disable to roll back. |
 | `public-rendering.v2` | Route selected public sites to the new renderer. |
 | `background-jobs.v2` | Move selected job kinds to the durable worker path. |
 | `integrations.v2` | Enable new provider adapter behavior for selected tenants. |

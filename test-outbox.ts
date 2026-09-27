@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createOutboxEvent } from './server/outbox/firestore';
+import { outboxEventSchemaV1 } from './src/shared/schema';
 import { createOutboxService } from './server/outbox/service';
 import type { OutboxEvent, OutboxPublisher, OutboxRepository } from './server/outbox/types';
 
@@ -16,6 +17,8 @@ const published: string[] = [];
 const publisher: OutboxPublisher = { publish: async (event) => { published.push(event.id); } };
 const service = createOutboxService(repository, publisher);
 const event = createOutboxEvent({ id: 'event-1', eventType: 'BookingCreated.v1', aggregateType: 'booking', aggregateId: 'booking-1', idempotencyKey: 'booking:booking-1:created', payload: { bookingId: 'booking-1' } });
+assert.equal(outboxEventSchemaV1.safeParse(event).success, true);
+assert.equal(outboxEventSchemaV1.safeParse({ ...event, status: 'invalid' }).success, false);
 repository.events.set(event.id, event);
 repository.events.set(event.id, event);
 assert.equal((await service.publishPending()).published, 1);
