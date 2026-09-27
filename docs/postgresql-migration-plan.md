@@ -7,6 +7,10 @@ and does not run against the current Firebase project.
 
 - Firebase Auth remains authoritative for identity during migration; `app_users.external_auth_id`
   maps Firebase UIDs to local UUIDs.
+- Firestore is retained long term only for editor configuration and realtime collaboration. New
+  relational domains default to PostgreSQL; existing Firestore repositories for those domains are
+  migration adapters, not a permanent second authority. See
+  [`docs/firestore-role.md`](firestore-role.md).
 - Services depend on repository ports, not SQL or Firestore document shapes.
 - External provider identifiers remain in provider columns, while provider credentials remain
   encrypted and outside API response models.

@@ -41,6 +41,7 @@
     "test:api-contract": "tsx test-api-contract.ts",
     "test:postgres-infrastructure": "tsx test-postgres-infrastructure.ts",
     "test:transaction-policy": "tsx test-transaction-policy.ts",
+    "test:storage-policy": "tsx test-storage-policy.ts",
     "check:persistence-boundary": "node scripts/check-persistence-boundary.mjs",
     "test:content-schema": "tsx test-content-schema.ts",
     "test:integration:staging": "node scripts/staging-integration-checks.mjs",

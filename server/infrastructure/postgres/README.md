@@ -18,4 +18,6 @@ Operational rules:
 - use parameterized Drizzle queries or explicit SQL only;
 - add indexes and constraints in the SQL migration first;
 - keep Firestore repositories active until a domain has passed dual-read,
-  reconciliation, and rollback checks.
+  reconciliation, and rollback checks;
+- treat Firestore as a bounded exception for editor configuration and realtime
+  collaboration, never as the default for a new transactional domain.
