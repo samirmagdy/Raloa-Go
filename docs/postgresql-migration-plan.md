@@ -106,18 +106,28 @@ being reconciled.
 
 ## Staged rollout
 
-1. Apply the schema and create the Firebase UID mapping; do not change reads.
-2. Backfill users, sites, products, orders, bookings, subscriptions, integrations, domains, and
-   analytics in dependency order. Record source document IDs for reconciliation.
-3. Add shadow writes from repository adapters and compare normalized read models against Firestore.
-4. Enable PostgreSQL reads per domain behind a feature flag, with Firestore fallback only for
-   unreconciled records.
-5. Move writes to PostgreSQL after reconciliation and retain Firestore dual-write temporarily.
-6. Remove dual-write only after webhook replay, idempotency replay, inventory, booking overlap,
-   and audit checks pass for the agreed observation window.
+Migration is controlled by the resumable runner in
+[`server/infrastructure/migrations/runner.ts`](../server/infrastructure/migrations/runner.ts).
+Run one bounded domain at a time; do not migrate all collections in a single operation.
 
-Rollback is a feature-flag change while dual-write remains enabled; no destructive Firestore
-operation is part of this migration.
+1. Apply the schema and create the Firebase UID mapping; keep source reads and writes authoritative.
+2. Create a domain checkpoint and backfill stable-ID pages with idempotent target upserts. Persist
+   the cursor after each successful page so an interrupted run resumes safely.
+3. Reconcile normalized source and target records. Stop on missing, mismatched, or extra records;
+   retain a report and repair the source/target mapping before proceeding.
+4. Enable shadow reads and compare source/target responses without changing the client response.
+   Track mismatch counts and latency/errors during an observation window.
+5. Enable dual writes: source remains authoritative while the target write is verified. Provider
+   calls and cross-store writes use outbox/idempotency workflows, never distributed transactions.
+6. Switch reads and writes to PostgreSQL only after reconciliation is equivalent and the observation
+   window is clean. Retain the source adapter read-only for rollback until the domain is accepted.
+7. Complete the checkpoint and remove Firestore writes for that domain. Repeat for the next bounded
+   domain in dependency order.
+
+Rollback is an explicit routing change to the source authority while dual-write remains enabled.
+The runner records a `rolled_back` checkpoint; no destructive Firestore operation is part of this
+migration. A rollback after PostgreSQL becomes authoritative requires replaying the PostgreSQL
+outbox and reconciling writes made during the rollback window before another cutover.
 
 ## Billing reconciliation
 
