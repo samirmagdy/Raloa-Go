@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type { SitePersistenceRepository } from '../../repositories/site-persistence';
 
@@ -65,7 +64,7 @@ async function siteRow(client: Pool | PoolClient, userId: string, siteId: string
   return result.rows[0] || null;
 }
 
-async function writeDraftAndSnapshot(client: PoolClient, row: SiteRow, site: SiteValue, userId: string, publish: boolean): Promise<void> {
+async function writeDraft(client: PoolClient, row: SiteRow, site: SiteValue): Promise<void> {
   const revision = Number(site.revision || 0);
   const draftResult = await client.query<{ id: string }>(
     `INSERT INTO site_drafts (account_id, site_id, revision, content, design_config, created_by)
@@ -84,23 +83,6 @@ async function writeDraftAndSnapshot(client: PoolClient, row: SiteRow, site: Sit
       [row.account_id, row.id, draftId, blockKey, position, JSON.stringify(link || {})]
     );
   }
-  if (!publish) return;
-
-  await client.query('UPDATE published_site_snapshots SET is_current = false WHERE site_id = $1 AND is_current = true', [row.id]);
-  const contentHash = createHash('sha256').update(JSON.stringify(site)).digest('hex');
-  const snapshotResult = await client.query<{ id: string }>(
-    `INSERT INTO published_site_snapshots (account_id, site_id, draft_id, revision, content, design_config, content_hash, published_by)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)
-     RETURNING id`,
-    [row.account_id, row.id, draftId, revision, JSON.stringify(site), JSON.stringify(site.designTokens || {}), contentHash, row.owner_user_id]
-  );
-  const snapshotId = snapshotResult.rows[0].id;
-  await client.query(
-    `INSERT INTO site_blocks (account_id, site_id, snapshot_id, block_key, block_type, position, config)
-     SELECT account_id, site_id, $1, block_key, block_type, position, config
-       FROM site_blocks WHERE draft_id = $2`,
-    [snapshotId, draftId]
-  );
 }
 
 function translateDatabaseError(error: unknown): never {
@@ -152,12 +134,12 @@ export function createPostgresSitePersistenceRepository(pool: Pool, options: { p
       try {
         await client.query('BEGIN');
         const inserted = await client.query<SiteRow>(
-          `INSERT INTO sites (owner_user_id, account_id, legacy_site_id, handle, display_name, content, is_published)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb, false)
+          `INSERT INTO sites (owner_user_id, account_id, legacy_site_id, handle, display_name, content, is_published, draft_revision)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, false, 1)
            RETURNING *`,
           [owner.user_id, owner.account_id, siteId, String(site.username || ''), String(site.displayName || ''), JSON.stringify(site)]
         );
-        await writeDraftAndSnapshot(client, { ...inserted.rows[0], external_auth_id: userId }, site, userId, false);
+        await writeDraft(client, { ...inserted.rows[0], external_auth_id: userId }, site);
         await client.query('COMMIT');
       } catch (error) {
         await client.query('ROLLBACK');
@@ -210,14 +192,14 @@ export function createPostgresSitePersistenceRepository(pool: Pool, options: { p
             [current.account_id, current.id, previousHandle, nextHandle, current.owner_user_id]
           );
         }
-        const updatedSite: SiteValue = { ...site, revision: currentRevision + 1 };
+        const updatedSite: SiteValue = { ...site, revision: currentRevision + 1, isPublished: current.is_published };
         await client.query(
-          `UPDATE sites SET handle = $1, display_name = $2, content = $3::jsonb, is_published = $4, updated_at = now()
+          `UPDATE sites SET handle = $1, display_name = $2, content = $3::jsonb, draft_revision = $4, updated_at = now()
              WHERE id = $5 AND owner_user_id = $6`,
-          [nextHandle, String(updatedSite.displayName || ''), JSON.stringify(updatedSite), updatedSite.isPublished === true, current.id, current.owner_user_id]
+          [nextHandle, String(updatedSite.displayName || ''), JSON.stringify(updatedSite), currentRevision + 1, current.id, current.owner_user_id]
         );
         const updatedRow = { ...current, handle: nextHandle, display_name: String(updatedSite.displayName || ''), content: updatedSite, is_published: updatedSite.isPublished === true, updated_at: new Date() };
-        await writeDraftAndSnapshot(client, updatedRow, updatedSite, userId, updatedSite.isPublished === true);
+        await writeDraft(client, updatedRow, updatedSite);
         await client.query('COMMIT');
         return { status: 'saved' as const, site: updatedSite };
       } catch (error) {

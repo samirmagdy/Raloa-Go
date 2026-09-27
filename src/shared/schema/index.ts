@@ -139,6 +139,7 @@ export const domainEventSchemaV1 = z.object({ id: z.string(), type: z.string().r
 const eventIdentity = { siteId: z.string().min(1).max(200).optional() };
 export const domainEventPayloadSchemasV1 = {
   SitePublished: z.object({ ...eventIdentity, siteId: z.string().min(1).max(200), handle: z.string().min(1).max(253), revision: z.number().int().nonnegative().optional() }).passthrough(),
+  SiteUnpublished: z.object({ ...eventIdentity, siteId: z.string().min(1).max(200), handle: z.string().min(1).max(253), publicationVersion: z.number().int().nonnegative().optional() }).passthrough(),
   BookingCreated: z.object({ ...eventIdentity, bookingId: z.string().min(1).max(200), hostUserId: z.string().min(1).max(200), siteId: z.string().min(1).max(200) }).passthrough(),
   BookingCancelled: z.object({ ...eventIdentity, bookingId: z.string().min(1).max(200), siteId: z.string().min(1).max(200), reason: z.string().max(500).optional() }).passthrough(),
   OrderCreated: z.object({ ...eventIdentity, orderId: z.string().min(1).max(200), productId: z.string().min(1).max(200), siteId: z.string().min(1).max(200), creatorId: z.string().min(1).max(200) }).passthrough(),

@@ -20,7 +20,7 @@ The compatibility interface is [`SitePersistenceRepository`](../server/repositor
 | full site document | `sites.content`, `site_drafts.content`, `published_site_snapshots.content` |
 | `designTokens`/design fields | `design_config` JSONB and preserved site content JSONB |
 | `links`/blocks | `site_blocks.config` JSONB, ordered by `position` |
-| `isPublished` | `sites.is_published` plus current immutable snapshot |
+| `isPublished` | `sites.is_published`, `sites.published_snapshot_id`, and the current immutable snapshot |
 | `site_slug_redirects` | PostgreSQL `site_slug_redirects` |
 | `revision` | optimistic version in site content and `site_drafts.revision` |
 
@@ -28,7 +28,17 @@ The original Firestore document is preserved in the JSONB content during migrati
 
 ## Autosave and concurrency
 
-The existing `PUT /api/sites/:siteId` contract remains unchanged. `expectedRevision` is checked while the PostgreSQL site row is locked. A successful save increments the revision and writes the site row plus draft, block projection, and optional published snapshot in one transaction. A stale revision returns the existing `SITE_VERSION_CONFLICT` response with the latest site payload.
+The existing `PUT /api/sites/:siteId` contract remains unchanged. `expectedRevision` is checked while the PostgreSQL site row is locked. A successful save increments the draft revision and writes only the mutable site row and draft/block projection. It never mutates or replaces the current published snapshot. A stale revision returns the existing `SITE_VERSION_CONFLICT` response with the latest site payload.
+
+## Immutable publication workflow
+
+The PostgreSQL publication service exposes:
+
+- `POST /api/sites/:siteId/publish` — validates the draft, creates an immutable snapshot, advances `publication_version`, marks it current, writes a `SitePublished.v1` outbox event, and records an audit entry;
+- `POST /api/sites/:siteId/unpublish` — clears the public pointer without deleting historical snapshots and writes `SiteUnpublished.v1`;
+- `POST /api/sites/:siteId/rollback` — clones a selected historical snapshot into a new publication version, preserving the original snapshot and audit history.
+
+Public PostgreSQL reads join `sites.published_snapshot_id` to `published_site_snapshots`; they do not read `sites.content`, `site_drafts`, or unsaved Studio state. Cache invalidation occurs after the publication transaction commits.
 
 Handle uniqueness is enforced twice: an early repository lookup provides a useful response, while the PostgreSQL unique index is the final concurrent-writer guard. Handle redirects are inserted in the same transaction as the site update.
 
@@ -42,7 +52,7 @@ POSTGRES_SSL=true \
 npm run migrate:sites
 ```
 
-The backfill is idempotent by `app_users.external_auth_id`, `sites.legacy_site_id`, `(site_id, revision)`, and current snapshot uniqueness. It reports user/site/draft/snapshot counts and conflicts. It exits non-zero for unresolved conflicts and never deletes Firestore data.
+The backfill is idempotent by `app_users.external_auth_id`, `sites.legacy_site_id`, `(site_id, revision)` for drafts, and `(site_id, publication_version)` for snapshots. It reports user/site/draft/snapshot counts and conflicts. It exits non-zero for unresolved conflicts and never deletes Firestore data.
 
 ## Reconciliation
 
@@ -68,4 +78,3 @@ Enable `SITES_POSTGRES_AUTHORITATIVE` only after all gates pass for the target t
 - rollback flag and Firestore read path are verified.
 
 The first production rollout should enable the flag per tenant/site, monitor latency/error/reconciliation metrics, and retain Firestore as rollback authority until the retention window closes.
-

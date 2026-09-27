@@ -66,11 +66,11 @@ try {
             continue;
           }
           const siteResult = await siteClient.query<{ id: string }>(
-            `INSERT INTO sites (owner_user_id, account_id, legacy_site_id, handle, display_name, content, is_published, published_at)
-             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, CASE WHEN $7 THEN now() ELSE NULL END)
-             ON CONFLICT (legacy_site_id) DO UPDATE SET handle = EXCLUDED.handle, display_name = EXCLUDED.display_name, content = EXCLUDED.content, is_published = EXCLUDED.is_published, published_at = EXCLUDED.published_at, updated_at = now()
+            `INSERT INTO sites (owner_user_id, account_id, legacy_site_id, handle, display_name, content, is_published, published_at, draft_revision)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, CASE WHEN $7 THEN now() ELSE NULL END, $8)
+             ON CONFLICT (legacy_site_id) DO UPDATE SET handle = EXCLUDED.handle, display_name = EXCLUDED.display_name, content = EXCLUDED.content, is_published = EXCLUDED.is_published, published_at = EXCLUDED.published_at, draft_revision = EXCLUDED.draft_revision, updated_at = now()
              RETURNING id`,
-            [appUserId, accountId, projection.legacySiteId, projection.handle, String(raw.displayName || projection.handle), JSON.stringify(normalizedContent), projection.isPublished]
+            [appUserId, accountId, projection.legacySiteId, projection.handle, String(raw.displayName || projection.handle), JSON.stringify(normalizedContent), projection.isPublished, projection.revision || 1]
           );
           const siteId = siteResult.rows[0].id;
           const draft = await siteClient.query<{ id: string }>(
@@ -83,12 +83,15 @@ try {
           report.drafts += 1;
           if (projection.isPublished) {
             await siteClient.query('UPDATE published_site_snapshots SET is_current = false WHERE site_id = $1 AND is_current', [siteId]);
-            await siteClient.query(
-              `INSERT INTO published_site_snapshots (account_id, site_id, draft_id, revision, content, design_config, content_hash, published_by)
-               VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)
-               ON CONFLICT (site_id, revision) DO NOTHING`,
-              [accountId, siteId, draft.rows[0].id, projection.revision || 1, JSON.stringify(normalizedContent), JSON.stringify(normalizedContent.designTokens || {}), projection.contentHash, appUserId]
+            const snapshot = await siteClient.query<{ id: string }>(
+              `INSERT INTO published_site_snapshots (account_id, site_id, draft_id, revision, publication_version, content, design_config, content_hash, published_by)
+               VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9)
+               ON CONFLICT (site_id, publication_version) DO NOTHING
+               RETURNING id`,
+              [accountId, siteId, draft.rows[0].id, projection.revision || 1, projection.revision || 1, JSON.stringify(normalizedContent), JSON.stringify(normalizedContent.designTokens || {}), projection.contentHash, appUserId]
             );
+            const snapshotId = snapshot.rows[0]?.id || (await siteClient.query<{ id: string }>('SELECT id FROM published_site_snapshots WHERE site_id = $1 AND publication_version = $2', [siteId, projection.revision || 1])).rows[0]?.id;
+            if (snapshotId) await siteClient.query('UPDATE sites SET publication_version = $1, published_snapshot_id = $2 WHERE id = $3', [projection.revision || 1, snapshotId, siteId]);
             report.snapshots += 1;
           }
           await siteClient.query('COMMIT');

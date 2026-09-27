@@ -780,6 +780,38 @@ paths:
         '200': { description: Authenticated creator site summaries }
         '401': { description: Authentication required }
         '503': { description: Site persistence unavailable }
+  /api/sites/{siteId}/publish:
+    post:
+      operationId: post_post_api_sites_siteid_publish
+      parameters:
+        - { name: siteId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: New immutable published snapshot created }
+        '400': { description: Draft is invalid or not publishable }
+        '401': { description: Authentication required }
+        '404': { description: Site or profile not found }
+        '409': { description: Publication concurrency conflict }
+  /api/sites/{siteId}/unpublish:
+    post:
+      operationId: post_post_api_sites_siteid_unpublish
+      parameters:
+        - { name: siteId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Public pointer cleared; history retained }
+        '401': { description: Authentication required }
+        '404': { description: Site not found }
+        '409': { description: Publication concurrency conflict }
+  /api/sites/{siteId}/rollback:
+    post:
+      operationId: post_post_api_sites_siteid_rollback
+      parameters:
+        - { name: siteId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Prior snapshot cloned into a new publication version }
+        '400': { description: Invalid publication version }
+        '401': { description: Authentication required }
+        '404': { description: Site or publication version not found }
+        '409': { description: Publication concurrency conflict }
     post:
       operationId: post_post_api_sites
       responses:

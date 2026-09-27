@@ -8,10 +8,15 @@ type SitesControllerDependencies = Record<string, any> & {
   sitesRepository: SitePersistenceRepository;
   templatesData: Array<{ id: string }>;
   authorizationService: AuthorizationService;
+  sitePublicationService?: {
+    publish(input: { userId: string; siteId: string; draft: Record<string, any>; expectedDraftRevision?: number }): Promise<any>;
+    unpublish(input: { userId: string; siteId: string; expectedPublicationVersion?: number }): Promise<any>;
+    rollback(input: { userId: string; siteId: string; publicationVersion: number; expectedPublicationVersion?: number }): Promise<any>;
+  } | null;
 };
 
 export function registerSitesControllerRoutes(app: Express, dependencies: SitesControllerDependencies): void {
-  const { crypto, sitesRepository, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter, authorizationService } = dependencies;
+  const { crypto, sitesRepository, sitePublicationService, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter, authorizationService } = dependencies;
 
   async function requireSiteAccess(user: { uid: string }, siteId: string, action: PolicyAction): Promise<boolean> {
     try {
@@ -203,15 +208,86 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
       const latestData = saved.site || {};
       return res.status(409).json({ status: 'error', error: 'SITE_VERSION_CONFLICT', code: 'SITE_VERSION_CONFLICT', message: 'This site changed elsewhere. Reload the server version before saving again.', site: { ...latestData, id: siteId, userId: user.uid, revision: Number(latestData.revision || 0) } });
     }
-    await Promise.all([publicCreatorAdapter.invalidate(handle), previousHandle && previousHandle !== handle ? publicCreatorAdapter.invalidate(previousHandle) : Promise.resolve()]);
     const publicationChanged = Boolean(current.isPublished) !== Boolean(sanitized.isPublished);
+    let responseSite = sanitized;
+    if (sitePublicationService && publicationChanged) {
+      const publication = sanitized.isPublished === true
+        ? await sitePublicationService.publish({ userId: user.uid, siteId, draft: sanitized, expectedDraftRevision: Number(saved.site?.revision || sanitized.revision) })
+        : await sitePublicationService.unpublish({ userId: user.uid, siteId, expectedPublicationVersion: Number(current.publicationVersion || 0) || undefined });
+      if (publication.status === 'version_conflict') return apiError(res, 409, 'SITE_PUBLICATION_CONFLICT', 'The site publication changed elsewhere. Reload and try again.');
+      if (publication.status === 'site_not_found') return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+      responseSite = { ...sanitized, ...(publication.site || {}), isPublished: publication.status === 'published' };
+      await publicCreatorAdapter.invalidate(handle);
+      if (previousHandle && previousHandle !== handle) await publicCreatorAdapter.invalidate(previousHandle);
+    } else if (!sitePublicationService) {
+      await Promise.all([publicCreatorAdapter.invalidate(handle), previousHandle && previousHandle !== handle ? publicCreatorAdapter.invalidate(previousHandle) : Promise.resolve()]);
+    }
     await auditService.recordBestEffort({
       actorUserId: user.uid, siteId, resourceType: 'site', resourceId: siteId,
       action: publicationChanged ? (sanitized.isPublished ? 'site.published' : 'site.unpublished') : 'site.updated',
       requestId: auditRequestId(req),
       metadata: { fromPublished: Boolean(current.isPublished), toPublished: Boolean(sanitized.isPublished), handle, revision: sanitized.revision }
     });
-    return res.status(200).json({ site: sanitized });
+    return res.status(200).json({ site: responseSite });
+  });
+
+  async function publicationSiteOr404(req: Request, res: Response): Promise<{ user: { uid: string }; siteId: string; site: Record<string, any> } | null> {
+    const user = await getAuthenticatedUser(req);
+    if (!user) { apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.'); return null; }
+    if (!sitePublicationService) { apiError(res, 503, 'PUBLICATION_NOT_CONFIGURED', 'Versioned publication is not configured.'); return null; }
+    const siteId = String(req.params.siteId || '').trim();
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(siteId)) { apiError(res, 400, 'INVALID_SITE_ID', 'Invalid site ID.'); return null; }
+    if (!(await requireSiteAccess(user, siteId, 'site:publish'))) { apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.'); return null; }
+    const owned = await sitesRepository.getOwned(user.uid, siteId);
+    if (!owned) { apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.'); return null; }
+    return { user, siteId, site: owned.data };
+  }
+
+  app.post('/api/sites/:siteId/publish', async (req: Request, res: Response) => {
+    const context = await publicationSiteOr404(req, res);
+    if (!context) return;
+    const profile = await sitesRepository.getProfile(context.user.uid);
+    if (!profile) return apiError(res, 404, 'PROFILE_NOT_FOUND', 'User profile not found.');
+    const entitlement = validateSiteEntitlements(context.site, profile);
+    if (entitlement) return entitlementError(res, entitlement.feature, entitlement.message, entitlement.details);
+    const expectedRevision = req.body?.expectedRevision === undefined ? undefined : Number(req.body.expectedRevision);
+    let result;
+    try {
+      result = await sitePublicationService!.publish({ userId: context.user.uid, siteId: context.siteId, draft: context.site, expectedDraftRevision: expectedRevision });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'INVALID_SITE_CONTENT') return apiError(res, 400, 'INVALID_SITE_CONTENT', 'Site content does not match the shared content schema.');
+      if (error instanceof Error && error.message === 'PUBLISH_REQUIREMENTS_NOT_MET') return apiError(res, 400, 'PUBLISH_REQUIREMENTS_NOT_MET', 'Complete your handle, display name, and bio before publishing.');
+      throw error;
+    }
+    if (result.status === 'version_conflict') return apiError(res, 409, 'SITE_PUBLICATION_CONFLICT', 'The site changed elsewhere. Reload before publishing.');
+    if (result.status === 'site_not_found') return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+    await publicCreatorAdapter.invalidate(String(context.site.username || ''));
+    return res.status(200).json({ site: result.site, publicationVersion: result.publicationVersion });
+  });
+
+  app.post('/api/sites/:siteId/unpublish', async (req: Request, res: Response) => {
+    const context = await publicationSiteOr404(req, res);
+    if (!context) return;
+    const expectedPublicationVersion = req.body?.expectedPublicationVersion === undefined ? undefined : Number(req.body.expectedPublicationVersion);
+    const result = await sitePublicationService!.unpublish({ userId: context.user.uid, siteId: context.siteId, expectedPublicationVersion });
+    if (result.status === 'version_conflict') return apiError(res, 409, 'SITE_PUBLICATION_CONFLICT', 'The site publication changed elsewhere. Reload before unpublishing.');
+    if (result.status === 'site_not_found') return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+    await publicCreatorAdapter.invalidate(String(context.site.username || ''));
+    return res.status(200).json({ site: result.site });
+  });
+
+  app.post('/api/sites/:siteId/rollback', async (req: Request, res: Response) => {
+    const context = await publicationSiteOr404(req, res);
+    if (!context) return;
+    const publicationVersion = Number(req.body?.publicationVersion);
+    if (!Number.isSafeInteger(publicationVersion) || publicationVersion <= 0) return apiError(res, 400, 'INVALID_PUBLICATION_VERSION', 'A valid publication version is required.');
+    const expectedPublicationVersion = req.body?.expectedPublicationVersion === undefined ? undefined : Number(req.body.expectedPublicationVersion);
+    const result = await sitePublicationService!.rollback({ userId: context.user.uid, siteId: context.siteId, publicationVersion, expectedPublicationVersion });
+    if (result.status === 'version_conflict') return apiError(res, 409, 'SITE_PUBLICATION_CONFLICT', 'The site publication changed elsewhere.');
+    if (result.status === 'publication_not_found') return apiError(res, 404, 'PUBLICATION_NOT_FOUND', 'Publication version not found.');
+    if (result.status === 'site_not_found') return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+    await publicCreatorAdapter.invalidate(String(context.site.username || ''));
+    return res.status(200).json({ site: result.site, publicationVersion: result.publicationVersion });
   });
   
 }

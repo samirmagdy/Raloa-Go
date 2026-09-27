@@ -1,5 +1,6 @@
 export const DOMAIN_EVENTS = {
   SitePublished: 'SitePublished',
+  SiteUnpublished: 'SiteUnpublished',
   BookingCreated: 'BookingCreated',
   BookingConfirmed: 'BookingConfirmed',
   BookingCancelled: 'BookingCancelled',

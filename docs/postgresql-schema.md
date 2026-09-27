@@ -1,6 +1,6 @@
 # Production PostgreSQL schema design
 
-**Status:** designed and represented by SQL migrations 001–005.  
+**Status:** designed and represented by SQL migrations 001–008.
 **Schema authority:** checked-in SQL under [`db/migrations`](../db/migrations).  
 **Typed access model:** [`server/infrastructure/postgres/schema.ts`](../server/infrastructure/postgres/schema.ts).  
 **Traffic:** PostgreSQL is the target authoritative datastore for transactional domains; current application traffic remains on Firestore until bounded cutovers complete.
@@ -175,4 +175,3 @@ Every migration is additive/backward-compatible first, checksum-locked, applied 
 - Run concurrency tests for booking and inventory reservation.
 - Verify `schema_migrations` and health/readiness before any repository cutover.
 - Confirm no route or worker selects PostgreSQL until the corresponding bounded-context migration flag is enabled.
-

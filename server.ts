@@ -89,6 +89,8 @@ import { createCalendarSyncWorker } from './server/domains/bookings/calendar-syn
 import { createDomainVerificationWorker } from './server/domains/domains/verification-worker';
 import { createFeatureFlagService, createFirestoreFeatureFlagRepository } from './server/infrastructure/feature-flags';
 import { createConfiguredPostgresDatabase, createPostgresBookingsRepository, createPostgresSitePersistenceRepository } from './server/infrastructure/postgres';
+import { createPostgresPublishedSiteReader, createPostgresSitePublicationRepository } from './server/infrastructure/postgres/site-publications-repository';
+import { createSitePublicationService, type SitePublicationService } from './server/domains/publishing/publication-service';
 import { createBookingMigrationRepository } from './server/domains/bookings/migration-repository';
 import { createFirestoreBookingsRepository } from './server/repositories/firestore';
 
@@ -101,7 +103,7 @@ const observabilityMetrics = new InMemoryMetrics();
 // Composition root for bounded contexts. The legacy handlers below remain the
 // compatibility shell while routes are migrated to module controllers.
 export const domainModules = createDomainModules(adminDb, {
-  resolvePublicSite: (handle) => getPublishedSiteByHandle(handle),
+  resolvePublicSite: (handle) => readPublishedSiteByHandle(handle),
   billing: stripeAdapter,
   cloudflare: cloudflareAdapter,
   oauthAdapters: oauthProviderAdapters(),
@@ -110,7 +112,6 @@ export const domainModules = createDomainModules(adminDb, {
 const billingRepository = createFirestoreBillingRepository(adminDb, getAuthoritativeBillingState);
 const entitlementService = createEntitlementService({ billing: billingRepository });
 const publicCache = new MemoryCacheStore();
-export const publicCreatorAdapter = createPublicCreatorAdapter({ getPublishedSiteByHandle, cache: publicCache });
 export const auditService = createAuditService(createFirestoreAuditRepository(adminDb));
 const firestoreSitesPersistenceRepository = createFirestoreSitePersistenceRepository(adminDb);
 const bookingFeatureFlags = createFeatureFlagService(createFirestoreFeatureFlagRepository(adminDb));
@@ -127,6 +128,21 @@ const sitesPersistenceRepository = process.env.SITES_POSTGRES_AUTHORITATIVE === 
     }
   })
   : firestoreSitesPersistenceRepository;
+const postgresPublishedSiteReader = process.env.SITES_POSTGRES_AUTHORITATIVE === 'true' && postgresBookingRuntime
+  ? createPostgresPublishedSiteReader(postgresBookingRuntime.pool, {
+    profileLoader: async (userId) => {
+      const profile = await adminDb.collection('users').doc(userId).get();
+      return profile.exists ? profile.data() as Record<string, any> : null;
+    }
+  })
+  : null;
+const readPublishedSiteByHandle = postgresPublishedSiteReader?.getPublishedSiteByHandle || getPublishedSiteByHandle;
+const readPublishedSiteById = postgresPublishedSiteReader?.getPublishedSiteById || getPublishedSiteById;
+const readSiteSlugRedirect = postgresPublishedSiteReader?.resolveSiteSlugRedirect || resolveSiteSlugRedirect;
+export const publicCreatorAdapter = createPublicCreatorAdapter({ getPublishedSiteByHandle: readPublishedSiteByHandle, cache: publicCache });
+const sitePublicationService: SitePublicationService | null = process.env.SITES_POSTGRES_AUTHORITATIVE === 'true' && postgresBookingRuntime
+  ? createSitePublicationService(createPostgresSitePublicationRepository(postgresBookingRuntime.pool), { normalize: normalizeSiteContent, validate: validateSiteContent })
+  : null;
 const firestoreBookingsRepository = createFirestoreBookingsRepository(adminDb);
 const postgresBookingsRepository = postgresBookingRuntime ? createPostgresBookingsRepository(postgresBookingRuntime.pool) : null;
 const bookingsMigrationRepository = postgresBookingsRepository
@@ -1859,7 +1875,7 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
   const siteId = 'siteId' in mapping ? mapping.siteId : mapping.site_id;
   const siteUserId = 'userId' in mapping ? mapping.userId : mapping.user_id;
   const publishedSite = isAdminConfigured() && siteUserId && siteId
-    ? await getPublishedSiteById(String(siteUserId), String(siteId)).catch(() => null)
+    ? await readPublishedSiteById(String(siteUserId), String(siteId)).catch(() => null)
     : null;
   if (isAdminConfigured() && !publishedSite) return res.status(404).send('Published site not found for this custom domain.');
   if (publishedSite) {
@@ -1964,7 +1980,7 @@ app.get('/api/v1/public/scheduling/:handle/config', async (req: Request, res: Re
   const handle = String(req.params.handle || '').trim().toLowerCase();
   if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return apiError(res, 400, 'INVALID_HANDLE', 'Invalid creator handle.');
   if (!isAdminConfigured()) return apiError(res, 503, 'SCHEDULING_UNAVAILABLE', 'Scheduling is not configured.');
-  const site = await getPublishedSiteByHandle(handle).catch(() => null);
+  const site = await readPublishedSiteByHandle(handle).catch(() => null);
   const config = normalizeBookingConfig(site?.bookingConfig);
   if (!site || !config.enabled || config.services.length === 0) return apiError(res, 404, 'SCHEDULING_DISABLED', 'This creator has not enabled scheduling.');
   return res.status(200).json({ handle, timezone: config.timezone, today: dateInTimeZone(new Date(), config.timezone), services: config.services, bookingWindowDays: config.bookingWindowDays });
@@ -1982,7 +1998,7 @@ app.get('/api/v1/public/scheduling/:handle/availability', async (req: Request, r
     return apiError(res, 400, 'INVALID_DATE_RANGE', 'Availability range must be between one and 31 days.');
   }
   if (!isAdminConfigured()) return apiError(res, 503, 'SCHEDULING_UNAVAILABLE', 'Scheduling is not configured.');
-  const site = await getPublishedSiteByHandle(handle).catch(() => null);
+  const site = await readPublishedSiteByHandle(handle).catch(() => null);
   const config = normalizeBookingConfig(site?.bookingConfig);
   const service = config.services.find((item) => item.id === serviceId);
   if (!site || !config.enabled || !service) return apiError(res, 404, 'SERVICE_NOT_FOUND', 'The requested booking service is unavailable.');
@@ -2005,7 +2021,7 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
   const parsedStart = new Date(slotStart);
   if (!Number.isFinite(parsedStart.getTime())) return apiError(res, 400, 'INVALID_SLOT', 'A valid availability slot is required.');
   if (!isAdminConfigured()) return apiError(res, 503, 'SCHEDULING_UNAVAILABLE', 'Scheduling is not configured.');
-  const hostSite = await getPublishedSiteByHandle(hostHandle).catch(() => null);
+  const hostSite = await readPublishedSiteByHandle(hostHandle).catch(() => null);
   const config = normalizeBookingConfig(hostSite?.bookingConfig);
   const service = config.services.find((item) => item.id === serviceId);
   if (!hostSite || !config.enabled || !service) return apiError(res, 404, 'SCHEDULING_DISABLED', 'This booking service is unavailable.');
@@ -2156,7 +2172,7 @@ app.post('/api/creator/bookings/:bookingId/confirm', async (req: Request, res: R
   const customerEmail = String(booking.customerEmail || '');
   await adminDb.collection('notification_jobs').add({ audience: 'customer', email: customerEmail, type: 'booking_confirmed', bookingId: bookingRef.id, status: 'pending', attempts: 0, maxAttempts: 8, createdAt: new Date().toISOString() });
   void backgroundJobs.enqueue({ kind: 'email_delivery', idempotencyKey: `booking:${bookingRef.id}:confirmed`, payload: { bookingId: bookingRef.id } }).catch((error) => console.error('[Background job enqueue]', error));
-  const hostSite = await getPublishedSiteByHandle(String(booking.hostHandle || '')).catch(() => null);
+  const hostSite = await readPublishedSiteByHandle(String(booking.hostHandle || '')).catch(() => null);
   const provider = String((hostSite?.bookingConfig as Record<string, unknown> | undefined)?.calendarProvider || 'none') as CalendarProvider | 'none';
   if (provider !== 'none') {
     const calendarRef = adminDb.collection('calendar_jobs').where('bookingId', '==', bookingRef.id).limit(1);
@@ -2279,7 +2295,7 @@ async function getOwnedAudienceSite(user: AuthenticatedUser, requestedHandle?: s
 
 async function getPublishedAudienceSite(handle: string): Promise<{ id: string; userId: string; handle: string } | null> {
   if (!isAdminConfigured()) return null;
-  const published = await getPublishedSiteByHandle(handle);
+  const published = await readPublishedSiteByHandle(handle);
   if (!published?.userId) return null;
   const cleanHandle = String(handle).trim().toLowerCase();
   const sites = await adminDb.collection('users').doc(String(published.userId)).collection('sites').where('isPublished', '==', true).limit(100).get();
@@ -2617,7 +2633,7 @@ app.post('/api/v1/public/telemetry/page-view', async (req: Request, res: Respons
   if (isAdminConfigured()) {
     const handle = pathValue.match(/^\/@([a-z0-9_-]{3,30})(?:\/|$)/i)?.[1];
     if (handle) {
-      const site = await getPublishedSiteByHandle(handle);
+      const site = await readPublishedSiteByHandle(handle);
       if (site && site.analyticsCollection === false) return res.status(202).json({ status: 'accepted' });
       if (site) {
         const dimensions = analyticsDimensions(req, req.body && typeof req.body === 'object' ? req.body : {});
@@ -2643,7 +2659,7 @@ app.post('/api/v1/public/telemetry/link-click', async (req: Request, res: Respon
     return apiError(res, 429, 'RATE_LIMITED', 'Too many telemetry events.', { retryAfter: String(limit.retryAfter) });
   }
   if (isAdminConfigured()) {
-    const site = await getPublishedSiteByHandle(siteHandle);
+      const site = await readPublishedSiteByHandle(siteHandle);
     if (!site || site.analyticsCollection === false) return res.status(202).json({ status: 'accepted' });
     const links = Array.isArray(site.links) ? site.links as Array<Record<string, unknown>> : [];
     const socials = Array.isArray(site.socials) ? site.socials as Array<Record<string, unknown>> : [];
@@ -3897,9 +3913,9 @@ app.get('/api/media/public/:mediaId', async (req: Request, res: Response) => {
   }
 });
 
-registerPublishingControllerRoutes(app, { adminDb, isAdminConfigured, getRequestHost, getCachedPublicDomain, getPublishedSiteById, getPublishedSiteByHandle, resolveSiteSlugRedirect, publicCreatorAdapter, publicDemoFixturesEnabled, templatesData, apiError });
+registerPublishingControllerRoutes(app, { adminDb, isAdminConfigured, getRequestHost, getCachedPublicDomain, getPublishedSiteById: readPublishedSiteById, getPublishedSiteByHandle: readPublishedSiteByHandle, resolveSiteSlugRedirect: readSiteSlugRedirect, publicCreatorAdapter, publicDemoFixturesEnabled, templatesData, apiError });
 
-registerSitesControllerRoutes(app, { crypto, sitesRepository: sitesPersistenceRepository, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter, authorizationService });
+registerSitesControllerRoutes(app, { crypto, sitesRepository: sitesPersistenceRepository, sitePublicationService, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter, authorizationService });
 
 
 app.get('/api/creator/products', async (req: Request, res: Response) => {
@@ -4031,7 +4047,7 @@ app.get('/api/v1/public/products/:handle', async (req: Request, res: Response) =
   const handle = String(req.params.handle || '').trim().toLowerCase();
   if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return apiError(res, 400, 'INVALID_HANDLE', 'Invalid creator handle.');
   if (!isAdminConfigured()) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Products are not configured.');
-  const site = await getPublishedSiteByHandle(handle).catch(() => null);
+  const site = await readPublishedSiteByHandle(handle).catch(() => null);
   if (!site) return apiError(res, 404, 'CREATOR_NOT_FOUND', 'Creator page not found.');
   const products = await adminDb.collection('creator_products').where('creatorId', '==', String(site.userId)).where('active', '==', true).limit(100).get();
   return res.status(200).json({ products: products.docs.filter((document) => String(document.data()?.siteId || '') === String(site.id || '')).map((document) => publicProduct({ id: document.id, ...document.data() })) });
@@ -4048,7 +4064,7 @@ app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: R
   if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many checkout attempts', retry_after: rate.retryAfter });
   const idempotencyKey = req.headers['idempotency-key'];
   if (typeof idempotencyKey !== 'string' || idempotencyKey.length < 16 || idempotencyKey.length > 200) return apiError(res, 400, 'IDEMPOTENCY_REQUIRED', 'Idempotency-Key header is required.');
-  const site = await getPublishedSiteByHandle(handle).catch(() => null);
+  const site = await readPublishedSiteByHandle(handle).catch(() => null);
   if (!site) return apiError(res, 404, 'CREATOR_NOT_FOUND', 'Creator page not found.');
   const productRef = adminDb.collection('creator_products').doc(productId);
   const orderRef = adminDb.collection('orders').doc();
@@ -4768,11 +4784,11 @@ app.get('*', async (req: Request, res: Response) => {
     let publishedSite: Record<string, unknown> | null | undefined = customDomainSite;
     if (!publishedSite && isAdminConfigured()) {
       try {
-        publishedSite = await getPublishedSiteByHandle(handle);
+        publishedSite = await readPublishedSiteByHandle(handle);
         if (!publishedSite && !customDomainSite) {
-          const redirect = await resolveSiteSlugRedirect(handle);
+          const redirect = await readSiteSlugRedirect(handle);
           if (redirect?.canonicalSlug && redirect.canonicalSlug !== handle) {
-            const target = await getPublishedSiteByHandle(redirect.canonicalSlug);
+            const target = await readPublishedSiteByHandle(redirect.canonicalSlug);
             if (target) return res.redirect(308, `/@${redirect.canonicalSlug}`);
           }
         }
