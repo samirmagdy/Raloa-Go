@@ -15,8 +15,11 @@ and does not run against the current Firebase project.
 
 ## Transaction boundaries
 
-1. Booking creation: resolve site/service, lock the requested time range through the exclusion
-   constraint, insert the booking, and enqueue calendar/notification jobs in one transaction.
+1. Booking creation: claim `(site_id, idempotency_key)`, lock the requested `booking_slots` row
+   with `FOR UPDATE`, verify `status`, `booked_count`, and the service/site relationship, insert
+   the booking and attendees, update the slot counters, and enqueue calendar/notification jobs in
+   one transaction. The unique active-slot index and the `tstzrange` exclusion constraint protect
+   against races and overlapping legacy/non-slot bookings.
 2. Order checkout: claim the idempotency key, lock inventory rows with `FOR UPDATE`, validate
    available stock, insert the order/items/reservation, and commit before calling Stripe. Provider
    confirmation is a separate webhook transaction.
@@ -29,6 +32,21 @@ and does not run against the current Firebase project.
    `INSERT ... ON CONFLICT DO UPDATE`.
 6. Job workers: claim work with `FOR UPDATE SKIP LOCKED`, increment attempts, perform the external
    call outside the database lock, then commit success/retry state.
+
+## Booking relational semantics
+
+- `availability_rules` and `availability_exceptions` are the authoring model.
+- `booking_slots` is the materialized, queryable availability model generated from those rules.
+- `bookings` records the reservation and references one slot when generated availability is used.
+- `booking_attendees` is one-to-many so host, customer, and additional attendees are not embedded
+  in a booking document.
+- `calendar_sync_state` is one-to-one with a booking and stores provider synchronization state,
+  never provider credentials.
+- `booking_idempotency_keys` makes repeated public booking requests return the original response.
+
+After backfill, `bookings.slot_id` should be made `NOT NULL` for services that require generated
+slots. Keep it nullable only for a compatibility period while historical Firestore bookings are
+being reconciled.
 
 ## Staged rollout
 

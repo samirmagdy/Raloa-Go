@@ -8,6 +8,9 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 CREATE TYPE booking_status AS ENUM ('pending', 'confirmed', 'cancelled', 'completed', 'no_show');
+CREATE TYPE booking_slot_status AS ENUM ('available', 'held', 'booked', 'blocked');
+CREATE TYPE attendee_role AS ENUM ('host', 'customer', 'additional');
+CREATE TYPE calendar_sync_status AS ENUM ('pending', 'synced', 'cancelled', 'failed');
 CREATE TYPE order_status AS ENUM ('pending_payment', 'paid', 'payment_failed', 'cancelled', 'refunded');
 CREATE TYPE fulfillment_status AS ENUM ('unfulfilled', 'processing', 'fulfilled', 'cancelled');
 CREATE TYPE subscription_status AS ENUM ('trialing', 'active', 'past_due', 'cancelled', 'incomplete', 'paused');
@@ -48,7 +51,8 @@ CREATE TABLE booking_services (
   buffer_minutes integer NOT NULL DEFAULT 0 CHECK (buffer_minutes BETWEEN 0 AND 120),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (site_id, slug)
+  UNIQUE (site_id, slug),
+  UNIQUE (id, site_id)
 );
 
 CREATE TABLE availability_rules (
@@ -72,11 +76,34 @@ CREATE TABLE availability_exceptions (
 );
 CREATE INDEX availability_exceptions_site_time_idx ON availability_exceptions (site_id, starts_at, ends_at);
 
+-- Materialized availability. Slots are generated from rules/exceptions by a
+-- scheduler and are the row a booking transaction locks and claims.
+CREATE TABLE booking_slots (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  site_id uuid NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  service_id uuid NOT NULL,
+  starts_at timestamptz NOT NULL,
+  ends_at timestamptz NOT NULL,
+  timezone text NOT NULL,
+  status booking_slot_status NOT NULL DEFAULT 'available',
+  capacity integer NOT NULL DEFAULT 1 CHECK (capacity > 0),
+  booked_count integer NOT NULL DEFAULT 0 CHECK (booked_count BETWEEN 0 AND capacity),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (starts_at < ends_at),
+  UNIQUE (site_id, service_id, starts_at, ends_at),
+  FOREIGN KEY (service_id, site_id) REFERENCES booking_services(id, site_id) ON DELETE CASCADE
+);
+CREATE INDEX booking_slots_available_idx ON booking_slots (site_id, service_id, starts_at)
+  WHERE status = 'available';
+CREATE INDEX booking_slots_time_idx ON booking_slots (site_id, starts_at, ends_at);
+
 CREATE TABLE bookings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   site_id uuid NOT NULL REFERENCES sites(id),
   host_user_id uuid NOT NULL REFERENCES app_users(id),
-  service_id uuid NOT NULL REFERENCES booking_services(id),
+  service_id uuid NOT NULL,
+  slot_id uuid REFERENCES booking_slots(id),
   customer_name text NOT NULL,
   customer_email text NOT NULL,
   starts_at timestamptz NOT NULL,
@@ -87,16 +114,68 @@ CREATE TABLE bookings (
   notes text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CHECK (starts_at < ends_at)
+  CHECK (starts_at < ends_at),
+  FOREIGN KEY (service_id, site_id) REFERENCES booking_services(id, site_id)
 );
 CREATE INDEX bookings_host_created_idx ON bookings (host_user_id, created_at DESC, id DESC);
 CREATE INDEX bookings_site_time_idx ON bookings (site_id, starts_at, ends_at);
 CREATE INDEX bookings_customer_email_idx ON bookings (customer_email, created_at DESC);
+-- One active booking per one-on-one slot. Group services use capacity and are
+-- checked while locking the slot row in the booking transaction.
+CREATE UNIQUE INDEX bookings_active_slot_idx ON bookings (slot_id)
+  WHERE slot_id IS NOT NULL AND status IN ('pending', 'confirmed');
 ALTER TABLE bookings ADD CONSTRAINT bookings_no_overlap
   EXCLUDE USING gist (
     site_id WITH =,
     tstzrange(starts_at, ends_at, '[)') WITH &&
   ) WHERE (status IN ('pending', 'confirmed'));
+
+CREATE TABLE booking_attendees (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id uuid NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+  role attendee_role NOT NULL,
+  name text NOT NULL,
+  email text NOT NULL,
+  response_status text NOT NULL DEFAULT 'pending'
+    CHECK (response_status IN ('pending', 'accepted', 'declined', 'cancelled')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (booking_id, role, email)
+);
+CREATE INDEX booking_attendees_email_idx ON booking_attendees (email, created_at DESC);
+
+CREATE TABLE calendar_sync_state (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id uuid NOT NULL UNIQUE REFERENCES bookings(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES app_users(id),
+  provider text NOT NULL CHECK (provider IN ('google', 'outlook')),
+  external_event_id text,
+  status calendar_sync_status NOT NULL DEFAULT 'pending',
+  last_attempt_at timestamptz,
+  synced_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (provider, external_event_id)
+);
+CREATE INDEX calendar_sync_pending_idx ON calendar_sync_state (status, last_attempt_at)
+  WHERE status IN ('pending', 'failed');
+
+CREATE TABLE booking_idempotency_keys (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  site_id uuid NOT NULL REFERENCES sites(id),
+  requester_user_id uuid REFERENCES app_users(id),
+  idempotency_key text NOT NULL,
+  request_hash text NOT NULL,
+  booking_id uuid REFERENCES bookings(id),
+  response_status integer,
+  response_body jsonb,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (site_id, idempotency_key)
+);
+CREATE INDEX booking_idempotency_expiry_idx ON booking_idempotency_keys (expires_at);
 
 CREATE TABLE products (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -309,7 +388,7 @@ $$;
 DO $$
 DECLARE table_name text;
 BEGIN
-  FOREACH table_name IN ARRAY ARRAY['app_users', 'sites', 'booking_services', 'bookings', 'products', 'inventory', 'orders', 'subscriptions', 'integrations', 'custom_domains', 'analytics_daily_rollups', 'idempotency_keys', 'operational_jobs'] LOOP
+  FOREACH table_name IN ARRAY ARRAY['app_users', 'sites', 'booking_services', 'booking_slots', 'bookings', 'booking_attendees', 'calendar_sync_state', 'booking_idempotency_keys', 'products', 'inventory', 'orders', 'subscriptions', 'integrations', 'custom_domains', 'analytics_daily_rollups', 'idempotency_keys', 'operational_jobs'] LOOP
     EXECUTE format('CREATE TRIGGER %I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION set_updated_at()', table_name, table_name);
   END LOOP;
 END;
