@@ -31,6 +31,7 @@ import { StudioTemplatePreview } from '../studio/StudioTemplatePreview';
 import { StudioBlockItem } from '../studio/SortableBlockList';
 import { getPlanCapabilities, isPremiumTemplate } from '../../lib/planCapabilities';
 import { auth } from '../../lib/firebase';
+import { normalizeSiteSlug } from '../../lib/siteSlug';
 
 export interface StudioSiteConfig {
   username: string;
@@ -375,6 +376,9 @@ export const StudioModal: React.FC<StudioModalProps> = ({
           await new Promise((r) => setTimeout(r, 200));
         }
 
+        if (user) {
+          setSites(await listMiniSites());
+        }
         setSaveStatus('saved');
       } catch (err) {
         console.error('Failed to autosave live site configuration:', err);
@@ -382,7 +386,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         setEntitlementMessage(err instanceof Error ? err.message : 'This change is not included in your current plan.');
       }
     },
-    [user, saveMiniSite, siteConfig, activeSiteId]
+    [user, saveMiniSite, siteConfig, activeSiteId, listMiniSites]
   );
 
   const switchSite = useCallback(async (nextSiteId: string) => {
@@ -406,7 +410,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   const createNewSite = useCallback(async () => {
     if (typeof window === 'undefined') return;
     const requestedHandle = window.prompt(isRtl ? 'أدخل معرف الموقع الجديد' : 'Enter the new site handle');
-    const nextHandle = requestedHandle?.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const nextHandle = normalizeSiteSlug(requestedHandle);
     if (!nextHandle) return;
     const displayName = window.prompt(isRtl ? 'اسم الموقع' : 'Site display name', nextHandle) || nextHandle;
     try {

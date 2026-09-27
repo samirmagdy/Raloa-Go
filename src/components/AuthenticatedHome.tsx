@@ -94,7 +94,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   // Derived user details
-  const rawUsername = profile?.handle || siteData.username || (user?.email ? user.email.split('@')[0] : 'creator');
+  const rawUsername = siteData.username || profile?.handle || (user?.email ? user.email.split('@')[0] : 'creator');
   const cleanHandle = rawUsername.toLowerCase().replace(/[^a-z0-9_-]/g, '');
   const publicUrl = `https://raloa.app/@${cleanHandle}`;
   const plan = profile?.plan || 'free';

@@ -20,6 +20,7 @@ import {
   getCheckoutSessionStatus,
   getPublishedSiteById,
   getPublishedSiteByHandle,
+  resolveSiteSlugRedirect,
   getCloudflareConfig,
   getPriceId,
   handleStripeWebhook,
@@ -35,6 +36,7 @@ import { getPlanCapabilities, getPlanTier, isPremiumTemplate } from './src/lib/p
 import { calendarAdapter, calendarOAuthConfiguration, calendarProviderIsConfigured, decryptCalendarTokens, encryptCalendarTokens, type CalendarProvider, type CalendarBookingEvent, type CalendarTokenBundle } from './server-calendar';
 import { normalizeDesignTokens } from './src/utils/designTokens';
 import { isSupportedBlockType, isSupportedEmbedUrl } from './src/lib/blockTypes';
+import { normalizeSiteSlug, RESERVED_SITE_SLUGS, validateSiteSlug } from './src/lib/siteSlug';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -527,6 +529,7 @@ export const RESERVED_HANDLES = new Set([
   'billing', 'root', 'security', 'studio', 'login', 'register',
   'features', 'pricing', 'guides', 'about', 'contact', 'legal'
 ]);
+for (const slug of RESERVED_SITE_SLUGS) RESERVED_HANDLES.add(slug);
 
 export interface ActiveSession {
   userId: string;
@@ -1470,7 +1473,7 @@ app.get('/sitemap.xml', async (_req: Request, res: Response) => {
       const publishedHandles = new Map<string, { handle: string; lastmod: string | null }>();
       for (const document of snapshot.docs) {
         const data = document.data();
-        const handle = String(data.handle || data.username || '').toLowerCase().trim();
+        const handle = normalizeSiteSlug(data.username);
         if (!handle) continue;
         const updatedAt = data.updatedAt || data.publishedAt || null;
         const lastmod = updatedAt ? new Date(updatedAt).toISOString().slice(0, 10) : null;
@@ -3327,6 +3330,17 @@ app.get('/api/public/sites/:handle', async (req: Request, res: Response) => {
         site = mapping ? await getPublishedSiteById(mapping.userId, mapping.siteId) : null;
       } else {
         site = await getPublishedSiteByHandle(handle);
+        if (!site) {
+          const redirect = await resolveSiteSlugRedirect(handle);
+          if (redirect?.canonicalSlug && redirect.canonicalSlug !== handle) {
+            const target = await getPublishedSiteByHandle(redirect.canonicalSlug);
+            if (target) {
+              return res.status(308)
+                .set('Location', `/api/public/sites/${redirect.canonicalSlug}`)
+                .json({ redirect: true, from: handle, to: redirect.canonicalSlug });
+            }
+          }
+        }
       }
     }
     if (site) return res.status(200).json({ site });
@@ -3380,7 +3394,13 @@ app.get('/api/sites', async (req: Request, res: Response) => {
 });
 
 async function siteHandleTaken(handle: string, userId: string, siteId?: string): Promise<boolean> {
-  const snapshot = await adminDb.collectionGroup('sites').where('username', '==', handle).limit(20).get();
+  const slug = normalizeSiteSlug(handle);
+  if (!validateSiteSlug(slug).valid || RESERVED_HANDLES.has(slug)) return true;
+  const [snapshot, redirect] = await Promise.all([
+    adminDb.collectionGroup('sites').where('username', '==', slug).limit(100).get(),
+    adminDb.collection('site_slug_redirects').doc(slug).get()
+  ]);
+  if (redirect.exists) return true;
   return snapshot.docs.some((document) => document.ref.parent.parent?.id !== userId || document.id !== siteId);
 }
 
@@ -3395,8 +3415,9 @@ app.post('/api/sites', async (req: Request, res: Response) => {
   const reference = adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId);
   if ((await reference.get()).exists) return apiError(res, 409, 'SITE_EXISTS', 'A site with this ID already exists.');
   const incoming = req.body && typeof req.body === 'object' ? req.body : {};
-  const username = String(incoming.username || '').trim().toLowerCase();
-  if (!/^[a-z0-9_-]{3,30}$/.test(username)) return apiError(res, 400, 'INVALID_HANDLE', 'A unique site handle is required.');
+  const username = normalizeSiteSlug(incoming.username);
+  const slugValidation = validateSiteSlug(username);
+  if (!slugValidation.valid) return apiError(res, 400, slugValidation.code === 'reserved' ? 'RESERVED_HANDLE' : 'INVALID_HANDLE', slugValidation.code === 'reserved' ? 'That site handle is reserved.' : 'A unique site handle is required.');
   if (await siteHandleTaken(username, user.uid, siteId)) return apiError(res, 409, 'HANDLE_IN_USE', 'That site handle is already in use.');
   const site = {
     ...incoming,
@@ -3433,6 +3454,12 @@ app.delete('/api/sites/:siteId', async (req: Request, res: Response) => {
   if (!snapshot.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
   if (snapshot.data()?.isPublished === true) return apiError(res, 409, 'SITE_PUBLISHED', 'Unpublish the site before deleting it.');
   if (typeof snapshot.data()?.customDomain === 'string' && snapshot.data()?.customDomain.trim()) return apiError(res, 409, 'SITE_DOMAIN_ATTACHED', 'Remove the custom domain before deleting the site.');
+  const redirects = await adminDb.collection('site_slug_redirects').where('siteId', '==', siteId).where('userId', '==', user.uid).limit(100).get();
+  if (!redirects.empty) {
+    const batch = adminDb.batch();
+    redirects.docs.forEach((document) => batch.delete(document.ref));
+    await batch.commit();
+  }
   await reference.delete();
   return res.status(204).send();
 });
@@ -3457,8 +3484,9 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
     userId: user.uid,
     updatedAt: new Date().toISOString()
   } as Record<string, any>;
-  const handle = String(merged.username || profileData?.handle || '').trim().toLowerCase();
-  if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return apiError(res, 400, 'INVALID_HANDLE', 'A valid handle is required before saving a site.');
+  const handle = normalizeSiteSlug(merged.username);
+  const handleValidation = validateSiteSlug(handle);
+  if (!handleValidation.valid) return apiError(res, 400, handleValidation.code === 'reserved' ? 'RESERVED_HANDLE' : 'INVALID_HANDLE', handleValidation.code === 'reserved' ? 'That site handle is reserved.' : 'A valid site handle is required before saving a site.');
   if (await siteHandleTaken(handle, user.uid, siteId)) return apiError(res, 409, 'HANDLE_IN_USE', 'That site handle is already in use.');
   merged.username = handle;
   if (typeof merged.displayName !== 'string' || merged.displayName.length > 120 || typeof merged.bio !== 'string' || merged.bio.length > 2000) {
@@ -3487,7 +3515,35 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
   if (sanitized.isPublished === true && (!sanitized.username || !sanitized.displayName || !sanitized.bio)) {
     return apiError(res, 400, 'PUBLISH_REQUIREMENTS_NOT_MET', 'Complete your handle, display name, and bio before publishing.');
   }
-  await existingRef.set(sanitized, { merge: true });
+  const previousHandle = normalizeSiteSlug(current.username);
+  const slugChanged = existing.exists && previousHandle && previousHandle !== handle;
+  const redirectRef = slugChanged ? adminDb.collection('site_slug_redirects').doc(previousHandle) : null;
+  if (redirectRef) {
+    try {
+      await adminDb.runTransaction(async (transaction) => {
+        const currentSnapshot = await transaction.get(existingRef);
+        const redirectSnapshot = await transaction.get(redirectRef);
+        if (!currentSnapshot.exists) throw new Error('SITE_NOT_FOUND');
+        if (redirectSnapshot.exists && String(redirectSnapshot.data()?.siteId || '') !== siteId) throw new Error('HANDLE_REDIRECT_CONFLICT');
+        transaction.set(redirectRef, {
+          oldSlug: previousHandle,
+          newSlug: handle,
+          siteId,
+          userId: user.uid,
+          createdAt: redirectSnapshot.data()?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        transaction.set(existingRef, sanitized, { merge: true });
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'HANDLE_REDIRECT_CONFLICT') {
+        return apiError(res, 409, 'HANDLE_REDIRECT_CONFLICT', 'The previous site handle is already reserved by another site.');
+      }
+      throw error;
+    }
+  } else {
+    await existingRef.set(sanitized, { merge: true });
+  }
   return res.status(existing.exists ? 200 : 201).json({ site: sanitized });
 });
 
@@ -4209,6 +4265,13 @@ app.get('*', async (req: Request, res: Response) => {
     if (!publishedSite && isAdminConfigured()) {
       try {
         publishedSite = await getPublishedSiteByHandle(handle);
+        if (!publishedSite && !customDomainSite) {
+          const redirect = await resolveSiteSlugRedirect(handle);
+          if (redirect?.canonicalSlug && redirect.canonicalSlug !== handle) {
+            const target = await getPublishedSiteByHandle(redirect.canonicalSlug);
+            if (target) return res.redirect(308, `/@${redirect.canonicalSlug}`);
+          }
+        }
       } catch (error) {
         publicSiteLookupFailed = true;
         console.error('[Public SSR profile lookup]', error);

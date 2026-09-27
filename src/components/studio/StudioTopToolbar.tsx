@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Locale, UserMiniSiteSummary } from '../../types';
 import { PremiumMark } from '../brand/PremiumMark';
+import { normalizeSiteSlug } from '../../lib/siteSlug';
 
 export interface StudioTopToolbarProps {
   handle: string;
@@ -63,8 +64,8 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
   const [copied, setCopied] = useState(false);
   const [siteSwitcherOpen, setSiteSwitcherOpen] = useState(false);
   const isRtl = locale === 'ar';
-  const cleanHandle = handle.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  const publicUrl = `https://raloa.app/@${cleanHandle}`;
+  const cleanHandle = normalizeSiteSlug(handle);
+  const publicUrl = cleanHandle ? `https://raloa.app/@${cleanHandle}` : 'https://raloa.app/';
 
   const handleCopyLink = () => {
     if (typeof navigator !== 'undefined') {

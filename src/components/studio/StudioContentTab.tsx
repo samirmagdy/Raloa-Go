@@ -20,6 +20,7 @@ import { Locale } from '../../types';
 import { SortableBlockList, StudioBlockItem } from './SortableBlockList';
 import { optimizedMediaUrl } from '../MediaGallery';
 import { isSupportedBlockType, isSupportedEmbedUrl } from '../../lib/blockTypes';
+import { normalizeSiteSlug, validateSiteSlug } from '../../lib/siteSlug';
 
 interface StudioContentTabProps {
   displayName: string;
@@ -77,6 +78,7 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
 
   const completedCount = [hasHandle, hasBio, hasLinks, hasAvatar].filter(Boolean).length;
   const progressPercent = Math.round((completedCount / 4) * 100);
+  const slugValidation = username ? validateSiteSlug(username) : null;
 
   const handleCelebrate = () => {
     confetti({
@@ -220,7 +222,7 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              {isRtl ? 'المعرف الشخصي (@handle)' : 'Handle (@handle)'}
+              {isRtl ? 'معرف الموقع العام (@handle)' : 'Public site handle (@handle)'}
             </label>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 rtl:left-auto rtl:right-0 pl-3 rtl:pl-0 rtl:pr-3 flex items-center pointer-events-none text-xs font-mono text-slate-400">
@@ -229,11 +231,18 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
               <input
                 type="text"
                 value={username}
-                onChange={(e) => onUsernameChange(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                onChange={(e) => onUsernameChange(normalizeSiteSlug(e.target.value))}
                 placeholder="username"
                 className="w-full pl-7 rtl:pl-3.5 rtl:pr-7 pr-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
+            {slugValidation && !slugValidation.valid && (
+              <p className="mt-1 text-[11px] font-medium text-rose-600 dark:text-rose-400">
+                {slugValidation.code === 'reserved'
+                  ? (isRtl ? 'هذا المعرف محجوز.' : 'This site handle is reserved.')
+                  : (isRtl ? 'استخدم 3 إلى 30 حرفاً إنجليزياً أو أرقاماً أو - أو _.' : 'Use 3–30 lowercase letters, numbers, hyphens, or underscores.')}
+              </p>
+            )}
           </div>
         </div>
 

@@ -3,6 +3,7 @@ import { getAuth as getAdminAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import Stripe from 'stripe';
 import { normalizeDesignTokens } from './src/utils/designTokens';
+import { normalizeSiteSlug, validateSiteSlug } from './src/lib/siteSlug';
 
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0319129908';
 const DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || 'ai-studio-raloadesignfirst-8ccbe7ea-5af1-4106-809a-71252bddde6f';
@@ -113,19 +114,20 @@ export async function getPublishedSiteById(userId: string, siteId: string): Prom
   if (!profileDocument.exists || profileDocument.data()?.privacyPreferences?.profilePublished === false) return null;
   const siteDocument = await adminDb.collection('users').doc(userId).collection('sites').doc(siteId).get();
   if (!siteDocument.exists || siteDocument.data()?.isPublished !== true) return null;
-  const cleanHandle = String(siteDocument.data()?.username || profileDocument.data()?.handle || '').trim().toLowerCase();
-  return /^[a-z0-9_-]{3,30}$/.test(cleanHandle) ? publicSiteData(profileDocument, siteDocument, cleanHandle) : null;
+  const cleanHandle = normalizeSiteSlug(siteDocument.data()?.username);
+  return validateSiteSlug(cleanHandle).valid ? publicSiteData(profileDocument, siteDocument, cleanHandle) : null;
 }
 
 export async function getPublishedSiteByHandle(handle: string, siteId?: string): Promise<Record<string, unknown> | null> {
-  const cleanHandle = handle.trim().toLowerCase();
+  const cleanHandle = normalizeSiteSlug(handle);
   if (!cleanHandle) return null;
   let siteDocument: FirebaseFirestore.QueryDocumentSnapshot | FirebaseFirestore.DocumentSnapshot | null = null;
   let profileDocument: FirebaseFirestore.DocumentSnapshot | null = null;
   if (siteId) {
-    const profileSnapshot = await adminDb.collection('users').where('handle', '==', cleanHandle).limit(1).get();
-    profileDocument = profileSnapshot.docs[0] || null;
-    if (profileDocument) siteDocument = await adminDb.collection('users').doc(profileDocument.id).collection('sites').doc(siteId).get();
+    const siteSnapshot = await adminDb.collectionGroup('sites').where('username', '==', cleanHandle).limit(100).get();
+    siteDocument = siteSnapshot.docs.find((document) => document.id === siteId) || null;
+    const ownerId = siteDocument?.ref.parent.parent?.id;
+    if (ownerId) profileDocument = await adminDb.collection('users').doc(ownerId).get();
   } else {
     const siteSnapshot = await adminDb.collectionGroup('sites').where('username', '==', cleanHandle).limit(100).get();
     siteDocument = siteSnapshot.docs.find((document) => document.data()?.isPublished === true) || null;
@@ -135,6 +137,50 @@ export async function getPublishedSiteByHandle(handle: string, siteId?: string):
   if (!profileDocument || !siteDocument?.exists || siteDocument.data()?.isPublished !== true) return null;
   if (profileDocument.data()?.privacyPreferences?.profilePublished === false) return null;
   return publicSiteData(profileDocument, siteDocument, cleanHandle);
+}
+
+export interface SiteSlugRedirect {
+  oldSlug: string;
+  newSlug: string;
+  siteId: string;
+  userId: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export async function findSiteSlugRedirect(slug: string): Promise<SiteSlugRedirect | null> {
+  const cleanSlug = normalizeSiteSlug(slug);
+  if (!validateSiteSlug(cleanSlug).valid) return null;
+  const snapshot = await adminDb.collection('site_slug_redirects').doc(cleanSlug).get();
+  if (!snapshot.exists) return null;
+  const data = snapshot.data() || {};
+  const redirect = {
+    oldSlug: cleanSlug,
+    newSlug: normalizeSiteSlug(data.newSlug),
+    siteId: String(data.siteId || ''),
+    userId: String(data.userId || ''),
+    createdAt: typeof data.createdAt === 'string' ? data.createdAt : undefined,
+    updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : undefined
+  } satisfies SiteSlugRedirect;
+  return redirect.newSlug && redirect.siteId && redirect.userId ? redirect : null;
+}
+
+export async function resolveSiteSlugRedirect(slug: string): Promise<{ requestedSlug: string; canonicalSlug: string; siteId: string; userId: string } | null> {
+  const requestedSlug = normalizeSiteSlug(slug);
+  let current = requestedSlug;
+  const seen = new Set<string>();
+  for (let index = 0; index < 5; index += 1) {
+    if (seen.has(current)) return null;
+    seen.add(current);
+    const redirect = await findSiteSlugRedirect(current);
+    if (!redirect) return current === requestedSlug ? null : { requestedSlug, canonicalSlug: current, siteId: '', userId: '' };
+    current = redirect.newSlug;
+    if (current === requestedSlug) return null;
+    if (index === 4) return null;
+    const target = await getPublishedSiteByHandle(current);
+    if (target) return { requestedSlug, canonicalSlug: current, siteId: redirect.siteId, userId: redirect.userId };
+  }
+  return null;
 }
 
 export async function getCheckoutSessionStatus(uid: string, sessionId: string): Promise<{
