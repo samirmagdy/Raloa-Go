@@ -3,6 +3,7 @@ import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import type { AuthoritativeBillingState } from '../../server-services';
 import { assertOrderTransition, legacyOrderState } from '../domains/orders/state-machine';
 import type { MediaAsset, MediaMetadataRepository } from '../domains/media/contracts';
+import { assertInventoryBalance, assertPositiveQuantity } from '../core/domain-invariants';
 import type { AudienceRepository, AudienceRecord, AnalyticsRollup, AnalyticsRollupsRepository, BillingRepository, BillingStateRecord, BookingRecord, BookingsRepository, DomainsRepository, IntegrationRecord, IntegrationsRepository, InventoryRecord, InventoryRepository, OrderRecord, OrdersRepository, OrderTransitionRecord, SiteRecord, SitesRepository, SubscriptionRecord, SubscriptionsRepository } from './contracts';
 
 async function records<T>(query: any): Promise<T[]> {
@@ -54,17 +55,21 @@ export function createFirestoreOrdersRepository(db: Firestore): OrdersRepository
 
 export function createFirestoreInventoryRepository(db: Firestore): InventoryRepository {
   const collection = db.collection('inventory');
-  const change = async (productId: string, availableDelta: number, reservedDelta: number) => {
+  const change = async (productId: string, quantity: number, operation: 'reserve' | 'release' | 'decrement') => {
+    assertPositiveQuantity(quantity);
     await db.runTransaction(async (transaction) => {
       const reference = collection.doc(productId);
       const snapshot = await transaction.get(reference);
       const data = snapshot.data() || {};
-      const available = Number(data.available || 0) + availableDelta;
-      if (available < 0) throw new Error('INVENTORY_UNAVAILABLE');
+      const currentAvailable = Number(data.available || 0);
+      const currentReserved = Number(data.reserved || 0);
+      assertInventoryBalance(currentAvailable, currentReserved, quantity, operation);
+      const availableDelta = operation === 'release' ? quantity : -quantity;
+      const reservedDelta = operation === 'reserve' ? quantity : operation === 'release' ? -quantity : 0;
       transaction.set(reference, { productId, available: FieldValue.increment(availableDelta), reserved: FieldValue.increment(reservedDelta) }, { merge: true });
     });
   };
-  return { getByProduct: async (productId) => { const snapshot = await collection.doc(productId).get(); return snapshot.exists ? { id: snapshot.id, ...snapshot.data() } as InventoryRecord : null; }, reserve: (id, quantity) => change(id, -quantity, quantity), release: (id, quantity) => change(id, quantity, -quantity), decrement: (id, quantity) => change(id, -quantity, 0) };
+  return { getByProduct: async (productId) => { const snapshot = await collection.doc(productId).get(); return snapshot.exists ? { id: snapshot.id, ...snapshot.data() } as InventoryRecord : null; }, reserve: (id, quantity) => change(id, quantity, 'reserve'), release: (id, quantity) => change(id, quantity, 'release'), decrement: (id, quantity) => change(id, quantity, 'decrement') };
 }
 
 export function createFirestoreSubscriptionsRepository(db: Firestore): SubscriptionsRepository {

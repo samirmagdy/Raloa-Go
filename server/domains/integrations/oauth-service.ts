@@ -1,5 +1,6 @@
 import { oauthTokenBundleSchemaV1 } from '../../../src/shared/schema';
 import { integrationEnvelopeCipher } from '../../infrastructure/crypto/envelope';
+import { assertOAuthConnectionUsable, assertOAuthStateTransition } from '../../core/domain-invariants';
 
 export type OAuthConnectionState = 'connected' | 'refreshing' | 'reauthorization_required' | 'revoked' | 'error';
 export interface OAuthTokenBundle { accessToken: string; refreshToken?: string; expiresAt?: number; }
@@ -44,15 +45,18 @@ export function createOAuthTokenService(repository: OAuthConnectionRepository, a
       const adapter = adapterFor(provider);
       if (!adapter) throw new Error('OAUTH_PROVIDER_NOT_SUPPORTED');
       let current = connection;
+      assertOAuthConnectionUsable(current.state);
       if (current.expiresAt && current.expiresAt <= Date.now() + 60_000) {
         if (!adapter.refresh || !current.encryptedRefreshToken) throw new Error('OAUTH_REAUTH_REQUIRED');
         const claimed = await repository.claimRefreshLock(current.id, Date.now() + 30_000);
         if (claimed) {
           try {
             const refreshed = await adapter.refresh(await tokenBundle(current));
+            assertOAuthStateTransition(current.state, 'connected');
             await repository.save({ ...current, state: 'connected', encryptedAccessToken: await integrationEnvelopeCipher.encrypt(refreshed.accessToken), ...(refreshed.refreshToken ? { encryptedRefreshToken: await integrationEnvelopeCipher.encrypt(refreshed.refreshToken) } : {}), expiresAt: refreshed.expiresAt, tokenVersion: current.tokenVersion + 1, refreshLockUntil: undefined, updatedAt: new Date().toISOString() });
             current = { ...current, encryptedAccessToken: await integrationEnvelopeCipher.encrypt(refreshed.accessToken), expiresAt: refreshed.expiresAt };
           } catch (error) {
+            assertOAuthStateTransition(current.state, 'reauthorization_required');
             await repository.save({ ...current, state: 'reauthorization_required', refreshLockUntil: undefined, updatedAt: new Date().toISOString() });
             throw error;
           } finally { await repository.releaseRefreshLock(current.id); }

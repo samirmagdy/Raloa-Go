@@ -2,6 +2,7 @@ import type { Express, Request, Response } from 'express';
 import type { AuthorizationService } from '../../core/authorization-service';
 import type { PolicyAction } from '../../core/authorization-policy';
 import type { SitePersistenceRepository } from '../../repositories/site-persistence';
+import { assertPublishableSite, assertSlugAvailable } from '../../core/domain-invariants';
 
 type SitesControllerDependencies = Record<string, any> & {
   sitesRepository: SitePersistenceRepository;
@@ -59,7 +60,7 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
     const username = normalizeSiteSlug(incoming.username);
     const slugValidation = validateSiteSlug(username);
     if (!slugValidation.valid) return apiError(res, 400, slugValidation.code === 'reserved' ? 'RESERVED_HANDLE' : 'INVALID_HANDLE', slugValidation.code === 'reserved' ? 'That site handle is reserved.' : 'A unique site handle is required.');
-    if (await siteHandleTaken(username, user.uid, siteId)) return apiError(res, 409, 'HANDLE_IN_USE', 'That site handle is already in use.');
+    try { assertSlugAvailable(await siteHandleTaken(username, user.uid, siteId)); } catch { return apiError(res, 409, 'HANDLE_IN_USE', 'That site handle is already in use.'); }
     const requestedTemplateId = typeof incoming.templateId === 'string' ? incoming.templateId.trim() : '';
     if (!requestedTemplateId) return apiError(res, 400, 'TEMPLATE_REQUIRED', 'A template must be selected before creating a site.');
     if (!templatesData.some((template) => template.id === requestedTemplateId)) return apiError(res, 400, 'INVALID_TEMPLATE', 'The selected template does not exist.');
@@ -154,7 +155,7 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
     const handle = normalizeSiteSlug(merged.username);
     const handleValidation = validateSiteSlug(handle);
     if (!handleValidation.valid) return apiError(res, 400, handleValidation.code === 'reserved' ? 'RESERVED_HANDLE' : 'INVALID_HANDLE', handleValidation.code === 'reserved' ? 'That site handle is reserved.' : 'A valid site handle is required before saving a site.');
-    if (await siteHandleTaken(handle, user.uid, siteId)) return apiError(res, 409, 'HANDLE_IN_USE', 'That site handle is already in use.');
+    try { assertSlugAvailable(await siteHandleTaken(handle, user.uid, siteId)); } catch { return apiError(res, 409, 'HANDLE_IN_USE', 'That site handle is already in use.'); }
     merged.username = handle;
     if (typeof merged.displayName !== 'string' || merged.displayName.length > 120 || typeof merged.bio !== 'string' || merged.bio.length > 2000) {
       return apiError(res, 400, 'INVALID_SITE_CONTENT', 'Display name and bio are required and must be within limits.');
@@ -181,8 +182,13 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
     if (entitlement) return entitlementError(res, entitlement.feature, entitlement.message, entitlement.details);
     const ownedMediaError = await validateOwnedMediaReferences(sanitized, user.uid, siteId);
     if (ownedMediaError) return apiError(res, 400, 'INVALID_MEDIA_REFERENCE', ownedMediaError);
-    if (sanitized.isPublished === true && (!sanitized.username || !sanitized.displayName || !sanitized.bio)) {
-      return apiError(res, 400, 'PUBLISH_REQUIREMENTS_NOT_MET', 'Complete your handle, display name, and bio before publishing.');
+    if (sanitized.isPublished === true) {
+      try {
+        assertPublishableSite({ ...sanitized, validationIssues: mergedSchema.issues });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'INVALID_SITE_CONTENT') return apiError(res, 400, 'INVALID_SITE_CONTENT', 'Site content does not match the shared content schema.');
+        return apiError(res, 400, 'PUBLISH_REQUIREMENTS_NOT_MET', 'Complete your handle, display name, and bio before publishing.');
+      }
     }
     const previousHandle = normalizeSiteSlug(current.username);
     const saved = await sitesRepository.saveVersioned({ userId: user.uid, siteId, site: sanitized, previousHandle, nextHandle: handle, expectedRevision });

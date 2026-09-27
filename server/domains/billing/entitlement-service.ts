@@ -2,6 +2,7 @@ import { normalizedEntitlementSchema, type NormalizedEntitlement } from '../../.
 import type { AuthoritativeBillingState } from '../../../server-services';
 import type { BillingRepository } from '../../repositories/contracts';
 import { getPlanCapabilities, type PlanCapabilities } from '../../../src/lib/planCapabilities';
+import { assertEntitlementLimit } from '../../core/domain-invariants';
 
 export type EntitlementFeature = 'analytics' | 'customDomains' | 'studioControls' | 'premiumTemplates' | 'removeBranding';
 
@@ -59,7 +60,7 @@ export function createEntitlementService(dependencies: { billing: BillingReposit
     async assertLimit(accountId, feature, value) {
       const snapshot = await this.resolve(accountId);
       const limit = snapshot.entitlements[feature];
-      if (limit !== null && value > limit) throw new Error('ENTITLEMENT_LIMIT_EXCEEDED');
+      assertEntitlementLimit(limit, value);
       return snapshot;
     }
   };
