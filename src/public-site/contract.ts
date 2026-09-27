@@ -1,3 +1,5 @@
+import type { DesignTokens } from '../utils/designTokens';
+
 export interface PublicCreatorPage {
   handle: string;
   name: string;
@@ -9,6 +11,7 @@ export interface PublicCreatorPage {
   metaTitle?: string;
   metaDescription?: string;
   isPublished: boolean;
+  designTokens: DesignTokens;
   site: Record<string, unknown>;
 }
 

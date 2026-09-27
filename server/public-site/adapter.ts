@@ -13,7 +13,7 @@ function cleanHandle(value: string): string {
 
 function pageFromSite(handle: string, site: Record<string, unknown>): PublicCreatorPage {
   const content = normalizeSiteContent(site);
-  return { handle, name: content.displayName || handle, role: content.role || '', bio: content.bio || '', bioAr: content.bioAr || '', avatar: content.avatar || '', coverImage: content.coverImage || '', metaTitle: content.metaTitle || undefined, metaDescription: content.metaDescription || undefined, isPublished: site.isPublished === true, site: content as unknown as Record<string, unknown> };
+  return { handle, name: content.displayName || handle, role: content.role || '', bio: content.bio || '', bioAr: content.bioAr || '', avatar: content.avatar || '', coverImage: content.coverImage || '', metaTitle: content.metaTitle || undefined, metaDescription: content.metaDescription || undefined, isPublished: site.isPublished === true, designTokens: content.designTokens, site: content as unknown as Record<string, unknown> };
 }
 
 function metadataFor(page: PublicCreatorPage): PublicCreatorMetadata {

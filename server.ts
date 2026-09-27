@@ -3874,12 +3874,12 @@ app.get('/api/public/sites/:handle', async (req: Request, res: Response) => {
         }
       }
     }
-    if (site) return res.status(200).json({ site });
+    if (site) return res.set({ 'Cache-Control': publicCreatorAdapter.cacheControl, Vary: 'Host' }).status(200).json({ site });
 
     if (publicDemoFixturesEnabled) {
       const fixture = templatesData.find((template) => template.id.toLowerCase() === handle || template.name.toLowerCase() === handle);
       if (fixture) {
-        return res.status(200).json({
+        return res.set({ 'Cache-Control': publicCreatorAdapter.cacheControl, Vary: 'Host' }).status(200).json({
           site: {
             username: handle,
             displayName: fixture.name,
@@ -5014,6 +5014,7 @@ app.get('*', async (req: Request, res: Response) => {
 
     if (creator) {
       isPublicProfile = true;
+      res.set({ 'Cache-Control': publicCreatorAdapter.cacheControl, Vary: 'Host' });
       // Dynamic OpenGraph & Twitter hydration (FR-3.2)
       const profileTitle = 'metaTitle' in creator && creator.metaTitle ? creator.metaTitle : `${creator.name} (@${handle}) - RALOA Mini-Site`;
       const profileDescription = 'metaDescription' in creator && creator.metaDescription ? creator.metaDescription : creator.bio || `Explore ${creator.name}'s official links and work on RALOA.`;
