@@ -146,6 +146,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /bookings/{bookingId} { allow read, write: if false; }
+    match /booking_locks/{lockId} { allow read, write: if false; }
+    match /calendar_integrations/{integrationId} { allow read, write: if false; }
+    match /calendar_jobs/{jobId} { allow read, write: if false; }
+    match /notification_jobs/{jobId} { allow read, write: if false; }
     match /orders/{orderId} { allow read, write: if false; }
     match /page_views/{viewId} {
       allow read, write: if false;

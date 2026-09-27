@@ -16,6 +16,7 @@
     "test:analytics": "tsx test-analytics.ts",
     "test:entitlements": "tsx test-plan-entitlements.ts",
     "test:integrations": "tsx test-social-integrations.ts",
+    "test:calendar": "tsx test-calendar.ts",
     "test:seo": "tsx test-seo.ts"
   },
   "dependencies": {

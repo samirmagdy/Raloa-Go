@@ -32,7 +32,7 @@ import {
 } from './server-services';
 import { templatesData } from './src/data/content';
 import { getPlanCapabilities, getPlanTier, isPremiumTemplate } from './src/lib/planCapabilities';
-import { calendarProviderIsConfigured, type CalendarProvider } from './server-calendar';
+import { calendarAdapter, calendarOAuthConfiguration, calendarProviderIsConfigured, decryptCalendarTokens, encryptCalendarTokens, type CalendarProvider, type CalendarBookingEvent, type CalendarTokenBundle } from './server-calendar';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1026,9 +1026,11 @@ function escapeEmailText(value: string): string {
 
 async function processPendingBookingNotifications(): Promise<void> {
   if (!isAdminConfigured() || !process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) return;
-  const jobs = await adminDb.collection('notification_jobs').where('status', '==', 'pending').limit(20).get();
+  const jobs = await adminDb.collection('notification_jobs').where('status', 'in', ['pending', 'retry', 'processing']).limit(50).get();
   for (const jobSnapshot of jobs.docs) {
     const job = jobSnapshot.data();
+    if (job.nextAttemptAt && Date.parse(String(job.nextAttemptAt)) > Date.now()) continue;
+    if (job.status === 'processing' && Date.parse(String(job.updatedAt || 0)) > Date.now() - 10 * 60 * 1000) continue;
     const bookingSnapshot = await adminDb.collection('bookings').doc(String(job.bookingId || '')).get();
     if (!bookingSnapshot.exists) {
       await jobSnapshot.ref.update({ status: 'failed', lastError: 'BOOKING_NOT_FOUND', updatedAt: new Date().toISOString() });
@@ -1037,13 +1039,15 @@ async function processPendingBookingNotifications(): Promise<void> {
     const booking = bookingSnapshot.data() || {};
     const claim = await adminDb.runTransaction(async (transaction) => {
       const current = await transaction.get(jobSnapshot.ref);
-      if (!current.exists || current.data()?.status !== 'pending') return false;
+      const currentStatus = String(current.data()?.status || '');
+      const currentUpdatedAt = Date.parse(String(current.data()?.updatedAt || 0));
+      if (!current.exists || !['pending', 'retry'].includes(currentStatus) && !(currentStatus === 'processing' && currentUpdatedAt <= Date.now() - 10 * 60 * 1000)) return false;
       transaction.update(jobSnapshot.ref, { status: 'processing', attempts: Number(current.data()?.attempts || 0) + 1, updatedAt: new Date().toISOString() });
       return true;
     });
     if (!claim) continue;
     const recipient = typeof job.email === 'string' ? job.email : '';
-    const subject = job.type === 'booking_created' ? 'New booking received' : 'Booking confirmation';
+    const subject = job.type === 'booking_request' ? 'New booking request received' : job.type === 'booking_confirmed' ? 'Booking confirmed' : 'Booking request received';
     const html = `<p>${subject}</p><p>Service: ${escapeEmailText(String(booking.serviceName || 'Appointment'))}</p><p>When: ${escapeEmailText(String(booking.localDate || ''))} ${escapeEmailText(String(booking.localTime || ''))} (${escapeEmailText(String(booking.timezone || 'UTC'))})</p>`;
     try {
       const response = await fetch('https://api.resend.com/emails', {
@@ -1054,7 +1058,63 @@ async function processPendingBookingNotifications(): Promise<void> {
       if (!response.ok) throw new Error(`RESEND_${response.status}`);
       await jobSnapshot.ref.update({ status: 'sent', sentAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     } catch (error) {
-      await jobSnapshot.ref.update({ status: 'failed', lastError: error instanceof Error ? error.message : 'DELIVERY_FAILED', updatedAt: new Date().toISOString() });
+      const attempts = Number(jobSnapshot.data()?.attempts || 1);
+      const terminal = attempts >= 8;
+      const delayMs = Math.min(6 * 60 * 60 * 1000, 30_000 * (2 ** Math.min(attempts - 1, 8))) + Math.floor(Math.random() * 10_000);
+      await jobSnapshot.ref.update({ status: terminal ? 'failed' : 'retry', lastError: error instanceof Error ? error.message : 'DELIVERY_FAILED', nextAttemptAt: terminal ? null : new Date(Date.now() + delayMs).toISOString(), updatedAt: new Date().toISOString() });
+    }
+  }
+}
+
+async function processPendingCalendarJobs(): Promise<void> {
+  if (!isAdminConfigured()) return;
+  const jobs = await adminDb.collection('calendar_jobs').where('status', 'in', ['pending', 'retry', 'processing']).limit(50).get();
+  for (const jobSnapshot of jobs.docs) {
+    const job = jobSnapshot.data();
+    if (job.nextAttemptAt && Date.parse(String(job.nextAttemptAt)) > Date.now()) continue;
+    if (job.status === 'processing' && Date.parse(String(job.updatedAt || 0)) > Date.now() - 10 * 60 * 1000) continue;
+    const claimed = await adminDb.runTransaction(async (transaction) => {
+      const current = await transaction.get(jobSnapshot.ref);
+      const currentStatus = String(current.data()?.status || '');
+      const currentUpdatedAt = Date.parse(String(current.data()?.updatedAt || 0));
+      if (!current.exists || !['pending', 'retry'].includes(currentStatus) && !(currentStatus === 'processing' && currentUpdatedAt <= Date.now() - 10 * 60 * 1000)) return false;
+      transaction.update(jobSnapshot.ref, { status: 'processing', attempts: Number(current.data()?.attempts || 0) + 1, updatedAt: new Date().toISOString() });
+      return true;
+    });
+    if (!claimed) continue;
+    try {
+      const bookingSnapshot = await adminDb.collection('bookings').doc(String(job.bookingId || '')).get();
+      if (!bookingSnapshot.exists) throw new Error('BOOKING_NOT_FOUND');
+      if (bookingSnapshot.data()?.status === 'cancelled' && job.operation !== 'cancel') throw new Error('BOOKING_NOT_ACTIVE');
+      const booking = bookingSnapshot.data() || {};
+      const provider = String(job.provider || '') as CalendarProvider;
+      if (!['google', 'outlook'].includes(provider)) throw new Error('CALENDAR_PROVIDER_NOT_CONFIGURED');
+      const integrationRef = adminDb.collection('calendar_integrations').doc(`${String(booking.hostUserId)}_${provider}`);
+      const integrationSnapshot = await integrationRef.get();
+      if (!integrationSnapshot.exists) throw new Error('CALENDAR_REAUTH_REQUIRED');
+      const integration = integrationSnapshot.data() || {};
+      const adapter = calendarAdapter(provider);
+      let tokens = decryptCalendarTokens(String(integration.encryptedTokens || ''));
+      const refreshed = await adapter.refresh(tokens);
+      if (JSON.stringify(refreshed) !== JSON.stringify(tokens)) {
+        tokens = refreshed;
+        await integrationRef.set({ encryptedTokens: encryptCalendarTokens(tokens), expiresAt: tokens.expiresAt, updatedAt: new Date().toISOString() }, { merge: true });
+      }
+      if (job.operation === 'cancel') {
+        if (typeof job.externalEventId === 'string' && job.externalEventId) await adapter.cancelEvent(tokens, job.externalEventId);
+        await jobSnapshot.ref.update({ status: 'completed', completedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      } else {
+        const event: CalendarBookingEvent = { id: String(booking.id), title: `${String(booking.serviceName || 'Appointment')} with ${String(booking.customerName || 'Guest')}`, description: String(booking.notes || ''), start: String(booking.slotStart), end: String(booking.slotEnd), timezone: String(booking.timezone || 'UTC'), attendeeEmail: String(booking.customerEmail) };
+        const created = await adapter.createEvent(tokens, event);
+        await jobSnapshot.ref.update({ status: 'completed', externalEventId: created.externalEventId, completedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      }
+    } catch (error) {
+      const attempts = Number(jobSnapshot.data()?.attempts || 1);
+      const message = error instanceof Error ? error.message : 'CALENDAR_DELIVERY_FAILED';
+      const requiresAuth = message === 'CALENDAR_REAUTH_REQUIRED' || message.includes('401') || message.includes('403');
+      const terminal = requiresAuth || attempts >= 8;
+      const delayMs = Math.min(6 * 60 * 60 * 1000, 30_000 * (2 ** Math.min(attempts - 1, 8))) + Math.floor(Math.random() * 10_000);
+      await jobSnapshot.ref.update({ status: terminal ? 'blocked' : 'retry', lastError: message, nextAttemptAt: terminal ? null : new Date(Date.now() + delayMs).toISOString(), updatedAt: new Date().toISOString() });
     }
   }
 }
@@ -1701,8 +1761,9 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
       customerName,
       customerEmail,
       notes,
-      status: 'confirmed',
-      confirmationStatus: 'confirmed',
+      status: 'pending_confirmation',
+      confirmationStatus: 'pending',
+      lockIds: lockReferences.map((reference) => reference.id),
       createdAt: now,
       updatedAt: now
     };
@@ -1715,16 +1776,16 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
     const hostProfile = await adminDb.collection('users').doc(String(hostSite.userId)).get();
     const hostEmail = typeof hostProfile.data()?.email === 'string' ? hostProfile.data()?.email : '';
     const notifications = [
-      { audience: 'customer', email: customerEmail, type: 'booking_confirmation' },
-      ...(hostEmail ? [{ audience: 'creator', email: hostEmail, type: 'booking_created' }] : [])
+      { audience: 'customer', email: customerEmail, type: 'booking_request_received' },
+      ...(hostEmail ? [{ audience: 'creator', email: hostEmail, type: 'booking_request' }] : [])
     ];
-    await Promise.all(notifications.map((notification) => adminDb.collection('notification_jobs').add({ ...notification, bookingId: bookingReference.id, status: 'pending', createdAt: now })));
+    await Promise.all(notifications.map((notification) => adminDb.collection('notification_jobs').add({ ...notification, bookingId: bookingReference.id, status: 'pending', attempts: 0, maxAttempts: 8, createdAt: now })));
     const calendarProvider = config.calendarProvider || 'none';
     const calendarReady = calendarProvider !== 'none' && calendarProviderIsConfigured(calendarProvider as CalendarProvider);
     const calendarJob: Record<string, unknown> = {
       bookingId: bookingReference.id,
       provider: calendarProvider,
-      status: calendarProvider === 'none' ? 'skipped' : calendarReady ? 'pending' : 'blocked',
+      status: calendarProvider === 'none' ? 'skipped' : calendarReady ? 'awaiting_confirmation' : 'blocked',
       createdAt: now
     };
     if (calendarProvider !== 'none' && !calendarReady) calendarJob.lastError = 'CALENDAR_PROVIDER_NOT_CONFIGURED';
@@ -1738,6 +1799,63 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
     console.error('[Public booking]', error);
     return apiError(res, 503, 'BOOKING_UNAVAILABLE', 'Booking service is temporarily unavailable.');
   }
+});
+
+app.get('/api/creator/bookings', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'BOOKINGS_UNAVAILABLE', 'Booking management is not configured.');
+  const snapshot = await adminDb.collection('bookings').where('hostUserId', '==', user.uid).limit(200).get();
+  const bookings = snapshot.docs.map((document) => ({ id: document.id, ...document.data() })) as Array<Record<string, any>>;
+  return res.json({ bookings: bookings.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
+});
+
+app.post('/api/creator/bookings/:bookingId/confirm', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'BOOKINGS_UNAVAILABLE', 'Booking management is not configured.');
+  const bookingRef = adminDb.collection('bookings').doc(String(req.params.bookingId || ''));
+  const bookingSnapshot = await bookingRef.get();
+  if (!bookingSnapshot.exists || bookingSnapshot.data()?.hostUserId !== user.uid) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
+  const booking = bookingSnapshot.data() || {};
+  if (booking.status === 'cancelled') return apiError(res, 409, 'BOOKING_CANCELLED', 'Cancelled bookings cannot be confirmed.');
+  if (booking.status !== 'confirmed') await bookingRef.set({ status: 'confirmed', confirmationStatus: 'confirmed', confirmedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true });
+  const customerEmail = String(booking.customerEmail || '');
+  await adminDb.collection('notification_jobs').add({ audience: 'customer', email: customerEmail, type: 'booking_confirmed', bookingId: bookingRef.id, status: 'pending', attempts: 0, maxAttempts: 8, createdAt: new Date().toISOString() });
+  const hostSite = await getPublishedSiteByHandle(String(booking.hostHandle || '')).catch(() => null);
+  const provider = String((hostSite?.bookingConfig as Record<string, unknown> | undefined)?.calendarProvider || 'none') as CalendarProvider | 'none';
+  if (provider !== 'none') {
+    const calendarRef = adminDb.collection('calendar_jobs').where('bookingId', '==', bookingRef.id).limit(1);
+    const jobs = await calendarRef.get();
+    if (!jobs.empty) await jobs.docs[0].ref.set({ status: calendarProviderIsConfigured(provider) ? 'pending' : 'blocked', operation: 'create', lastError: calendarProviderIsConfigured(provider) ? null : 'CALENDAR_PROVIDER_NOT_CONFIGURED', updatedAt: new Date().toISOString() }, { merge: true });
+  }
+  return res.json({ id: bookingRef.id, status: 'confirmed', confirmationStatus: 'confirmed' });
+});
+
+app.post('/api/creator/bookings/:bookingId/cancel', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'BOOKINGS_UNAVAILABLE', 'Booking management is not configured.');
+  const bookingRef = adminDb.collection('bookings').doc(String(req.params.bookingId || ''));
+  const existing = await bookingRef.get();
+  if (!existing.exists || existing.data()?.hostUserId !== user.uid) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
+  const booking = existing.data() || {};
+  if (booking.status === 'cancelled') return res.json({ id: bookingRef.id, status: 'cancelled', confirmationStatus: 'cancelled' });
+  await adminDb.runTransaction(async (transaction) => {
+    const current = await transaction.get(bookingRef);
+    if (!current.exists || current.data()?.hostUserId !== user.uid || current.data()?.status === 'cancelled') return;
+    const lockIds = Array.isArray(current.data()?.lockIds) ? current.data()?.lockIds : [];
+    transaction.update(bookingRef, { status: 'cancelled', confirmationStatus: 'cancelled', cancelledAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    for (const lockId of lockIds) if (typeof lockId === 'string') transaction.delete(adminDb.collection('booking_locks').doc(lockId));
+  });
+  const calendarJobs = await adminDb.collection('calendar_jobs').where('bookingId', '==', bookingRef.id).limit(1).get();
+  if (!calendarJobs.empty) {
+    const job = calendarJobs.docs[0];
+    const data = job.data();
+    await job.ref.set(data.externalEventId ? { status: 'pending', operation: 'cancel', updatedAt: new Date().toISOString() } : { status: 'cancelled', updatedAt: new Date().toISOString() }, { merge: true });
+  }
+  await adminDb.collection('notification_jobs').add({ audience: 'customer', email: String(booking.customerEmail || ''), type: 'booking_cancelled', bookingId: bookingRef.id, status: 'pending', attempts: 0, maxAttempts: 8, createdAt: new Date().toISOString() });
+  return res.json({ id: bookingRef.id, status: 'cancelled', confirmationStatus: 'cancelled' });
 });
 
 app.post('/api/v1/public/newsletter', async (req: Request, res: Response) => {
@@ -3419,6 +3537,73 @@ app.delete('/api/integrations/:provider', async (req: Request, res: Response) =>
   return res.status(204).send();
 });
 
+function calendarTokenStorageConfigured(): boolean {
+  return Boolean((process.env.INTEGRATION_ENCRYPTION_KEY && process.env.INTEGRATION_ENCRYPTION_KEY.length >= 32) || (process.env.NODE_ENV !== 'production' && AUTH_SESSION_SECRET.length >= 32));
+}
+
+app.get('/api/calendar/integrations', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'CALENDAR_UNAVAILABLE', 'Calendar integrations are not configured.');
+  const snapshot = await adminDb.collection('calendar_integrations').where('userId', '==', user.uid).get();
+  return res.json({ integrations: snapshot.docs.map((doc) => { const value = doc.data(); return { provider: value.provider, status: value.status, scopes: value.scopes || [], connectedAt: value.connectedAt, updatedAt: value.updatedAt, lastError: value.lastError || undefined }; }) });
+});
+
+app.get('/api/calendar/:provider/start', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  const provider = req.params.provider as CalendarProvider;
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!['google', 'outlook'].includes(provider)) return apiError(res, 404, 'CALENDAR_PROVIDER_NOT_FOUND', 'Unsupported calendar provider.');
+  const profile = (await adminDb.collection('users').doc(user.uid).get()).data();
+  if (!getPlanCapabilities(profile as any).studioControls) return entitlementError(res, 'studioControls', 'Calendar integrations require the Studio plan.');
+  const configuration = calendarOAuthConfiguration(provider);
+  if (!configuration || !calendarTokenStorageConfigured() || !isAdminConfigured()) return apiError(res, 503, 'CALENDAR_NOT_CONFIGURED', 'Calendar OAuth is not configured.');
+  const nonce = crypto.randomBytes(24).toString('base64url');
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+  const payload = Buffer.from(JSON.stringify({ uid: user.uid, nonce, exp: expiresAt, provider })).toString('base64url');
+  const state = `${payload}.${signOAuthState(payload)}`;
+  await adminDb.collection('oauth_states').doc(nonce).set({ userId: user.uid, provider: `calendar:${provider}`, expiresAt, createdAt: new Date().toISOString() });
+  const url = calendarAdapter(provider).authorizeUrl(state);
+  if (req.query.format === 'json') return res.json({ url });
+  return res.redirect(url);
+});
+
+app.get('/api/calendar/:provider/callback', async (req: Request, res: Response) => {
+  const provider = req.params.provider as CalendarProvider;
+  const fail = (code: string) => res.redirect(`${APP_URL}/studio?calendar=${encodeURIComponent(provider)}&status=error&code=${encodeURIComponent(code)}`);
+  if (!['google', 'outlook'].includes(provider) || !calendarOAuthConfiguration(provider) || !calendarTokenStorageConfigured() || !isAdminConfigured()) return fail('not_configured');
+  const code = typeof req.query.code === 'string' ? req.query.code : '';
+  const state = typeof req.query.state === 'string' ? req.query.state : '';
+  if (!code || !state) return fail('missing_callback_parameters');
+  try {
+    const [payload, signature] = state.split('.');
+    const expected = payload ? signOAuthState(payload) : '';
+    if (!payload || !signature || signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return fail('invalid_state');
+    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { uid: string; nonce: string; exp: number; provider: CalendarProvider };
+    if (decoded.provider !== provider || !decoded.uid || !decoded.nonce || decoded.exp < Date.now()) return fail('expired_state');
+    const stateRef = adminDb.collection('oauth_states').doc(decoded.nonce);
+    const stateSnapshot = await stateRef.get();
+    if (!stateSnapshot.exists || stateSnapshot.data()?.userId !== decoded.uid || stateSnapshot.data()?.provider !== `calendar:${provider}` || Number(stateSnapshot.data()?.expiresAt) < Date.now()) return fail('invalid_state');
+    await stateRef.delete();
+    const tokens = await calendarAdapter(provider).exchangeCode(code);
+    const now = new Date().toISOString();
+    await adminDb.collection('calendar_integrations').doc(`${decoded.uid}_${provider}`).set({ userId: decoded.uid, provider, status: 'connected', scopes: calendarOAuthConfiguration(provider)!.scopes, encryptedTokens: encryptCalendarTokens(tokens), expiresAt: tokens.expiresAt, connectedAt: now, updatedAt: now }, { merge: true });
+    return res.redirect(`${APP_URL}/studio?calendar=${encodeURIComponent(provider)}&status=connected`);
+  } catch (error) {
+    console.error('[Calendar OAuth callback]', error);
+    return fail('oauth_failed');
+  }
+});
+
+app.delete('/api/calendar/:provider', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  const provider = req.params.provider as CalendarProvider;
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!['google', 'outlook'].includes(provider)) return apiError(res, 404, 'CALENDAR_PROVIDER_NOT_FOUND', 'Unsupported calendar provider.');
+  await adminDb.collection('calendar_integrations').doc(`${user.uid}_${provider}`).delete();
+  return res.status(204).send();
+});
+
 app.get('/api/domains', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
@@ -3820,6 +4005,8 @@ if (isDirectExecution && process.env.NODE_ENV !== 'test') {
   });
   const notificationWorker = setInterval(() => { void processPendingBookingNotifications(); }, 30_000);
   notificationWorker.unref();
+  const calendarWorker = setInterval(() => { void processPendingCalendarJobs(); }, 30_000);
+  calendarWorker.unref();
 }
 
 export default app;

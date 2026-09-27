@@ -115,7 +115,7 @@ export async function getPublishedSiteById(userId: string, siteId: string): Prom
   return /^[a-z0-9_-]{3,30}$/.test(cleanHandle) ? publicSiteData(profileDocument, siteDocument, cleanHandle) : null;
 }
 
-export async function getPublishedSiteByHandle(handle: string, siteId = 'default'): Promise<Record<string, unknown> | null> {
+export async function getPublishedSiteByHandle(handle: string, siteId?: string): Promise<Record<string, unknown> | null> {
   const cleanHandle = handle.trim().toLowerCase();
   if (!cleanHandle) return null;
 
@@ -127,8 +127,14 @@ export async function getPublishedSiteByHandle(handle: string, siteId = 'default
   if (!profileDocument) return null;
   if (profileDocument.data()?.privacyPreferences?.profilePublished === false) return null;
 
-  const siteDocument = await adminDb.collection('users').doc(profileDocument.id).collection('sites').doc(siteId).get();
-  if (!siteDocument.exists || siteDocument.data()?.isPublished !== true) return null;
+  const sites = adminDb.collection('users').doc(profileDocument.id).collection('sites');
+  const siteDocument = siteId
+    ? await sites.doc(siteId).get()
+    : (await sites.where('isPublished', '==', true).limit(100).get()).docs.find((document) => {
+        const data = document.data();
+        return String(data.username || '').trim().toLowerCase() === cleanHandle;
+      }) || null;
+  if (!siteDocument || !siteDocument.exists || siteDocument.data()?.isPublished !== true) return null;
   return publicSiteData(profileDocument, siteDocument, cleanHandle);
 }
 

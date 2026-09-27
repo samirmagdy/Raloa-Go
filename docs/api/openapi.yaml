@@ -6,6 +6,91 @@ info:
 servers:
   - url: https://raloa.app
 paths:
+  /api/integrations/providers:
+    get:
+      operationId: get_get_api_integrations_providers
+      responses:
+        '200': { description: Supported providers }
+        '401': { description: Authentication required }
+  /api/integrations:
+    get:
+      operationId: get_get_api_integrations
+      responses:
+        '200': { description: Connected integrations }
+        '401': { description: Authentication required }
+  /api/integrations/github/start:
+    get:
+      operationId: get_get_api_integrations_github_start
+      responses:
+        '302': { description: OAuth redirect }
+        '401': { description: Authentication required }
+  /api/integrations/github/callback:
+    get:
+      operationId: get_get_api_integrations_github_callback
+      responses:
+        '302': { description: Studio redirect }
+  /api/integrations/{provider}/refresh:
+    post:
+      operationId: post_post_api_integrations_provider_refresh
+      parameters: [{ name: provider, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Refreshed connection }
+        '401': { description: Authentication required }
+  /api/integrations/{provider}:
+    delete:
+      operationId: delete_delete_api_integrations_provider
+      parameters: [{ name: provider, in: path, required: true, schema: { type: string } }]
+      responses:
+        '204': { description: Disconnected }
+        '401': { description: Authentication required }
+  /api/calendar/integrations:
+    get:
+      operationId: get_get_api_calendar_integrations
+      responses:
+        '200': { description: Calendar connection statuses }
+        '401': { description: Authentication required }
+  /api/calendar/{provider}/start:
+    get:
+      operationId: get_get_api_calendar_provider_start
+      parameters: [{ name: provider, in: path, required: true, schema: { type: string, enum: [google, outlook] } }]
+      responses:
+        '302': { description: OAuth redirect }
+        '401': { description: Authentication required }
+  /api/calendar/{provider}/callback:
+    get:
+      operationId: get_get_api_calendar_provider_callback
+      parameters: [{ name: provider, in: path, required: true, schema: { type: string, enum: [google, outlook] } }]
+      responses:
+        '302': { description: Studio redirect }
+  /api/calendar/{provider}:
+    delete:
+      operationId: delete_delete_api_calendar_provider
+      parameters: [{ name: provider, in: path, required: true, schema: { type: string, enum: [google, outlook] } }]
+      responses:
+        '204': { description: Disconnected }
+        '401': { description: Authentication required }
+  /api/creator/bookings:
+    get:
+      operationId: get_get_api_creator_bookings
+      responses:
+        '200': { description: Creator bookings }
+        '401': { description: Authentication required }
+  /api/creator/bookings/{bookingId}/confirm:
+    post:
+      operationId: post_post_api_creator_bookings_bookingId_confirm
+      parameters: [{ name: bookingId, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Booking confirmed }
+        '401': { description: Authentication required }
+        '404': { description: Booking not found }
+  /api/creator/bookings/{bookingId}/cancel:
+    post:
+      operationId: post_post_api_creator_bookings_bookingId_cancel
+      parameters: [{ name: bookingId, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Booking cancelled }
+        '401': { description: Authentication required }
+        '404': { description: Booking not found }
   /api/account/orders:
     get:
       operationId: get_get_api_account_orders

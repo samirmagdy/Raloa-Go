@@ -29,7 +29,7 @@ export const BookingSchedulerModal: React.FC<BookingSchedulerModalProps> = ({ ha
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [confirmation, setConfirmation] = useState<{ id: string; start: string } | null>(null);
+  const [confirmation, setConfirmation] = useState<{ id: string; start: string; status: string } | null>(null);
 
   useEffect(() => {
     fetch(`/api/v1/public/scheduling/${encodeURIComponent(handle)}/config`)
@@ -80,7 +80,7 @@ export const BookingSchedulerModal: React.FC<BookingSchedulerModalProps> = ({ ha
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message || payload.error || 'Could not confirm booking.');
-      setConfirmation({ id: payload.id, start: payload.slotStart || selectedSlot.start });
+      setConfirmation({ id: payload.id, start: payload.slotStart || selectedSlot.start, status: payload.status || 'pending_confirmation' });
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Could not confirm booking.');
     } finally {
@@ -94,7 +94,7 @@ export const BookingSchedulerModal: React.FC<BookingSchedulerModalProps> = ({ ha
         <header className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800"><div className="flex items-center gap-2"><CalendarClock className="h-5 w-5 text-indigo-600" /><h2 id="booking-scheduler-title" className="font-bold text-slate-900 dark:text-white">{isRtl ? 'حجز موعد' : 'Book an appointment'}</h2></div><button type="button" onClick={onClose} aria-label={isRtl ? 'إغلاق' : 'Close'} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="h-4 w-4" /></button></header>
         <div className="space-y-5 p-5">
           {loading && <div className="flex items-center justify-center py-10 text-sm text-slate-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isRtl ? 'جارٍ تحميل المواعيد...' : 'Loading availability...'}</div>}
-          {!loading && confirmation && <div className="space-y-3 py-8 text-center"><CheckCircle2 className="mx-auto h-14 w-14 text-emerald-500" /><h3 className="text-xl font-extrabold text-slate-900 dark:text-white">{isRtl ? 'تم تأكيد موعدك' : 'Booking confirmed'}</h3><p className="text-sm text-slate-600 dark:text-slate-300">{isRtl ? 'تم حفظ الموعد وإرسال إشعارات التأكيد.' : 'Your appointment was saved and confirmation notifications were queued.'}</p><p className="font-mono text-[11px] text-slate-400">#{confirmation.id}</p></div>}
+          {!loading && confirmation && <div className="space-y-3 py-8 text-center"><CheckCircle2 className="mx-auto h-14 w-14 text-emerald-500" /><h3 className="text-xl font-extrabold text-slate-900 dark:text-white">{confirmation.status === 'confirmed' ? (isRtl ? 'تم تأكيد موعدك' : 'Booking confirmed') : (isRtl ? 'تم استلام طلبك' : 'Booking request received')}</h3><p className="text-sm text-slate-600 dark:text-slate-300">{confirmation.status === 'confirmed' ? (isRtl ? 'تم حفظ الموعد وإرسال إشعارات التأكيد.' : 'Your appointment is confirmed and notifications were queued.') : (isRtl ? 'تم حفظ طلبك. سيؤكده المنشئ ويرسل لك تحديثاً.' : 'Your request was saved. The creator will confirm it and send you an update.')}</p><p className="font-mono text-[11px] text-slate-400">#{confirmation.id}</p></div>}
           {!loading && !confirmation && config && <form onSubmit={submit} className="space-y-4">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'الخدمة' : 'Service'}<select value={serviceId} onChange={(event) => setServiceId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">{config.services.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}</select></label>
             {selectedService?.description && <p className="rounded-xl bg-indigo-50 p-3 text-xs text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200">{selectedService.description}</p>}
@@ -103,7 +103,7 @@ export const BookingSchedulerModal: React.FC<BookingSchedulerModalProps> = ({ ha
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'الاسم' : 'Name'}<input required value={name} onChange={(event) => setName(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" /></label><label className="text-xs font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'البريد الإلكتروني' : 'Email'}<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" /></label></div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'ملاحظات (اختياري)' : 'Notes (optional)'}<textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="mt-1 w-full resize-none rounded-xl border border-slate-300 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" /></label>
             {error && <p role="alert" className="text-xs font-semibold text-rose-600">{error}</p>}
-            <button type="submit" disabled={!selectedSlot || submitting} className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">{submitting && <Loader2 className="h-4 w-4 animate-spin" />}{isRtl ? 'تأكيد الحجز' : 'Confirm booking'}</button>
+            <button type="submit" disabled={!selectedSlot || submitting} className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">{submitting && <Loader2 className="h-4 w-4 animate-spin" />}{isRtl ? 'طلب الحجز' : 'Request booking'}</button>
           </form>}
           {!loading && !config && !confirmation && <p role="alert" className="py-8 text-center text-sm text-rose-600">{error || 'Scheduling is unavailable.'}</p>}
         </div>
