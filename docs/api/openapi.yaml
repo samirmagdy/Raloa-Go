@@ -6,6 +6,22 @@ info:
 servers:
   - url: https://raloa.app
 paths:
+  /api/auth/session:
+    get:
+      operationId: get_get_api_auth_session
+      responses:
+        '200': { description: Current authenticated application user }
+        '401': { description: Session missing, expired, or revoked }
+    post:
+      operationId: post_post_api_auth_session
+      responses:
+        '200': { description: Firebase ID token exchanged for HttpOnly session cookie }
+        '401': { description: Invalid Firebase ID token }
+  /api/auth/logout:
+    post:
+      operationId: post_post_api_auth_logout
+      responses:
+        '200': { description: Session cookie cleared and refresh tokens revoked when possible }
   /api/creator/audience:
     get:
       operationId: get_get_api_creator_audience

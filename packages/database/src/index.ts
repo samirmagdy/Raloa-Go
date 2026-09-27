@@ -44,3 +44,4 @@ export interface RepositoryBundle {
 
 export type DatabaseProvider = 'postgres' | 'firestore';
 
+export { createPostgresAuthDataSource } from './postgres-auth';
