@@ -1,6 +1,8 @@
 import { normalizeSiteContent } from '../../src/shared/schemas';
 import type { PublicCreatorAdapter, PublicCreatorMetadata, PublicCreatorPage } from '../../src/shared/public';
 import { publicPageSchemaV1 } from '../../src/shared/schema';
+import type { CacheStore } from '../infrastructure/cache/contracts';
+import { cacheKey } from '../infrastructure/cache/policy';
 
 export interface PublicSiteSource {
   getPublishedSiteByHandle(handle: string): Promise<Record<string, unknown> | null>;
@@ -21,17 +23,25 @@ function metadataFor(page: PublicCreatorPage): PublicCreatorMetadata {
   return { title: page.metaTitle || `${page.name} (@${page.handle}) - RALOA Mini-Site`, description: page.metaDescription || page.bio || `Explore ${page.name}'s official links and work on RALOA.`, canonicalPath: `/@${page.handle}`, image: page.avatar || '/social/og-image-1200x630.jpg', robots: page.isPublished ? 'index, follow' : 'noindex, nofollow' };
 }
 
-export function createPublicCreatorAdapter(source: PublicSiteSource): PublicCreatorAdapter {
+export function createPublicCreatorAdapter(source: PublicSiteSource & { cache?: CacheStore }): PublicCreatorAdapter {
   return {
     cacheControl: CACHE_CONTROL,
     async loadPage(value) {
       const handle = cleanHandle(value);
       if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return null;
+      const cached = await source.cache?.get<PublicCreatorPage>(cacheKey('publishedSite', handle));
+      if (cached) return cached;
       const site = await source.getPublishedSiteByHandle(handle);
       if (!site) return null;
       const page = pageFromSite(handle, site);
-      return publicPageSchemaV1.parse(page);
+      const normalized = publicPageSchemaV1.parse(page);
+      await source.cache?.set(cacheKey('publishedSite', handle), normalized, 60);
+      return normalized;
     },
-    getMetadata: metadataFor
+    getMetadata: metadataFor,
+    async invalidate(handle) {
+      await source.cache?.delete(cacheKey('publishedSite', cleanHandle(handle)));
+      await source.cache?.delete(cacheKey('publicMetadata', cleanHandle(handle)));
+    }
   };
 }

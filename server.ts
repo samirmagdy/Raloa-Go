@@ -55,6 +55,8 @@ import { createBackgroundJobService, createConfiguredDispatcher, createFirestore
 import { appendOutboxEvent, createFirestoreOutboxRepository, createOutboxEvent, createOutboxService, outboxEventId } from './server/outbox';
 import { createDomainEventBus, DOMAIN_EVENTS, eventType, type DomainEvent } from './server/events';
 import { createPublicCreatorAdapter } from './server/public-site';
+import { MemoryCacheStore } from './server/infrastructure/cache/memory';
+import { cacheKey } from './server/infrastructure/cache/policy';
 import { apiErrorSchema } from './src/shared/schema';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -71,7 +73,17 @@ export const domainModules = createDomainModules(adminDb, {
   providers: calendarProviders()
 });
 const entitlementService = createEntitlementService({ billing: getAuthoritativeBillingState });
-export const publicCreatorAdapter = createPublicCreatorAdapter({ getPublishedSiteByHandle });
+const publicCache = new MemoryCacheStore();
+export const publicCreatorAdapter = createPublicCreatorAdapter({ getPublishedSiteByHandle, cache: publicCache });
+async function getCachedPublicDomain(hostname: string): Promise<DomainRecord | null> {
+  const normalized = hostname.trim().toLowerCase();
+  const key = cacheKey('domainResolution', normalized);
+  const cached = await publicCache.get<DomainRecord>(key);
+  if (cached) return cached;
+  const domain = await findDomainByHostname(normalized);
+  if (domain) await publicCache.set(key, domain, 30);
+  return domain;
+}
 export const backgroundJobs = createBackgroundJobService(createFirestoreBackgroundJobRepository(adminDb), createConfiguredDispatcher(), {
   email_delivery: async () => processPendingBookingNotifications(),
   calendar_sync: async () => processPendingCalendarJobs(),
@@ -1733,7 +1745,7 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
 
   // Lookup in custom domain database
   const mapping = isAdminConfigured()
-    ? await findDomainByHostname(host)
+    ? await getCachedPublicDomain(host)
     : publicDemoFixturesEnabled
     ? CUSTOM_DOMAINS[host]
     : null;
@@ -3872,7 +3884,7 @@ app.get('/api/public/sites/:handle', async (req: Request, res: Response) => {
       const host = getRequestHost(req);
       const platformHost = host === 'raloa.app' || host === 'www.raloa.app' || host === 'localhost' || host === '127.0.0.1' || host.endsWith('.raloa.app');
       if (!platformHost) {
-        const mapping = await findDomainByHostname(host);
+        const mapping = await getCachedPublicDomain(host);
         const verified = mapping?.verificationStatus === 'verified' && mapping.sslStatus === 'active';
         if (!verified) return res.status(526).json({ error: 'Custom domain verification is pending' });
         site = mapping ? await getPublishedSiteById(mapping.userId, mapping.siteId) : null;
@@ -4145,6 +4157,7 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
       throw error;
     }
   }
+  await Promise.all([publicCreatorAdapter.invalidate(handle), previousHandle && previousHandle !== handle ? publicCreatorAdapter.invalidate(previousHandle) : Promise.resolve()]);
   return res.status(existing.exists ? 200 : 201).json({ site: sanitized });
 });
 
@@ -4883,6 +4896,7 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
       updatedAt: now
     };
     await saveDomain({ ...domain, dnsRecords: domainDnsRecords(cloudflare) });
+    await publicCache.delete(cacheKey('domainResolution', hostname));
     return res.status(201).json({ domain, dnsRecords: domainDnsRecords(cloudflare) });
   } catch (error) {
     if (error instanceof Error && error.message === 'DOMAIN_ALREADY_RESERVED') {
@@ -4928,6 +4942,7 @@ app.post('/api/domains/verify', async (req: Request, res: Response) => {
       updatedAt: new Date().toISOString()
     };
     await saveDomain(updated);
+    await publicCache.delete(cacheKey('domainResolution', String(domain.hostname || '').toLowerCase()));
     return res.status(200).json({ domain: updated });
   } catch (error) {
     await saveDomain({
@@ -4956,6 +4971,7 @@ app.delete('/api/domains/:domainId', async (req: Request, res: Response) => {
       await cloudflareRequest(`/zones/${config.zoneId}/custom_hostnames/${domain.cloudflareHostnameId}`, { method: 'DELETE' });
     }
     await deleteDomain(domain.domainId);
+    await publicCache.delete(cacheKey('domainResolution', String(domain.hostname || '').toLowerCase()));
     return res.status(204).send();
   } catch (error) {
     console.error('[Domain delete]', error);

@@ -27,4 +27,5 @@ export interface PublicCreatorAdapter {
   loadPage(handle: string): Promise<PublicCreatorPage | null>;
   getMetadata(page: PublicCreatorPage): PublicCreatorMetadata;
   cacheControl: string;
+  invalidate(handle: string): Promise<void>;
 }

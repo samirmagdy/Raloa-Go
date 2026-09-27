@@ -52,6 +52,7 @@
     "test:authorization-policy": "tsx test-authorization-policy.ts",
     "test:entitlement-service": "tsx test-entitlement-service.ts",
     "test:rate-limit-policy": "tsx test-rate-limit-policy.ts",
+    "test:cache-policy": "tsx test-cache-policy.ts",
     "check:persistence-boundary": "node scripts/check-persistence-boundary.mjs",
     "test:content-schema": "tsx test-content-schema.ts",
     "test:integration:staging": "node scripts/staging-integration-checks.mjs",
