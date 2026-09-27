@@ -9,7 +9,7 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react';
-import { BookingConfig, Locale } from '../../types';
+import { BookingConfig, Locale, ProfileSocialLink, SocialIntegrationStatus } from '../../types';
 import { auth } from '../../lib/firebase';
 import { StudioSchedulingSettings } from './StudioSchedulingSettings';
 import { StudioProductsSettings } from './StudioProductsSettings';
@@ -34,6 +34,8 @@ interface StudioSettingsTabProps {
   onMetaPixelIdChange: (val: string) => void;
   webhookUrl: string;
   onWebhookUrlChange: (val: string) => void;
+  socials: ProfileSocialLink[];
+  onSocialsChange: (val: ProfileSocialLink[]) => void;
   bookingConfig: BookingConfig;
   onBookingConfigChange: (val: BookingConfig) => void;
   onExportJson: () => void;
@@ -61,6 +63,8 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   onMetaPixelIdChange,
   webhookUrl,
   onWebhookUrlChange,
+  socials,
+  onSocialsChange,
   bookingConfig,
   onBookingConfigChange,
   onExportJson,
@@ -79,11 +83,54 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   const [domainId, setDomainId] = useState('');
   const [dnsRecords, setDnsRecords] = useState<Array<{ type: string; name: string; value: string }>>([]);
   const [domainError, setDomainError] = useState('');
+  const [integrations, setIntegrations] = useState<SocialIntegrationStatus[]>([]);
+  const [integrationError, setIntegrationError] = useState('');
+  const [integrationBusy, setIntegrationBusy] = useState('');
 
   const getApiHeaders = async (): Promise<Record<string, string>> => {
     const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
+
+  const loadIntegrations = async () => {
+    try {
+      const response = await fetch('/api/integrations', { headers: await getApiHeaders() });
+      if (!response.ok) return;
+      const payload = await response.json();
+      setIntegrations(Array.isArray(payload.integrations) ? payload.integrations : []);
+    } catch (_) { setIntegrationError(isRtl ? 'تعذر تحميل حالة الربط.' : 'Could not load integration status.'); }
+  };
+
+  useEffect(() => {
+    if (activeSubSection === 'integrations') loadIntegrations();
+  }, [activeSubSection]);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('integration') === 'github') loadIntegrations();
+  }, []);
+
+  const connectGithub = async () => {
+    setIntegrationBusy('github');
+    setIntegrationError('');
+    try {
+      const response = await fetch('/api/integrations/github/start?format=json', { headers: await getApiHeaders() });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || typeof payload.url !== 'string') throw new Error(payload?.error?.message || payload?.message || 'GitHub integration is unavailable.');
+      window.location.assign(payload.url);
+    } catch (error) { setIntegrationError(error instanceof Error ? error.message : 'GitHub connection failed.'); setIntegrationBusy(''); }
+  };
+
+  const disconnectIntegration = async (provider: string) => {
+    setIntegrationBusy(provider);
+    try {
+      const response = await fetch(`/api/integrations/${provider}`, { method: 'DELETE', headers: await getApiHeaders() });
+      if (!response.ok) throw new Error('Could not disconnect integration.');
+      setIntegrations((current) => current.filter((item) => item.provider !== provider));
+    } catch (error) { setIntegrationError(error instanceof Error ? error.message : 'Could not disconnect integration.'); }
+    finally { setIntegrationBusy(''); }
+  };
+
+  const addSocialLink = () => onSocialsChange([...socials, { platform: 'instagram', url: '', enabled: true }]);
 
   useEffect(() => {
     if (activeSubSection !== 'domain' || !customDomain) return;
@@ -398,6 +445,33 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
             {isRtl ? 'الربط مع بكسل التتبع والتحليلات' : 'Analytics & Pixel Integrations'}
           </h3>
+
+          <section className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/40" aria-labelledby="social-integrations-heading">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h4 id="social-integrations-heading" className="text-xs font-bold text-slate-900 dark:text-white">{isRtl ? 'الروابط الاجتماعية والتكاملات' : 'Social links & integrations'}</h4>
+                <p className="mt-1 text-[11px] text-slate-500">{isRtl ? 'الروابط العادية لا تحتاج صلاحيات. اربط GitHub بأمان لإدارة الاتصال من الخادم.' : 'Normal profile URLs stay simple. Connect GitHub securely; OAuth tokens remain server-side.'}</p>
+              </div>
+              <button type="button" onClick={addSocialLink} className="rounded-lg border border-slate-300 px-2.5 py-1 text-[11px] font-bold text-indigo-600 hover:bg-white dark:border-slate-700 dark:hover:bg-slate-900">{isRtl ? 'إضافة رابط' : 'Add URL'}</button>
+            </div>
+            {socials.map((social, index) => (
+              <div key={`${social.platform}-${index}`} className="flex gap-2">
+                <select value={social.platform} onChange={(event) => onSocialsChange(socials.map((item, itemIndex) => itemIndex === index ? { ...item, platform: event.target.value } : item))} className="w-32 rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs dark:border-slate-700 dark:bg-slate-900 dark:text-white" aria-label="Social platform">
+                  {['instagram', 'x', 'youtube', 'linkedin', 'tiktok', 'github', 'spotify', 'email'].map((platform) => <option key={platform} value={platform}>{platform}</option>)}
+                </select>
+                <input type="url" value={social.url} onChange={(event) => onSocialsChange(socials.map((item, itemIndex) => itemIndex === index ? { ...item, url: event.target.value } : item))} placeholder="https://github.com/username" className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900 dark:text-white" aria-label="Social profile URL" />
+                <button type="button" onClick={() => onSocialsChange(socials.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg px-2 text-rose-600 hover:bg-rose-50" aria-label={isRtl ? 'حذف الرابط' : 'Remove social URL'}>×</button>
+              </div>
+            ))}
+            <div className="rounded-lg border border-indigo-200 bg-white p-3 dark:border-indigo-900 dark:bg-slate-900">
+              <div className="flex items-center justify-between gap-3">
+                <div><p className="text-xs font-bold text-slate-900 dark:text-white">GitHub</p><p className="text-[11px] text-slate-500">{isRtl ? 'حساب متصل بصلاحية read:user فقط' : 'OAuth connection with the minimal read:user scope'}</p></div>
+                {integrations.some((item) => item.provider === 'github' && item.status === 'connected') ? <button type="button" onClick={() => disconnectIntegration('github')} disabled={Boolean(integrationBusy)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-[11px] font-bold text-rose-600 disabled:opacity-50">{integrationBusy === 'github' ? '...' : (isRtl ? 'فصل' : 'Disconnect')}</button> : <button type="button" onClick={connectGithub} disabled={Boolean(integrationBusy)} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-50">{integrationBusy === 'github' ? '...' : (isRtl ? 'ربط GitHub' : 'Connect GitHub')}</button>}
+              </div>
+              {integrations.filter((item) => item.provider === 'github').map((item) => <p key={item.provider} className="mt-2 text-[11px] text-emerald-600">{item.status === 'connected' ? `${item.accountLabel} · ${item.scopes.join(', ')}` : (item.lastError || 'Reconnect required')}</p>)}
+            </div>
+            {integrationError && <p role="alert" className="text-xs font-semibold text-rose-600">{integrationError}</p>}
+          </section>
 
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">

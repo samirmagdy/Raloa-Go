@@ -4,6 +4,26 @@ export type BackgroundStyle = 'signature' | 'banner' | 'immersive' | 'gradient' 
 
 export type GalleryMediaType = 'image' | 'video';
 
+export type SocialPlatform = 'instagram' | 'x' | 'youtube' | 'linkedin' | 'email' | 'tiktok' | 'github' | 'spotify';
+
+export interface ProfileSocialLink {
+  platform: SocialPlatform | string;
+  url: string;
+  enabled?: boolean;
+}
+
+export interface SocialIntegrationStatus {
+  provider: 'github';
+  status: 'connected' | 'reauthorization_required' | 'error';
+  accountId?: string;
+  accountLabel?: string;
+  profileUrl?: string;
+  scopes: string[];
+  connectedAt?: string;
+  updatedAt?: string;
+  lastError?: string;
+}
+
 export interface MediaGalleryItem {
   id: string;
   src: string;
@@ -199,11 +219,7 @@ export interface MiniSiteUserConfig {
     galleryItems?: MediaGalleryItem[];
     type?: 'link' | 'gallery' | 'booking' | 'shop';
   }[];
-  socials: {
-    platform: string;
-    url: string;
-    enabled: boolean;
-  }[];
+  socials: ProfileSocialLink[];
   verified: boolean;
   published: boolean;
 }

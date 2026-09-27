@@ -256,7 +256,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
         {/* Social Icons Strip */}
         {creator.socials && creator.socials.length > 0 && (
           <div className="flex items-center justify-center gap-2 mb-6 flex-wrap">
-            {creator.socials.map((soc) => (
+            {creator.socials.filter((soc) => (soc as any).enabled !== false && Boolean(soc.url)).map((soc) => (
               <a
                 key={soc.platform}
                 href={soc.url}

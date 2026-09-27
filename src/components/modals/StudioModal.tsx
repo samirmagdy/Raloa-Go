@@ -9,7 +9,7 @@ import {
   ArrowRight,
   Sparkles
 } from 'lucide-react';
-import { Locale, TemplateItem, BackgroundStyle, BookingConfig } from '../../types';
+import { Locale, TemplateItem, BackgroundStyle, BookingConfig, ProfileSocialLink } from '../../types';
 import { templatesData } from '../../data/content';
 import { useAuth } from '../../hooks/useAuth';
 import { useHistoryState } from '../../hooks/useHistoryState';
@@ -41,6 +41,7 @@ export interface StudioSiteConfig {
   bgStyle: BackgroundStyle;
   themeMode: 'auto' | 'dark' | 'light';
   links: StudioBlockItem[];
+  socials: ProfileSocialLink[];
   isPublished: boolean;
 
   // Visual Design & Geometry Tokens
@@ -141,6 +142,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       subtitle: (isRtl ? l.subtitleAr : l.subtitle) || '',
       type: l.type || 'link'
     })),
+    socials: defaultTemplate.socials.map((social) => ({ ...social, enabled: true })),
     isPublished: false,
     accentColor: '#4F46E5',
     surfaceColor: '#FFFFFF',
@@ -255,7 +257,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                     url: l.url,
                     subtitle: (isRtl ? l.subtitleAr : l.subtitle) || '',
                     type: l.type || 'link'
-                  })),
+                })),
+            socials: Array.isArray((savedSite as any).socials) ? (savedSite as any).socials : defaultTemplate.socials.map((social) => ({ ...social, enabled: true })),
             isPublished: savedSite.isPublished ?? false,
             accentColor: (savedSite as any).accentColor || '#4F46E5',
             surfaceColor: (savedSite as any).surfaceColor || '#FFFFFF',
@@ -314,6 +317,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             bgStyle: configToSave.bgStyle,
             themeMode: configToSave.themeMode,
             links: configToSave.links,
+            socials: configToSave.socials.filter((social) => social.url.trim()),
             isPublished: configToSave.isPublished,
             ...({
               accentColor: configToSave.accentColor,
@@ -426,7 +430,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       url: l.url,
       galleryItems: l.galleryItems,
       type: l.type as any
-    }))
+    })),
+    socials: siteConfig.socials.filter((social) => social.enabled !== false && social.url.trim()) as TemplateItem['socials']
   };
 
   // 1. Authenticated-Only Gate Screen
@@ -699,6 +704,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                 onMetaPixelIdChange={(val) => updateTextField('metaPixelId', val)}
                 webhookUrl={webhookUrl}
                 onWebhookUrlChange={(val) => updateTextField('webhookUrl', val)}
+                socials={siteConfig.socials}
+                onSocialsChange={(val) => updateSiteConfig({ socials: val })}
                 bookingConfig={bookingConfig}
                 onBookingConfigChange={(val) => updateSiteConfig({ bookingConfig: val })}
                 onUpgradePlan={onOpenPricing}

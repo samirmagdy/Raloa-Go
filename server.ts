@@ -595,6 +595,136 @@ async function getAuthenticatedUser(req: Request): Promise<AuthenticatedUser | n
     : null;
 }
 
+type OAuthProvider = 'github';
+type StoredIntegration = {
+  provider: OAuthProvider;
+  userId: string;
+  providerAccountId: string;
+  accountLabel: string;
+  profileUrl: string;
+  scopes: string[];
+  status: 'connected' | 'reauthorization_required' | 'error';
+  encryptedAccessToken: string;
+  tokenExpiresAt: string | null;
+  connectedAt: string;
+  updatedAt: string;
+  lastError?: string;
+};
+
+const OAUTH_SCOPES: Record<OAuthProvider, string[]> = { github: ['read:user'] };
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+function integrationEncryptionKey(): Buffer {
+  const secret = process.env.INTEGRATION_ENCRYPTION_KEY || (process.env.NODE_ENV !== 'production' ? AUTH_SESSION_SECRET : '');
+  if (!secret || secret.length < 32) throw new Error('INTEGRATION_ENCRYPTION_KEY_NOT_CONFIGURED');
+  return crypto.createHash('sha256').update(secret).digest();
+}
+
+function integrationEncryptionConfigured(): boolean {
+  return AUTH_SESSION_SECRET.length >= 32 && Boolean((process.env.INTEGRATION_ENCRYPTION_KEY && process.env.INTEGRATION_ENCRYPTION_KEY.length >= 32) || (process.env.NODE_ENV !== 'production' && AUTH_SESSION_SECRET.length >= 32));
+}
+
+function encryptIntegrationToken(token: string): string {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', integrationEncryptionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(token, 'utf8'), cipher.final()]);
+  return [iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), ciphertext.toString('base64url')].join('.');
+}
+
+function decryptIntegrationToken(value: string): string {
+  const [ivValue, tagValue, ciphertextValue] = value.split('.');
+  if (!ivValue || !tagValue || !ciphertextValue) throw new Error('INVALID_ENCRYPTED_INTEGRATION_TOKEN');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', integrationEncryptionKey(), Buffer.from(ivValue, 'base64url'));
+  decipher.setAuthTag(Buffer.from(tagValue, 'base64url'));
+  return Buffer.concat([decipher.update(Buffer.from(ciphertextValue, 'base64url')), decipher.final()]).toString('utf8');
+}
+
+function githubConfig(): { clientId: string; clientSecret: string; redirectUri: string } | null {
+  const clientId = process.env.GITHUB_CLIENT_ID;
+  const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+  const redirectUri = process.env.GITHUB_OAUTH_REDIRECT_URI || `${APP_URL}/api/integrations/github/callback`;
+  return clientId && clientSecret ? { clientId, clientSecret, redirectUri } : null;
+}
+
+function signOAuthState(payload: string): string {
+  if (AUTH_SESSION_SECRET.length < 32) throw new Error('AUTH_SESSION_SECRET_NOT_CONFIGURED');
+  return crypto.createHmac('sha256', AUTH_SESSION_SECRET).update(payload).digest('base64url');
+}
+
+function publicIntegration(data: StoredIntegration): Record<string, unknown> {
+  return {
+    provider: data.provider,
+    status: data.status,
+    accountId: data.providerAccountId,
+    accountLabel: data.accountLabel,
+    profileUrl: data.profileUrl,
+    scopes: data.scopes,
+    connectedAt: data.connectedAt,
+    updatedAt: data.updatedAt,
+    ...(data.lastError ? { lastError: data.lastError } : {})
+  };
+}
+
+async function githubApi(pathname: string, init: RequestInit = {}): Promise<any> {
+  const response = await fetch(`https://api.github.com${pathname}`, {
+    ...init,
+    signal: init.signal || AbortSignal.timeout(10000),
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'raloa-social-integrations',
+      ...(init.headers || {})
+    }
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.message || `GitHub request failed with ${response.status}`);
+  return body;
+}
+
+type SocialIntegrationAdapter = {
+  provider: OAuthProvider;
+  scopes: string[];
+  authorizeUrl(config: { clientId: string; redirectUri: string }, state: string): string;
+  exchangeCode(config: { clientId: string; clientSecret: string; redirectUri: string }, code: string): Promise<{ accessToken: string }>;
+  getProfile(accessToken: string): Promise<{ id: string; label: string; profileUrl: string }>;
+  validateToken(accessToken: string): Promise<void>;
+  revokeToken(config: { clientId: string; clientSecret: string }, accessToken: string): Promise<void>;
+};
+
+const socialAdapters: Record<OAuthProvider, SocialIntegrationAdapter> = {
+  github: {
+    provider: 'github',
+    scopes: OAUTH_SCOPES.github,
+    authorizeUrl(config, state) {
+      const url = new URL('https://github.com/login/oauth/authorize');
+      url.searchParams.set('client_id', config.clientId);
+      url.searchParams.set('redirect_uri', config.redirectUri);
+      url.searchParams.set('scope', OAUTH_SCOPES.github.join(' '));
+      url.searchParams.set('state', state);
+      return url.toString();
+    },
+    async exchangeCode(config, code) {
+      const response = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST', signal: AbortSignal.timeout(10000),
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'raloa-social-integrations' },
+        body: JSON.stringify({ client_id: config.clientId, client_secret: config.clientSecret, code, redirect_uri: config.redirectUri })
+      });
+      const body = await response.json() as { access_token?: string; error?: string };
+      if (!response.ok || !body.access_token) throw new Error(body.error || 'GitHub token exchange failed');
+      return { accessToken: body.access_token };
+    },
+    async getProfile(accessToken) {
+      const account = await githubApi('/user', { headers: { Authorization: `Bearer ${accessToken}` } });
+      return { id: String(account.id), label: String(account.login || account.name || 'GitHub'), profileUrl: String(account.html_url) };
+    },
+    async validateToken(accessToken) { await githubApi('/user', { headers: { Authorization: `Bearer ${accessToken}` } }); },
+    async revokeToken(config, accessToken) {
+      const response = await fetch(`https://api.github.com/applications/${encodeURIComponent(config.clientId)}/token`, { method: 'DELETE', signal: AbortSignal.timeout(10000), headers: { Authorization: `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`, Accept: 'application/vnd.github+json', 'User-Agent': 'raloa-social-integrations', 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: accessToken }) });
+      if (!response.ok && response.status !== 404) throw new Error(`GitHub token revoke failed with ${response.status}`);
+    }
+  }
+};
+
 function normalizeHostname(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const hostname = value.trim().toLowerCase().replace(/\.$/, '');
@@ -2847,7 +2977,7 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
     return apiError(res, 400, 'INVALID_LINKS', 'Every link must have valid text and a safe public URL.');
   }
   if (merged.socials !== undefined && (!Array.isArray(merged.socials) || merged.socials.some((social) =>
-    !social || typeof social.platform !== 'string' || social.platform.length > 40 || !isSafePublicUrl(social.url)))) {
+    !social || typeof social.platform !== 'string' || social.platform.length > 40 || typeof social.url !== 'string' || social.url.length > 2000 || !isSafePublicUrl(social.url) || (social.enabled !== undefined && typeof social.enabled !== 'boolean')))) {
     return apiError(res, 400, 'INVALID_SOCIAL_LINKS', 'Every social link must use a safe public URL.');
   }
   if (merged.bookingConfig !== undefined) merged.bookingConfig = normalizeBookingConfig(merged.bookingConfig);
@@ -3186,6 +3316,107 @@ app.post('/api/billing/portal-session', async (req: Request, res: Response) => {
     const message = error instanceof Error ? error.message : 'Billing portal unavailable';
     return res.status(message.includes('NOT_FOUND') ? 404 : 503).json({ error: message });
   }
+});
+
+app.get('/api/integrations/providers', async (_req: Request, res: Response) => {
+  const github = githubConfig();
+  return res.json({ providers: [{ provider: 'github', label: 'GitHub', available: Boolean(github && integrationEncryptionConfigured()), scopes: OAUTH_SCOPES.github }] });
+});
+
+app.get('/api/integrations', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'INTEGRATIONS_UNAVAILABLE', 'Social integrations are not configured.');
+  const snapshot = await adminDb.collection('creator_integrations').where('userId', '==', user.uid).get();
+  return res.json({ integrations: snapshot.docs.map((doc) => publicIntegration(doc.data() as StoredIntegration)) });
+});
+
+app.get('/api/integrations/github/start', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  const config = githubConfig();
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!config || !integrationEncryptionConfigured() || !isAdminConfigured()) return apiError(res, 503, 'GITHUB_NOT_CONFIGURED', 'GitHub integration is not configured.');
+  const nonce = crypto.randomBytes(24).toString('base64url');
+  const expiresAt = Date.now() + OAUTH_STATE_TTL_MS;
+  const payload = Buffer.from(JSON.stringify({ uid: user.uid, nonce, exp: expiresAt })).toString('base64url');
+  const state = `${payload}.${signOAuthState(payload)}`;
+  await adminDb.collection('oauth_states').doc(nonce).set({ userId: user.uid, provider: 'github', expiresAt, createdAt: new Date().toISOString() });
+  const authorizeUrl = socialAdapters.github.authorizeUrl(config, state);
+  if (req.query.format === 'json') return res.json({ url: authorizeUrl });
+  return res.redirect(authorizeUrl);
+});
+
+app.get('/api/integrations/github/callback', async (req: Request, res: Response) => {
+  const config = githubConfig();
+  const fail = (code: string) => res.redirect(`${APP_URL}/studio?integration=github&status=error&code=${encodeURIComponent(code)}`);
+  if (!config || !integrationEncryptionConfigured() || !isAdminConfigured()) return fail('not_configured');
+  const code = typeof req.query.code === 'string' ? req.query.code : '';
+  const state = typeof req.query.state === 'string' ? req.query.state : '';
+  if (!code || !state) return fail('missing_callback_parameters');
+  try {
+    const [payload, signature] = state.split('.');
+    const expectedSignature = payload ? signOAuthState(payload) : '';
+    if (!payload || !signature || signature.length !== expectedSignature.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) return fail('invalid_state');
+    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { uid: string; nonce: string; exp: number };
+    if (!decoded.uid || !decoded.nonce || decoded.exp < Date.now()) return fail('expired_state');
+    const stateRef = adminDb.collection('oauth_states').doc(decoded.nonce);
+    const stateDoc = await stateRef.get();
+    if (!stateDoc.exists || stateDoc.data()?.userId !== decoded.uid || stateDoc.data()?.provider !== 'github' || Number(stateDoc.data()?.expiresAt) < Date.now()) return fail('invalid_state');
+    await stateRef.delete();
+
+    const { accessToken } = await socialAdapters.github.exchangeCode(config, code);
+    const account = await socialAdapters.github.getProfile(accessToken);
+    const now = new Date().toISOString();
+    const integration: StoredIntegration = {
+      provider: 'github', userId: decoded.uid, providerAccountId: account.id, accountLabel: account.label,
+      profileUrl: account.profileUrl, scopes: OAUTH_SCOPES.github, status: 'connected', encryptedAccessToken: encryptIntegrationToken(accessToken),
+      tokenExpiresAt: null, connectedAt: now, updatedAt: now
+    };
+    await adminDb.collection('creator_integrations').doc(`${decoded.uid}_github`).set(integration, { merge: true });
+    return res.redirect(`${APP_URL}/studio?integration=github&status=connected`);
+  } catch (error) {
+    console.error('[GitHub OAuth callback]', error);
+    return fail('oauth_failed');
+  }
+});
+
+app.post('/api/integrations/:provider/refresh', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  const provider = req.params.provider;
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (provider !== 'github') return apiError(res, 404, 'INTEGRATION_PROVIDER_NOT_FOUND', 'Unsupported social integration.');
+  const ref = adminDb.collection('creator_integrations').doc(`${user.uid}_${provider}`);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) return apiError(res, 404, 'INTEGRATION_NOT_CONNECTED', 'This integration is not connected.');
+  const integration = snapshot.data() as StoredIntegration;
+  try {
+    await socialAdapters.github.validateToken(decryptIntegrationToken(integration.encryptedAccessToken));
+    await ref.set({ status: 'connected', lastError: null, updatedAt: new Date().toISOString() }, { merge: true });
+    return res.json({ integration: publicIntegration({ ...integration, status: 'connected', updatedAt: new Date().toISOString() }) });
+  } catch (error) {
+    await ref.set({ status: 'reauthorization_required', lastError: 'Provider authorization has expired or was revoked.', updatedAt: new Date().toISOString() }, { merge: true });
+    return apiError(res, 409, 'INTEGRATION_REAUTH_REQUIRED', 'Reconnect this social account to continue.');
+  }
+});
+
+app.delete('/api/integrations/:provider', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  const provider = req.params.provider;
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (provider !== 'github') return apiError(res, 404, 'INTEGRATION_PROVIDER_NOT_FOUND', 'Unsupported social integration.');
+  const ref = adminDb.collection('creator_integrations').doc(`${user.uid}_${provider}`);
+  const snapshot = await ref.get();
+  if (snapshot.exists) {
+    const integration = snapshot.data() as StoredIntegration;
+    const config = githubConfig();
+    if (config) {
+      try {
+        await socialAdapters.github.revokeToken(config, decryptIntegrationToken(integration.encryptedAccessToken));
+      } catch (error) { console.warn('[GitHub token revoke]', error); }
+    }
+    await ref.delete();
+  }
+  return res.status(204).send();
 });
 
 app.get('/api/domains', async (req: Request, res: Response) => {
