@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Archive, Loader2, Save, ShoppingBag } from 'lucide-react';
 import { Locale } from '../../types';
 import { auth } from '../../lib/firebase';
+import { uploadMedia } from '../../lib/mediaUpload';
 
 interface ProductDraft { id?: string; name: string; description: string; imageUrls: string; price: string; currency: string; active: boolean; inventory: string; }
 interface StudioProductsSettingsProps { siteId: string; locale: Locale; }
@@ -16,6 +17,7 @@ export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   const headers = useCallback(async (): Promise<Record<string, string>> => {
     const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
@@ -67,13 +69,26 @@ export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ 
     } catch (archiveError) { setError(archiveError instanceof Error ? archiveError.message : 'Could not archive product.'); }
   };
 
+  const uploadProductImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setError('');
+    try {
+      const uploaded = await uploadMedia(file, siteId, 'product', setUploadProgress);
+      setDraft((current) => ({ ...current, imageUrls: [current.imageUrls, uploaded.src].filter(Boolean).join(', ') }));
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Product image upload failed.');
+    } finally { setUploadProgress(null); }
+  };
+
   return <section className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-800 dark:bg-slate-900/40" dir={isRtl ? 'rtl' : 'ltr'}>
     <div className="flex items-center gap-2"><ShoppingBag className="h-4 w-4 text-indigo-600" /><div><h3 className="text-sm font-bold text-slate-900 dark:text-white">{isRtl ? 'منتجات المتجر' : 'Store products'}</h3><p className="text-xs text-slate-500">{isRtl ? 'الأسعار والمخزون محفوظان على الخادم.' : 'Prices and inventory are authoritative on the server.'}</p></div></div>
     <form onSubmit={save} className="grid gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700 sm:grid-cols-2">
       <input required placeholder={isRtl ? 'اسم المنتج' : 'Product name'} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
       <input required type="number" min="0.50" step="0.01" placeholder={isRtl ? 'السعر' : 'Price'} value={draft.price} onChange={(event) => setDraft({ ...draft, price: event.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
       <textarea placeholder={isRtl ? 'الوصف' : 'Description'} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white sm:col-span-2" rows={2} />
-      <input placeholder={isRtl ? 'روابط الصور مفصولة بفواصل' : 'Image URLs, comma separated'} value={draft.imageUrls} onChange={(event) => setDraft({ ...draft, imageUrls: event.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white sm:col-span-2" />
+      <div className="flex gap-2 sm:col-span-2"><input placeholder={isRtl ? 'روابط الصور مفصولة بفواصل' : 'Image URLs, comma separated'} value={draft.imageUrls} onChange={(event) => setDraft({ ...draft, imageUrls: event.target.value })} className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" /><label className="inline-flex cursor-pointer items-center rounded-lg border border-indigo-200 px-3 text-xs font-bold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-900 dark:text-indigo-300">{uploadProgress === null ? (isRtl ? 'رفع' : 'Upload') : `${uploadProgress}%`}<input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={uploadProductImage} disabled={uploadProgress !== null} /></label></div>
       <select value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"><option value="usd">USD</option><option value="eur">EUR</option><option value="gbp">GBP</option><option value="sar">SAR</option><option value="aed">AED</option><option value="cad">CAD</option><option value="aud">AUD</option></select>
       <input type="number" min="0" placeholder={isRtl ? 'المخزون فارغ = غير محدود' : 'Inventory (blank = unlimited)'} value={draft.inventory} onChange={(event) => setDraft({ ...draft, inventory: event.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
       <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} />{isRtl ? 'نشط للبيع' : 'Active for sale'}</label>

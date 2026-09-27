@@ -15,6 +15,12 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(jpeg|png|webp)');
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
+    match /users/{userId}/sites/{siteId}/media/{mediaId}/{variant} {
+      // Studio uploads are finalized by the authenticated server after MIME,
+      // dimensions, ownership, and plan checks. Direct browser writes are
+      // denied so a client cannot bypass those checks.
+      allow read, write, delete: if false;
+    }
     match /{allPaths=**} {
       allow read, write: if false;
     }

@@ -720,6 +720,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             )}
             {activeTab === 'content' && (
               <StudioContentTab
+                siteId={activeSiteId}
                 displayName={displayName}
                 onDisplayNameChange={(val) => updateTextField('displayName', val)}
                 username={username}
@@ -741,6 +742,9 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 
             {activeTab === 'design' && (
               <StudioDesignTab
+                siteId={activeSiteId}
+                coverImage={coverImage}
+                onCoverImageChange={(image) => updateSiteConfig((prev) => ({ ...prev, coverImage: image, designTokens: normalizeDesignTokens({ ...prev.designTokens, background: { ...prev.designTokens.background, coverImage: image } }) }))}
                 templateId={templateId}
                 onTemplateIdChange={(tId) => {
                   if (isPremiumTemplate(tId) && !capabilities.premiumTemplates) {

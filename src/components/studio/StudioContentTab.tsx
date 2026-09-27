@@ -21,8 +21,10 @@ import { SortableBlockList, StudioBlockItem } from './SortableBlockList';
 import { optimizedMediaUrl } from '../MediaGallery';
 import { isSupportedBlockType, isSupportedEmbedUrl } from '../../lib/blockTypes';
 import { normalizeSiteSlug, validateSiteSlug } from '../../lib/siteSlug';
+import { uploadMedia } from '../../lib/mediaUpload';
 
 interface StudioContentTabProps {
+  siteId: string;
   displayName: string;
   onDisplayNameChange: (val: string) => void;
   username: string;
@@ -42,6 +44,7 @@ interface StudioContentTabProps {
 }
 
 export const StudioContentTab: React.FC<StudioContentTabProps> = ({
+  siteId,
   displayName,
   onDisplayNameChange,
   username,
@@ -69,6 +72,9 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
   const [newUrl, setNewUrl] = useState('');
   const [newSubtitle, setNewSubtitle] = useState('');
   const [newGalleryItems, setNewGalleryItems] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadError, setUploadError] = useState('');
+  const [avatarUploadProgress, setAvatarUploadProgress] = useState<number | null>(null);
 
   // Setup checklist calculation
   const hasHandle = Boolean(username && username.length > 2);
@@ -142,6 +148,38 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
 
   const handleRemoveBlock = (id: string) => {
     onLinksChange(links.filter((b) => b.id !== id));
+  };
+
+  const handleGalleryUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length || !siteId) return;
+    setUploadError('');
+    try {
+      for (let index = 0; index < files.length; index += 1) {
+        const uploaded = await uploadMedia(files[index], siteId, 'gallery', (progress) => {
+          setUploadProgress(Math.round(((index + progress / 100) / files.length) * 100));
+        });
+        setNewGalleryItems((current) => `${current}${current ? '\n' : ''}${uploaded.src}`);
+      }
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Media upload failed.');
+    } finally {
+      setUploadProgress(null);
+    }
+  };
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !siteId) return;
+    setUploadError('');
+    try {
+      const uploaded = await uploadMedia(file, siteId, 'avatar', setAvatarUploadProgress);
+      onAvatarChange(uploaded.src);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Avatar upload failed.');
+    } finally { setAvatarUploadProgress(null); }
   };
 
   const blockTypes = [
@@ -264,13 +302,8 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
               {isRtl ? 'رابط الصورة الشخصية' : 'Avatar Image URL'}
             </label>
-            <input
-              type="url"
-              value={avatar}
-              onChange={(e) => onAvatarChange(e.target.value)}
-              placeholder="https://..."
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
+            <div className="flex gap-2"><input type="url" value={avatar} onChange={(e) => onAvatarChange(e.target.value)} placeholder="https://..." className="min-w-0 flex-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" /><label className="inline-flex cursor-pointer items-center rounded-xl border border-indigo-200 px-3 py-2 text-xs font-bold text-indigo-700 dark:border-indigo-900 dark:text-indigo-300">{avatarUploadProgress === null ? (isRtl ? 'رفع' : 'Upload') : `${avatarUploadProgress}%`}<input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleAvatarUpload} disabled={avatarUploadProgress !== null} /></label></div>
+            {uploadError && <p role="alert" className="mt-1 text-[11px] font-semibold text-rose-600">{uploadError}</p>}
           </div>
         </div>
 
@@ -440,7 +473,14 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   {newBlockType === 'gallery' ? (isRtl ? 'روابط الصور (رابط واحد لكل سطر)' : 'Image URLs (one per line)') : (isRtl ? 'الرابط أو الوجهة' : 'Destination URL')}
                 </label>
-                {newBlockType === 'gallery' ? <textarea required value={newGalleryItems} onChange={(e) => setNewGalleryItems(e.target.value)} placeholder="https://image.example/one.jpg | Caption\nhttps://image.example/two.jpg | Another caption" rows={4} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" /> : <input type="text" required value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://..." className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />}
+                {newBlockType === 'gallery' ? <>
+                  <textarea required value={newGalleryItems} onChange={(e) => setNewGalleryItems(e.target.value)} placeholder="https://image.example/one.jpg | Caption\nhttps://image.example/two.jpg | Another caption" rows={4} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-indigo-200 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
+                    {uploadProgress === null ? (isRtl ? 'رفع صور' : 'Upload images') : `${isRtl ? 'جارٍ الرفع' : 'Uploading'} ${uploadProgress}%`}
+                    <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only" onChange={handleGalleryUpload} disabled={uploadProgress !== null} />
+                  </label>
+                  {uploadError && <p role="alert" className="mt-1 text-[11px] font-semibold text-rose-600">{uploadError}</p>}
+                </> : <input type="text" required value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://..." className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />}
                 {newBlockType === 'gallery' && <p className="mt-1 text-[10px] text-slate-400">{isRtl ? 'اختياري: أضف وصفاً بعد | لكل صورة.' : 'Optional: add a caption after | for each image.'}</p>}
               </div>
 

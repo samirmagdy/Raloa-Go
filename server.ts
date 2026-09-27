@@ -4,11 +4,14 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import type { DocumentData, DocumentReference } from 'firebase-admin/firestore';
+import type { DocumentData, DocumentReference, DocumentSnapshot } from 'firebase-admin/firestore';
+import multer from 'multer';
+import sharp from 'sharp';
 import {
   APP_URL,
   adminDb,
   adminAuth,
+  adminStorage,
   stripe,
   cloudflareRequest,
   createCheckoutSession,
@@ -1146,6 +1149,158 @@ function siteMediaCount(site: Record<string, any>): number {
     }
   }
   return urls.size;
+}
+
+const MEDIA_PURPOSES = new Set(['gallery', 'product', 'background', 'block', 'avatar']);
+const MEDIA_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_MEDIA_DIMENSION = 8192;
+const MEDIA_SIGNED_URL_TTL_MS = 15 * 60 * 1000;
+const mediaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024, files: 1 },
+  fileFilter: (_request, file, callback) => callback(null, MEDIA_MIME_TYPES.has(file.mimetype))
+});
+
+function parseMediaUpload(req: Request, res: Response, next: NextFunction): void {
+  mediaUpload.single('file')(req, res, (error) => {
+    if (!error) return next();
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+      apiError(res, 413, 'MEDIA_TOO_LARGE', 'The uploaded file is larger than the maximum allowed size.');
+      return;
+    }
+    apiError(res, 400, 'INVALID_MEDIA_FILE', 'Upload a JPEG, PNG, or WebP image.');
+  });
+}
+
+async function authenticateMediaUpload(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+    return;
+  }
+  (req as Request & { mediaUser?: AuthenticatedUser }).mediaUser = user;
+  next();
+}
+
+function mediaPublicUrl(mediaId: string): string {
+  return `${APP_URL}/api/media/public/${encodeURIComponent(mediaId)}`;
+}
+
+function mediaThumbnailUrl(mediaId: string): string {
+  return `${APP_URL}/api/media/public/${encodeURIComponent(mediaId)}?variant=thumbnail`;
+}
+
+function mediaIdFromUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const parsed = new URL(value);
+    const match = parsed.pathname.match(/\/api\/media\/public\/([^/]+)$/);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function collectMediaIds(site: Record<string, any>): string[] {
+  const ids = new Set<string>();
+  for (const value of [site.avatar, site.coverImage]) {
+    const id = mediaIdFromUrl(value);
+    if (id) ids.add(id);
+  }
+  if (Array.isArray(site.links)) for (const link of site.links) {
+    for (const value of [link?.thumbnail, link?.url]) {
+      const id = mediaIdFromUrl(value);
+      if (id) ids.add(id);
+    }
+    if (Array.isArray(link?.galleryItems)) for (const item of link.galleryItems) {
+      for (const value of [item?.src, item?.thumbnail]) {
+        const id = mediaIdFromUrl(value);
+        if (id) ids.add(id);
+      }
+    }
+  }
+  if (Array.isArray(site.imageUrls)) for (const value of site.imageUrls) {
+    const id = mediaIdFromUrl(value);
+    if (id) ids.add(id);
+  }
+  return [...ids];
+}
+
+async function validateOwnedMediaReferences(site: Record<string, any>, userId: string, siteId: string): Promise<string | null> {
+  const ids = collectMediaIds(site);
+  if (ids.length === 0) return null;
+  const snapshots: DocumentSnapshot[] = [];
+  for (let index = 0; index < ids.length; index += 100) {
+    snapshots.push(...await Promise.all(ids.slice(index, index + 100).map((id) => adminDb.collection('media_assets').doc(id).get())));
+  }
+  if (snapshots.some((snapshot) => !snapshot.exists || snapshot.data()?.userId !== userId || snapshot.data()?.siteId !== siteId || snapshot.data()?.status !== 'ready')) {
+    return 'One or more media assets are not owned by this site or are not ready.';
+  }
+  return null;
+}
+
+function countExternalMedia(site: Record<string, any>): number {
+  const values: string[] = [];
+  for (const value of [site.avatar, site.coverImage]) if (typeof value === 'string' && value.trim()) values.push(value.trim());
+  if (Array.isArray(site.links)) for (const link of site.links) {
+    if (typeof link?.thumbnail === 'string' && link.thumbnail.trim()) values.push(link.thumbnail.trim());
+    if (Array.isArray(link?.galleryItems)) for (const item of link.galleryItems) {
+      if (typeof item?.src === 'string' && item.src.trim()) values.push(item.src.trim());
+      if (typeof item?.thumbnail === 'string' && item.thumbnail.trim()) values.push(item.thumbnail.trim());
+    }
+  }
+  return new Set(values.filter((value) => !mediaIdFromUrl(value))).size;
+}
+
+async function deleteMediaAsset(document: DocumentSnapshot): Promise<void> {
+  const data = document.data() || {};
+  for (const pathValue of [data.originalPath, data.thumbnailPath]) {
+    if (typeof pathValue === 'string' && pathValue) await adminStorage.file(pathValue).delete({ ignoreNotFound: true });
+  }
+  await document.ref.delete();
+}
+
+async function cleanupOrphanMedia(userId: string, siteId: string): Promise<number> {
+  const siteSnapshot = await adminDb.collection('users').doc(userId).collection('sites').doc(siteId).get();
+  if (!siteSnapshot.exists) return 0;
+  const referenced = new Set(collectMediaIds(siteSnapshot.data() || {}));
+  const products = await adminDb.collection('creator_products').where('creatorId', '==', userId).where('siteId', '==', siteId).limit(500).get();
+  products.docs.forEach((product) => collectMediaIds({ imageUrls: product.data()?.imageUrls }).forEach((id) => referenced.add(id)));
+  const assets = await adminDb.collection('media_assets').where('userId', '==', userId).where('siteId', '==', siteId).limit(500).get();
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  let removed = 0;
+  for (const document of assets.docs) {
+    const data = document.data();
+    const createdAt = Date.parse(String(data.createdAt || ''));
+    if (!referenced.has(document.id) && (!Number.isFinite(createdAt) || createdAt < cutoff)) {
+      await deleteMediaAsset(document);
+      removed += 1;
+    }
+  }
+  return removed;
+}
+
+async function sweepOrphanMedia(): Promise<void> {
+  if (!isAdminConfigured()) return;
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const snapshot = await adminDb.collection('media_assets').where('status', '==', 'ready').limit(500).get();
+  for (const document of snapshot.docs) {
+    const data = document.data();
+    if (Date.parse(String(data.createdAt || '')) >= cutoff) continue;
+    const site = await adminDb.collection('users').doc(String(data.userId || '')).collection('sites').doc(String(data.siteId || '')).get();
+    const referencedInSite = collectMediaIds(site.data() || {}).includes(document.id);
+    const products = await adminDb.collection('creator_products').where('creatorId', '==', String(data.userId || '')).where('siteId', '==', String(data.siteId || '')).limit(500).get();
+    const referencedInProduct = products.docs.some((product) => collectMediaIds({ imageUrls: product.data()?.imageUrls }).includes(document.id));
+    if (!referencedInSite && !referencedInProduct) await deleteMediaAsset(document);
+  }
+}
+
+async function signedMediaUrl(pathValue: string): Promise<string> {
+  const [url] = await adminStorage.file(pathValue).getSignedUrl({
+    action: 'read',
+    expires: new Date(Date.now() + MEDIA_SIGNED_URL_TTL_MS)
+  });
+  return url;
 }
 
 function validGalleryItem(item: unknown): boolean {
@@ -3313,6 +3468,163 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
   }
 });
 
+app.post('/api/media/upload', authenticateMediaUpload, parseMediaUpload, async (req: Request, res: Response) => {
+  const user = (req as Request & { mediaUser?: AuthenticatedUser }).mediaUser;
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'MEDIA_UNAVAILABLE', 'Media storage is not configured.');
+  const file = (req as Request & { file?: Express.Multer.File }).file;
+  const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
+  const purpose = typeof req.body?.purpose === 'string' ? req.body.purpose.trim().toLowerCase() : '';
+  if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
+  if (!MEDIA_PURPOSES.has(purpose)) return apiError(res, 400, 'INVALID_MEDIA_PURPOSE', 'The media purpose is not supported.');
+  if (!file?.buffer?.length) return apiError(res, 400, 'MEDIA_FILE_REQUIRED', 'Choose an image to upload.');
+  if (!MEDIA_MIME_TYPES.has(file.mimetype)) return apiError(res, 415, 'UNSUPPORTED_MEDIA_TYPE', 'Only JPEG, PNG, and WebP images are supported.');
+  try {
+    const siteRef = adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId);
+    const siteSnapshot = await siteRef.get();
+    if (!siteSnapshot.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+    const profileSnapshot = await adminDb.collection('users').doc(user.uid).get();
+    const capabilities = getPlanCapabilities(profileSnapshot.data() as any);
+    if (file.size > capabilities.maxUploadBytes) return entitlementError(res, 'mediaUpload', `Your current plan allows uploads up to ${Math.round(capabilities.maxUploadBytes / (1024 * 1024))} MB.`);
+    await cleanupOrphanMedia(user.uid, siteId);
+    const mediaSnapshot = await adminDb.collection('media_assets').where('userId', '==', user.uid).where('siteId', '==', siteId).where('status', '==', 'ready').limit(10001).get();
+    const currentAssetCount = mediaSnapshot.size + countExternalMedia(siteSnapshot.data() || {});
+    if (Number.isFinite(capabilities.maxMedia) && currentAssetCount >= capabilities.maxMedia) {
+      return entitlementError(res, 'media', `Your current plan allows up to ${capabilities.maxMedia} media assets.`);
+    }
+    const metadata = await sharp(file.buffer).metadata();
+    if (!metadata.width || !metadata.height || metadata.width < 1 || metadata.height < 1 || metadata.width > MAX_MEDIA_DIMENSION || metadata.height > MAX_MEDIA_DIMENSION) {
+      return apiError(res, 422, 'INVALID_MEDIA_DIMENSIONS', `Images must be between 1 and ${MAX_MEDIA_DIMENSION}px on each side.`);
+    }
+    const optimized = await sharp(file.buffer).rotate().webp({ quality: 88, effort: 4 }).toBuffer();
+    const thumbnail = await sharp(file.buffer).rotate().resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true }).webp({ quality: 80, effort: 4 }).toBuffer();
+    const mediaId = crypto.randomUUID();
+    const basePath = `users/${user.uid}/sites/${siteId}/media/${mediaId}`;
+    const originalPath = `${basePath}/image.webp`;
+    const thumbnailPath = `${basePath}/thumbnail.webp`;
+    const objectMetadata = { contentType: 'image/webp', cacheControl: 'public,max-age=31536000,immutable', metadata: { userId: user.uid, siteId, mediaId, purpose } };
+    try {
+      await adminStorage.file(originalPath).save(optimized, { metadata: objectMetadata, resumable: false, validation: 'crc32c' });
+      await adminStorage.file(thumbnailPath).save(thumbnail, { metadata: objectMetadata, resumable: false, validation: 'crc32c' });
+      const now = new Date().toISOString();
+      const asset = {
+        id: mediaId,
+        userId: user.uid,
+        siteId,
+        purpose,
+        status: 'ready',
+        originalPath,
+        thumbnailPath,
+        publicUrl: mediaPublicUrl(mediaId),
+        thumbnailUrl: mediaThumbnailUrl(mediaId),
+        sourceMimeType: file.mimetype,
+        mimeType: 'image/webp',
+        sourceBytes: file.size,
+        bytes: optimized.length,
+        thumbnailBytes: thumbnail.length,
+        width: metadata.width,
+        height: metadata.height,
+        createdAt: now,
+        updatedAt: now
+      };
+      await adminDb.collection('media_assets').doc(mediaId).create(asset);
+      return res.status(201).json({ media: { ...asset, src: asset.publicUrl, thumbnail: asset.thumbnailUrl } });
+    } catch (error) {
+      await Promise.all([
+        adminStorage.file(originalPath).delete({ ignoreNotFound: true }),
+        adminStorage.file(thumbnailPath).delete({ ignoreNotFound: true })
+      ]);
+      throw error;
+    }
+  } catch (error) {
+    console.error('[Media upload]', error);
+    return apiError(res, 503, 'MEDIA_UPLOAD_FAILED', 'The media upload could not be completed.');
+  }
+});
+
+app.get('/api/media', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  const siteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
+  if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
+  try {
+    const site = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
+    if (!site.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+    const snapshot = await adminDb.collection('media_assets').where('userId', '==', user.uid).where('siteId', '==', siteId).where('status', '==', 'ready').limit(500).get();
+    return res.json({ media: snapshot.docs.map((document) => ({ ...document.data(), src: mediaPublicUrl(document.id), thumbnail: mediaThumbnailUrl(document.id) })) });
+  } catch (error) {
+    console.error('[Media list]', error);
+    return apiError(res, 503, 'MEDIA_UNAVAILABLE', 'Media assets are temporarily unavailable.');
+  }
+});
+
+app.get('/api/media/:mediaId/url', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  try {
+    const document = await adminDb.collection('media_assets').doc(String(req.params.mediaId || '')).get();
+    if (!document.exists || document.data()?.userId !== user.uid || document.data()?.status !== 'ready') return apiError(res, 404, 'MEDIA_NOT_FOUND', 'Media asset not found.');
+    const variant = req.query.variant === 'thumbnail' ? 'thumbnailPath' : 'originalPath';
+    return res.json({ url: await signedMediaUrl(String(document.data()?.[variant] || '')), expiresAt: new Date(Date.now() + MEDIA_SIGNED_URL_TTL_MS).toISOString() });
+  } catch (error) {
+    console.error('[Media signed URL]', error);
+    return apiError(res, 503, 'MEDIA_URL_UNAVAILABLE', 'The media URL is temporarily unavailable.');
+  }
+});
+
+app.delete('/api/media/:mediaId', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  const siteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
+  try {
+    const document = await adminDb.collection('media_assets').doc(String(req.params.mediaId || '')).get();
+    const data = document.data();
+    if (!document.exists || data?.userId !== user.uid || data?.siteId !== siteId) return apiError(res, 404, 'MEDIA_NOT_FOUND', 'Media asset not found.');
+    const site = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
+    const products = await adminDb.collection('creator_products').where('creatorId', '==', user.uid).where('siteId', '==', siteId).limit(500).get();
+    const productUses = products.docs.some((product) => collectMediaIds({ imageUrls: product.data()?.imageUrls }).includes(document.id));
+    if (collectMediaIds(site.data() || {}).includes(document.id) || productUses) return apiError(res, 409, 'MEDIA_IN_USE', 'Remove this media from the site or product before deleting it.');
+    await deleteMediaAsset(document);
+    return res.status(204).send();
+  } catch (error) {
+    console.error('[Media delete]', error);
+    return apiError(res, 503, 'MEDIA_DELETE_FAILED', 'The media asset could not be deleted.');
+  }
+});
+
+app.post('/api/media/cleanup', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
+  if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
+  try {
+    const removed = await cleanupOrphanMedia(user.uid, siteId);
+    return res.json({ removed });
+  } catch (error) {
+    console.error('[Media cleanup]', error);
+    return apiError(res, 503, 'MEDIA_CLEANUP_FAILED', 'Orphan media cleanup is temporarily unavailable.');
+  }
+});
+
+app.get('/api/media/public/:mediaId', async (req: Request, res: Response) => {
+  const mediaId = String(req.params.mediaId || '').trim();
+  if (!/^[a-f0-9-]{36}$/i.test(mediaId)) return res.status(404).send('Media not found');
+  try {
+    const document = await adminDb.collection('media_assets').doc(mediaId).get();
+    const data = document.data();
+    if (!document.exists || data?.status !== 'ready') return res.status(404).send('Media not found');
+    const site = await adminDb.collection('users').doc(String(data.userId || '')).collection('sites').doc(String(data.siteId || '')).get();
+    if (!site.exists || site.data()?.isPublished !== true) return res.status(404).send('Media not found');
+    const pathValue = req.query.variant === 'thumbnail' ? data.thumbnailPath : data.originalPath;
+    if (typeof pathValue !== 'string' || !pathValue) return res.status(404).send('Media not found');
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
+    return res.redirect(302, await signedMediaUrl(pathValue));
+  } catch (error) {
+    console.error('[Public media]', error);
+    return res.status(503).send('Media temporarily unavailable');
+  }
+});
+
 app.get('/api/public/sites/:handle', async (req: Request, res: Response) => {
   const handle = String(req.params.handle || '').trim().toLowerCase();
   if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return res.status(400).json({ error: 'Invalid handle' });
@@ -3437,6 +3749,8 @@ app.post('/api/sites', async (req: Request, res: Response) => {
   } as Record<string, any>;
   if (site.links.some((link: any) => !link || typeof link !== 'object' || typeof link.id !== 'string' || typeof link.title !== 'string' || !isSafePublicUrl(link.url, true))) return apiError(res, 400, 'INVALID_LINKS', 'Every link must have valid text and a safe public URL.');
   site.designTokens = normalizeDesignTokens(site.designTokens, site);
+  const ownedMediaError = await validateOwnedMediaReferences(site, user.uid, siteId);
+  if (ownedMediaError) return apiError(res, 400, 'INVALID_MEDIA_REFERENCE', ownedMediaError);
   const entitlement = validateSiteEntitlements(site, profile.data());
   if (entitlement) return entitlementError(res, entitlement.feature, entitlement.message, entitlement.details);
   await reference.create(site);
@@ -3512,6 +3826,8 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
   const sanitized = Object.fromEntries(Object.entries(merged).filter(([key]) => allowedKeys.has(key)));
   const entitlement = validateSiteEntitlements(sanitized, profileData);
   if (entitlement) return entitlementError(res, entitlement.feature, entitlement.message, entitlement.details);
+  const ownedMediaError = await validateOwnedMediaReferences(sanitized, user.uid, siteId);
+  if (ownedMediaError) return apiError(res, 400, 'INVALID_MEDIA_REFERENCE', ownedMediaError);
   if (sanitized.isPublished === true && (!sanitized.username || !sanitized.displayName || !sanitized.bio)) {
     return apiError(res, 400, 'PUBLISH_REQUIREMENTS_NOT_MET', 'Complete your handle, display name, and bio before publishing.');
   }
@@ -3581,6 +3897,8 @@ app.post('/api/creator/products', async (req: Request, res: Response) => {
     return apiError(res, 400, 'INVALID_PRODUCT', 'Name, supported currency, valid price, and inventory are required.');
   }
   if (Array.isArray(req.body?.imageUrls) && imageUrls.length !== req.body.imageUrls.length) return apiError(res, 400, 'INVALID_PRODUCT_IMAGES', 'Every product image must be an HTTP(S) URL.');
+  const ownedProductMediaError = await validateOwnedMediaReferences({ imageUrls }, user.uid, siteId);
+  if (ownedProductMediaError) return apiError(res, 400, 'INVALID_PRODUCT_IMAGES', ownedProductMediaError);
   let stripeProductId = '';
   let stripePriceId = '';
   try {
@@ -3624,6 +3942,8 @@ app.patch('/api/creator/products/:productId', async (req: Request, res: Response
     return apiError(res, 400, 'INVALID_PRODUCT', 'Product fields are invalid or inventory is below currently reserved units.');
   }
   if (req.body?.imageUrls !== undefined && imageUrls.length !== req.body.imageUrls.length) return apiError(res, 400, 'INVALID_PRODUCT_IMAGES', 'Every product image must be an HTTP(S) URL.');
+  const ownedProductMediaError = await validateOwnedMediaReferences({ imageUrls }, user.uid, String(current.siteId || ''));
+  if (ownedProductMediaError) return apiError(res, 400, 'INVALID_PRODUCT_IMAGES', ownedProductMediaError);
   try {
     await stripe.products.update(String(current.stripeProductId), { name, description, images: imageUrls, active });
     let stripePriceId = String(current.stripePriceId || '');
@@ -4472,6 +4792,8 @@ if (isDirectExecution && process.env.NODE_ENV !== 'test') {
   notificationWorker.unref();
   const calendarWorker = setInterval(() => { void processPendingCalendarJobs(); }, 30_000);
   calendarWorker.unref();
+  const mediaCleanupWorker = setInterval(() => { void sweepOrphanMedia().catch((error) => console.error('[Media cleanup worker]', error)); }, 60 * 60 * 1000);
+  mediaCleanupWorker.unref();
 }
 
 export default app;

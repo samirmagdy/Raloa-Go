@@ -10,6 +10,7 @@ APP_URL=https://raloa.app
 AUTH_SESSION_SECRET=<random 32+ character secret>
 FIREBASE_PROJECT_ID=gen-lang-client-0319129908
 FIRESTORE_DATABASE_ID=ai-studio-raloadesignfirst-8ccbe7ea-5af1-4106-809a-71252bddde6f
+FIREBASE_STORAGE_BUCKET=gen-lang-client-0319129908.firebasestorage.app
 FIREBASE_ADMIN_ENABLED=true
 STRIPE_SECRET_KEY
 STRIPE_WEBHOOK_SECRET
@@ -56,7 +57,7 @@ gcloud run deploy raloa \
   --platform managed \
   --allow-unauthenticated \
   --port 8080 \
-  --set-env-vars NODE_ENV=production,APP_URL=https://raloa.app,FIREBASE_PROJECT_ID=gen-lang-client-0319129908,FIRESTORE_DATABASE_ID=ai-studio-raloadesignfirst-8ccbe7ea-5af1-4106-809a-71252bddde6f,FIREBASE_ADMIN_ENABLED=true
+   --set-env-vars NODE_ENV=production,APP_URL=https://raloa.app,FIREBASE_PROJECT_ID=gen-lang-client-0319129908,FIRESTORE_DATABASE_ID=ai-studio-raloadesignfirst-8ccbe7ea-5af1-4106-809a-71252bddde6f,FIREBASE_STORAGE_BUCKET=gen-lang-client-0319129908.firebasestorage.app,FIREBASE_ADMIN_ENABLED=true
 ```
 
 Attach the secrets with `--set-secrets` in the real deployment command. Use a new Cloud Run revision for every release and keep the previous revision available for rollback.

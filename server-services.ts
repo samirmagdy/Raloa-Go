@@ -1,6 +1,7 @@
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth as getAdminAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
 import Stripe from 'stripe';
 import { normalizeDesignTokens } from './src/utils/designTokens';
 import { normalizeSiteSlug, validateSiteSlug } from './src/lib/siteSlug';
@@ -12,6 +13,8 @@ const APP_URL = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, 
 const adminApp = getApps().length ? getApps()[0] : initializeApp({ projectId: PROJECT_ID });
 export const adminDb = getFirestore(adminApp, DATABASE_ID);
 export const adminAuth = getAdminAuth(adminApp);
+const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.GCLOUD_STORAGE_BUCKET || `${PROJECT_ID}.firebasestorage.app`;
+export const adminStorage = getStorage(adminApp).bucket(STORAGE_BUCKET);
 
 export const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY)

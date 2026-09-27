@@ -7,6 +7,7 @@ import {
   Monitor
 } from 'lucide-react';
 import { Locale, BackgroundStyle } from '../../types';
+import { uploadMedia } from '../../lib/mediaUpload';
 
 export interface VisualPreset {
   id: string;
@@ -118,6 +119,9 @@ export const VISUAL_PRESETS: VisualPreset[] = [
 ];
 
 interface StudioDesignTabProps {
+  siteId: string;
+  coverImage: string;
+  onCoverImageChange: (val: string) => void;
   templateId: string;
   onTemplateIdChange: (val: string) => void;
   bgStyle: BackgroundStyle;
@@ -147,6 +151,9 @@ interface StudioDesignTabProps {
 }
 
 export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
+  siteId,
+  coverImage,
+  onCoverImageChange,
   bgStyle,
   onBgStyleChange,
   themeMode,
@@ -169,6 +176,21 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
   locale
 }) => {
   const isRtl = locale === 'ar';
+  const [coverUploadProgress, setCoverUploadProgress] = React.useState<number | null>(null);
+  const [coverUploadError, setCoverUploadError] = React.useState('');
+
+  const handleCoverUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !siteId) return;
+    setCoverUploadError('');
+    try {
+      const uploaded = await uploadMedia(file, siteId, 'background', setCoverUploadProgress);
+      onCoverImageChange(uploaded.src);
+    } catch (error) {
+      setCoverUploadError(error instanceof Error ? error.message : 'Background upload failed.');
+    } finally { setCoverUploadProgress(null); }
+  };
 
   const curatedAccents = [
     '#4F46E5', // Indigo
@@ -515,6 +537,20 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
               <span>{isRtl ? 'داكن' : 'Dark'}</span>
             </button>
           </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+            {isRtl ? 'صورة الغلاف' : 'Background image'}
+          </label>
+          <div className="flex items-center gap-2">
+            <input type="url" value={coverImage} onChange={(event) => onCoverImageChange(event.target.value)} placeholder="https://..." className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <label className="inline-flex cursor-pointer rounded-xl border border-indigo-200 px-3 py-2 text-xs font-bold text-indigo-700 dark:border-indigo-900 dark:text-indigo-300">
+              {coverUploadProgress === null ? (isRtl ? 'رفع' : 'Upload') : `${coverUploadProgress}%`}
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleCoverUpload} disabled={coverUploadProgress !== null} />
+            </label>
+          </div>
+          {coverUploadError && <p role="alert" className="mt-1 text-[11px] font-semibold text-rose-600">{coverUploadError}</p>}
         </div>
       </div>
     </div>

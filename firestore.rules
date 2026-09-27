@@ -158,6 +158,7 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /custom_domains/{domainId} { allow read, write: if false; }
+    match /media_assets/{mediaId} { allow read, write: if false; }
     match /creator_integrations/{integrationId} { allow read, write: if false; }
     match /oauth_states/{stateId} { allow read, write: if false; }
     match /stripe_events/{eventId} { allow read, write: if false; }
