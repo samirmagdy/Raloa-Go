@@ -136,6 +136,13 @@ interface StudioDesignTabProps {
   onBorderStyleChange: (val: 'none' | 'thin' | 'bold' | 'dashed') => void;
   onApplyPreset?: (preset: VisualPreset) => void;
   onResetDefault: () => void;
+  allowedBackgroundStyles?: readonly string[];
+  allowedDesignOptions?: {
+    cardRadius: readonly string[];
+    cardShadow: readonly string[];
+    borderStyle: readonly string[];
+  };
+  onEntitlementError?: (message: string) => void;
   locale: Locale;
 }
 
@@ -156,6 +163,9 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
   onBorderStyleChange,
   onApplyPreset,
   onResetDefault,
+  allowedBackgroundStyles,
+  allowedDesignOptions,
+  onEntitlementError,
   locale
 }) => {
   const isRtl = locale === 'ar';
@@ -172,6 +182,15 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
   ];
 
   const handleApplyPreset = (p: VisualPreset) => {
+    const allowed = !allowedDesignOptions
+      || (allowedDesignOptions.cardRadius.includes(p.radius)
+        && allowedDesignOptions.cardShadow.includes(p.shadow)
+        && allowedDesignOptions.borderStyle.includes(p.borderStyle)
+        && (!allowedBackgroundStyles || allowedBackgroundStyles.includes(p.bgStyle)));
+    if (!allowed) {
+      onEntitlementError?.('This visual preset is not included in your current plan.');
+      return;
+    }
     if (onApplyPreset) {
       onApplyPreset(p);
       return;
@@ -215,11 +234,17 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
               cardRadius === p.radius &&
               borderStyle === p.borderStyle;
 
+            const isAllowed = !allowedDesignOptions
+              || (allowedDesignOptions.cardRadius.includes(p.radius)
+                && allowedDesignOptions.cardShadow.includes(p.shadow)
+                && allowedDesignOptions.borderStyle.includes(p.borderStyle)
+                && (!allowedBackgroundStyles || allowedBackgroundStyles.includes(p.bgStyle)));
             return (
               <button
                 key={p.id}
                 type="button"
                 onClick={() => handleApplyPreset(p)}
+                disabled={!isAllowed}
                 className={`p-3 rounded-2xl border text-left rtl:text-right transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer group flex flex-col justify-between ${
                   isPresetActive
                     ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 ring-1 ring-indigo-600 shadow-xs'
@@ -273,7 +298,7 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
               <button
                 key={r.id}
                 type="button"
-                onClick={() => onCardRadiusChange(r.id as any)}
+                onClick={() => allowedDesignOptions?.cardRadius.includes(r.id) === false ? onEntitlementError?.('This radius option is not included in your current plan.') : onCardRadiusChange(r.id as any)}
                 className={`py-2 px-2.5 rounded-xl border text-xs font-semibold text-center transition-all cursor-pointer ${
                   cardRadius === r.id
                     ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-600'
@@ -301,7 +326,7 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
               <button
                 key={s.id}
                 type="button"
-                onClick={() => onCardShadowChange(s.id as any)}
+                onClick={() => allowedDesignOptions?.cardShadow.includes(s.id) === false ? onEntitlementError?.('This shadow option is not included in your current plan.') : onCardShadowChange(s.id as any)}
                 className={`py-2 px-2.5 rounded-xl border text-xs font-semibold text-center transition-all cursor-pointer ${
                   cardShadow === s.id
                     ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-600'
@@ -329,7 +354,7 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
               <button
                 key={b.id}
                 type="button"
-                onClick={() => onBorderStyleChange(b.id as any)}
+                onClick={() => allowedDesignOptions?.borderStyle.includes(b.id) === false ? onEntitlementError?.('This border option is not included in your current plan.') : onBorderStyleChange(b.id as any)}
                 className={`py-2 px-2.5 rounded-xl border text-xs font-semibold text-center transition-all cursor-pointer ${
                   borderStyle === b.id
                     ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-600'
@@ -426,11 +451,14 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
               { id: 'minimal', label: isRtl ? 'بسيط مونو' : 'Minimal' },
               { id: 'immersive', label: isRtl ? 'توهج عميق' : 'Immersive' },
               { id: 'banner', label: isRtl ? 'صورة غلاف' : 'Cover Banner' }
-            ].map((bg) => (
+            ].map((bg) => {
+              const isAllowed = !allowedBackgroundStyles || allowedBackgroundStyles.includes(bg.id);
+              return (
               <button
                 key={bg.id}
                 type="button"
                 onClick={() => onBgStyleChange(bg.id as any)}
+                disabled={!isAllowed}
                 className={`py-2 px-2 rounded-xl border text-xs font-semibold text-center transition-all cursor-pointer ${
                   bgStyle === bg.id
                     ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-600'
@@ -439,7 +467,8 @@ export const StudioDesignTab: React.FC<StudioDesignTabProps> = ({
               >
                 {bg.label}
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
 

@@ -18,6 +18,7 @@ import { Locale, UserProfile } from '../../types';
 import { auth, googleProvider, sendPasswordReset, storage, recordReferralInvite } from '../../lib/firebase';
 import { EmailAuthProvider, OAuthProvider, linkWithPopup, reauthenticateWithCredential, sendEmailVerification, unlink, updatePassword, verifyBeforeUpdateEmail } from 'firebase/auth';
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
+import { getPlanCapabilities } from '../../lib/planCapabilities';
 
 type Section = 'profile' | 'security' | 'notifications' | 'privacy' | 'billing' | 'referrals' | 'connected' | 'danger';
 type Preferences = {
@@ -61,6 +62,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   onSignOut
 }) => {
   const isRtl = locale === 'ar';
+  const uploadLimitBytes = getPlanCapabilities(profile).maxUploadBytes;
+  const uploadLimitMb = Math.round(uploadLimitBytes / (1024 * 1024));
   const [section, setSection] = useState<Section>('profile');
   const [profileForm, setProfileForm] = useState({ displayName: '', bio: '', pronouns: '', location: '', website: '', locale, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
   const [preferences, setPreferences] = useState<Preferences>({ notifications: {}, privacy: {}, channels: {} });
@@ -204,8 +207,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const uploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !auth.currentUser) return;
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
-      setStatus({ type: 'error', text: isRtl ? 'استخدم JPG أو PNG أو WebP بحجم 5MB أو أقل.' : 'Use a JPG, PNG, or WebP image up to 5 MB.' });
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > uploadLimitBytes) {
+      setStatus({ type: 'error', text: isRtl ? `استخدم JPG أو PNG أو WebP بحجم ${uploadLimitMb}MB أو أقل.` : `Use a JPG, PNG, or WebP image up to ${uploadLimitMb} MB.` });
       return;
     }
     setAvatarBusy(true);

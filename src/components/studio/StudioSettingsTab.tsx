@@ -13,6 +13,7 @@ import { BookingConfig, Locale } from '../../types';
 import { auth } from '../../lib/firebase';
 import { StudioSchedulingSettings } from './StudioSchedulingSettings';
 import { StudioProductsSettings } from './StudioProductsSettings';
+import { getPlanCapabilities } from '../../lib/planCapabilities';
 
 interface StudioSettingsTabProps {
   handle: string;
@@ -68,6 +69,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   locale
 }) => {
   const isRtl = locale === 'ar';
+  const capabilities = getPlanCapabilities({ plan: plan === 'pro' || plan === 'studio' ? plan : 'free' });
   const [activeSubSection, setActiveSubSection] = useState<'site' | 'domain' | 'integrations' | 'billing' | 'advanced'>('site');
   const [domainVerified, setDomainVerified] = useState(false);
   const [domainStatus, setDomainStatus] = useState<'idle' | 'pending' | 'verified' | 'failed'>('idle');
@@ -290,6 +292,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
               <input
                 type="text"
                 value={customDomain}
+                disabled={!capabilities.customDomains}
                   onChange={(e) => {
                   onCustomDomainChange(e.target.value.toLowerCase().trim());
                   setDomainVerified(false);
@@ -305,7 +308,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
               <button
                 type="button"
                 onClick={handleVerifyDomain}
-                disabled={isVerifying || !customDomain}
+                disabled={isVerifying || !customDomain || !capabilities.customDomains}
                 className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer disabled:opacity-50"
               >
                 {isVerifying ? (
@@ -371,7 +374,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
             </div>
           </div>
 
-          <StudioSchedulingSettings value={bookingConfig} onChange={onBookingConfigChange} locale={locale} />
+          <StudioSchedulingSettings value={bookingConfig} onChange={onBookingConfigChange} locale={locale} allowCalendarIntegration={capabilities.studioControls} />
           <StudioProductsSettings locale={locale} />
 
           <div>
@@ -403,6 +406,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
             <input
               type="text"
               value={ga4Id}
+              disabled={!capabilities.analytics}
               onChange={(e) => onGa4IdChange(e.target.value)}
               placeholder="G-XXXXXXXXXX"
               className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -416,6 +420,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
             <input
               type="text"
               value={metaPixelId}
+              disabled={!capabilities.analytics}
               onChange={(e) => onMetaPixelIdChange(e.target.value)}
               placeholder="123456789012345"
               className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -429,6 +434,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
             <input
               type="url"
               value={webhookUrl}
+              disabled={!capabilities.studioControls}
               onChange={(e) => onWebhookUrlChange(e.target.value)}
               placeholder="https://hooks.zapier.com/..."
               className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"

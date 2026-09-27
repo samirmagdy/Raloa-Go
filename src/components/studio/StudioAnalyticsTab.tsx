@@ -6,11 +6,11 @@ import { StudioBlockItem } from './SortableBlockList';
 import { auth } from '../../lib/firebase';
 import { PlatformMetrics } from '../../api/types';
 
-interface StudioAnalyticsTabProps { links: StudioBlockItem[]; locale: Locale; }
+interface StudioAnalyticsTabProps { links: StudioBlockItem[]; locale: Locale; analyticsEnabled?: boolean; }
 type Range = '7d' | '30d' | 'all';
 const emptyMetrics: PlatformMetrics = { totalVisits: 0, totalPageViews: 0, uniqueVisitors: 0, totalClicks: 0, ctr: null, activeSitesCount: 0, timeline: [], links: [], utmSources: [], referrers: [], devices: [], browsers: [], countries: [] };
 
-export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({ links, locale }) => {
+export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({ links, locale, analyticsEnabled = true }) => {
   const isRtl = locale === 'ar';
   const [range, setRange] = useState<Range>('30d');
   const [from, setFrom] = useState('');
@@ -21,6 +21,10 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({ links, l
 
   useEffect(() => {
     let cancelled = false;
+    if (!analyticsEnabled) {
+      setLoading(false);
+      return () => { cancelled = true; };
+    }
     (async () => {
       setLoading(true); setError(false);
       try {
@@ -35,12 +39,14 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({ links, l
       finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [range, from, to]);
+  }, [analyticsEnabled, range, from, to]);
 
   const linkStats = useMemo(() => { const byId = new Map(metrics.links.map((link) => [link.linkId, link])); return links.slice(0, 5).map((link) => ({ ...link, stats: byId.get(link.id) })); }, [links, metrics.links]);
   const hasData = metrics.totalPageViews > 0 || metrics.totalClicks > 0;
   const totalUtmClicks = metrics.utmSources.reduce((sum, item) => sum + item.clicks, 0);
   const breakdown = (title: string, items: Array<{ name: string; count: number }>) => <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs"><h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3">{title}</h3>{items.length === 0 ? <p className="text-xs text-slate-400">{isRtl ? 'لا توجد بيانات مسجلة بعد.' : 'No data recorded for this period.'}</p> : <div className="space-y-2">{items.slice(0, 8).map((item) => <div key={item.name} className="flex justify-between text-sm"><span className="text-slate-600 dark:text-slate-300 truncate pr-3">{item.name}</span><span className="font-mono font-bold text-slate-900 dark:text-white">{item.count.toLocaleString()}</span></div>)}</div>}</div>;
+
+  if (!analyticsEnabled) return <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6 text-center text-sm text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-200">{isRtl ? 'التحليلات متاحة في باقتي Pro وStudio.' : 'Analytics are available on Pro and Studio plans.'}</div>;
 
   return <div className="space-y-6 animate-in fade-in duration-150" dir={isRtl ? 'rtl' : 'ltr'}>
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">{([['Page Views', metrics.totalPageViews, Eye, 'text-indigo-500'], ['Unique Visitors', metrics.uniqueVisitors, Users, 'text-blue-500'], ['Link Clicks', metrics.totalClicks, MousePointerClick, 'text-emerald-500'], ['CTR', metrics.ctr === null ? null : `${metrics.ctr.toFixed(1)}%`, Compass, 'text-amber-500']] as Array<[string, number | string | null, LucideIcon, string]>).map(([label, value, Icon, color]) => <div key={label} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs"><div className="flex items-center justify-between text-slate-400 mb-1"><span className="text-[11px] font-bold uppercase tracking-wider">{label}</span><Icon className={`w-4 h-4 ${color}`} /></div><p className="text-2xl font-black text-slate-900 dark:text-white">{value === null ? (isRtl ? 'لا توجد بيانات' : 'No data yet') : typeof value === 'number' ? value.toLocaleString() : value}</p><p className="text-[11px] text-slate-400 font-medium mt-1">{error ? (isRtl ? 'تعذر تحميل التحليلات' : 'Analytics unavailable') : hasData ? (isRtl ? 'بيانات الفترة المحددة' : 'Selected period') : (isRtl ? 'لم تسجل أحداث بعد' : 'No events recorded yet')}</p></div>)}</div>

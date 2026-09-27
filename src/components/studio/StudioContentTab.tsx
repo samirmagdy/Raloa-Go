@@ -34,6 +34,9 @@ interface StudioContentTabProps {
   links: StudioBlockItem[];
   onLinksChange: (links: StudioBlockItem[]) => void;
   onOpenLinktreeImport: () => void;
+  allowedBlockTypes?: readonly string[];
+  maxLinks?: number;
+  onEntitlementError?: (message: string) => void;
   locale: Locale;
 }
 
@@ -51,6 +54,9 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
   links,
   onLinksChange,
   onOpenLinktreeImport,
+  allowedBlockTypes,
+  maxLinks,
+  onEntitlementError,
   locale
 }) => {
   const isRtl = locale === 'ar';
@@ -83,6 +89,10 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
   const handleCreateBlock = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newUrl.trim()) return;
+    if (typeof maxLinks === 'number' && links.length >= maxLinks) {
+      onEntitlementError?.('Your current plan has reached its link limit.');
+      return;
+    }
 
     const block: StudioBlockItem = {
       id: `block-${Date.now()}`,
@@ -92,6 +102,10 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
       type: newBlockType
     };
 
+    if (allowedBlockTypes && !allowedBlockTypes.includes(newBlockType)) {
+      onEntitlementError?.('This block type is not included in your current plan.');
+      return;
+    }
     onLinksChange([...links, block]);
     setNewTitle('');
     setNewUrl('');
@@ -312,6 +326,7 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
           <button
             type="button"
             onClick={() => setAddBlockModalOpen(true)}
+            disabled={typeof maxLinks === 'number' && links.length >= maxLinks}
             className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -356,11 +371,13 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
               {blockTypes.map((b) => {
                 const Icon = b.icon;
                 const isSelected = newBlockType === b.type;
+                const isAllowed = !allowedBlockTypes || allowedBlockTypes.includes(b.type);
                 return (
                   <button
                     key={b.type}
                     type="button"
                     onClick={() => setNewBlockType(b.type)}
+                    disabled={!isAllowed}
                     className={`p-3 rounded-2xl border text-left rtl:text-right flex items-start gap-2.5 transition-all cursor-pointer ${
                       isSelected
                         ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 ring-1 ring-indigo-600'
@@ -372,7 +389,7 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                        {b.label}
+                        {b.label}{!isAllowed && <span className="ml-1 text-[9px] text-indigo-500">Pro/Studio</span>}
                       </p>
                       <p className="text-[10px] text-slate-500 truncate">
                         {b.desc}

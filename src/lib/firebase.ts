@@ -567,7 +567,13 @@ export async function saveUserMiniSiteToFirestore(
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(siteData)
   });
-  if (!response.ok) throw new Error('SITE_SAVE_FAILED');
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const error = new Error(payload?.error?.message || payload?.message || 'SITE_SAVE_FAILED') as Error & { code?: string; fields?: Record<string, string> };
+    error.code = payload?.error?.code || payload?.code || 'SITE_SAVE_FAILED';
+    error.fields = payload?.error?.fields || payload?.fields;
+    throw error;
+  }
 }
 
 /**

@@ -28,6 +28,7 @@ import { StudioLinktreeImporter } from '../studio/StudioLinktreeImporter';
 import { DEFAULT_BOOKING_CONFIG } from '../studio/StudioSchedulingSettings';
 import { StudioTemplatePreview } from '../studio/StudioTemplatePreview';
 import { StudioBlockItem } from '../studio/SortableBlockList';
+import { getPlanCapabilities, isPremiumTemplate } from '../../lib/planCapabilities';
 
 export interface StudioSiteConfig {
   username: string;
@@ -80,7 +81,10 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 }) => {
   const { user, profile, loading: authLoading, saveMiniSite, loadMiniSite } = useAuth();
   const isRtl = locale === 'ar';
-  const defaultTemplate = initialTemplate || templatesData[0];
+  const capabilities = getPlanCapabilities(profile);
+  const defaultTemplate = initialTemplate && (!isPremiumTemplate(initialTemplate.id) || capabilities.premiumTemplates)
+    ? initialTemplate
+    : templatesData.find((template) => !isPremiumTemplate(template.id)) || templatesData[0];
 
   // Active top-level Tab State
   const [activeTab, setActiveTab] = useState<StudioTab>('content');
@@ -97,6 +101,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 
   // Real-time Save status: 'saving' | 'saved' | 'live' | 'error'
   const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | 'live' | 'error'>('live');
+  const [entitlementMessage, setEntitlementMessage] = useState('');
 
   const isInitialLoadDone = useRef(false);
   const lastTextEditRef = useRef<number>(0);
@@ -347,6 +352,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       } catch (err) {
         console.error('Failed to autosave live site configuration:', err);
         setSaveStatus('error');
+        setEntitlementMessage(err instanceof Error ? err.message : 'This change is not included in your current plan.');
       }
     },
     [user, saveMiniSite, siteConfig]
@@ -582,6 +588,12 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 
           {/* Tab Pane Active Content */}
           <div className="flex-1 overflow-y-auto no-scrollbar pb-24 lg:pb-12">
+            {entitlementMessage && (
+              <div role="alert" className="mx-1 mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                {entitlementMessage}
+                <button type="button" className="ml-2 underline" onClick={() => setEntitlementMessage('')}>Dismiss</button>
+              </div>
+            )}
             {activeTab === 'content' && (
               <StudioContentTab
                 displayName={displayName}
@@ -597,6 +609,9 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                 links={links}
                 onLinksChange={(newLinks) => updateSiteConfig({ links: newLinks })}
                 onOpenLinktreeImport={() => setShowLinktreeImporter(true)}
+                allowedBlockTypes={capabilities.allowedBlockTypes}
+                maxLinks={capabilities.maxLinks}
+                onEntitlementError={setEntitlementMessage}
                 locale={locale}
               />
             )}
@@ -604,7 +619,13 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             {activeTab === 'design' && (
               <StudioDesignTab
                 templateId={templateId}
-                onTemplateIdChange={(tId) => updateSiteConfig({ templateId: tId })}
+                onTemplateIdChange={(tId) => {
+                  if (isPremiumTemplate(tId) && !capabilities.premiumTemplates) {
+                    setEntitlementMessage('Premium templates require a Pro or Studio plan.');
+                    return;
+                  }
+                  updateSiteConfig({ templateId: tId });
+                }}
                 bgStyle={bgStyle}
                 onBgStyleChange={(style) => updateSiteConfig({ bgStyle: style })}
                 themeMode={themeMode}
@@ -642,6 +663,9 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                     themeMode: preset.themeMode
                   });
                 }}
+                allowedBackgroundStyles={capabilities.allowedBackgroundStyles}
+                allowedDesignOptions={capabilities.allowedDesignOptions}
+                onEntitlementError={setEntitlementMessage}
                 locale={locale}
               />
             )}
@@ -651,7 +675,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             )}
 
             {activeTab === 'analytics' && (
-              <StudioAnalyticsTab links={links} locale={locale} />
+              <StudioAnalyticsTab links={links} locale={locale} analyticsEnabled={capabilities.analytics} />
             )}
 
             {activeTab === 'settings' && (

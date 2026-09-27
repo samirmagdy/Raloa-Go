@@ -31,6 +31,7 @@ import {
   type DomainRecord
 } from './server-services';
 import { templatesData } from './src/data/content';
+import { getPlanCapabilities, getPlanTier, isPremiumTemplate } from './src/lib/planCapabilities';
 import { calendarProviderIsConfigured, type CalendarProvider } from './server-calendar';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -929,8 +930,41 @@ async function processPendingBookingNotifications(): Promise<void> {
 }
 
 function hasPaidPlan(profile: DocumentData | undefined): boolean {
-  if (!profile || !['pro', 'studio'].includes(profile.plan)) return false;
-  return !(profile.plan === 'pro' && profile.referralProUntil && Date.parse(profile.referralProUntil) <= Date.now());
+  return getPlanTier(profile as any) !== 'free';
+}
+
+function entitlementError(res: Response, feature: string, message: string, details?: Record<string, string>) {
+  return apiError(res, 403, 'ENTITLEMENT_REQUIRED', message, { feature, ...details });
+}
+
+function siteMediaCount(site: Record<string, any>): number {
+  const urls = new Set<string>();
+  for (const value of [site.avatar, site.coverImage]) if (typeof value === 'string' && value.trim()) urls.add(value.trim());
+  if (Array.isArray(site.links)) for (const link of site.links) if (typeof link?.thumbnail === 'string' && link.thumbnail.trim()) urls.add(link.thumbnail.trim());
+  return urls.size;
+}
+
+export function validateSiteEntitlements(site: Record<string, any>, profile: DocumentData | undefined): { feature: string; message: string; details?: Record<string, string> } | null {
+  const capabilities = getPlanCapabilities(profile as any);
+  const tier = getPlanTier(profile as any);
+  const templateId = typeof site.templateId === 'string' ? site.templateId.trim().toLowerCase() : '';
+  if (!templatesData.some((template) => template.id === templateId)) return { feature: 'template', message: 'This template is not available.' };
+  if (isPremiumTemplate(templateId) && !capabilities.premiumTemplates) return { feature: 'premiumTemplates', message: 'Premium templates require a Pro or Studio plan.', details: { templateId } };
+  if (!Array.isArray(site.links) || site.links.length > capabilities.maxLinks) return { feature: 'links', message: `Your ${tier} plan allows up to ${capabilities.maxLinks} links.` };
+  if (siteMediaCount(site) > capabilities.maxMedia) return { feature: 'media', message: `Your ${tier} plan allows up to ${capabilities.maxMedia} media assets.` };
+  if (typeof site.bgStyle === 'string' && !capabilities.allowedBackgroundStyles.includes(site.bgStyle)) return { feature: 'backgroundStyle', message: 'This background style is not included in your plan.', details: { value: site.bgStyle } };
+  for (const [field, allowed] of Object.entries(capabilities.allowedDesignOptions)) {
+    if (site[field] !== undefined && !allowed.includes(site[field])) return { feature: field, message: `This ${field} option is not included in your plan.`, details: { value: String(site[field]) } };
+  }
+  if (Array.isArray(site.links)) {
+    const blocked = site.links.find((link) => !capabilities.allowedBlockTypes.includes(String(link?.type || 'link')));
+    if (blocked) return { feature: 'blockType', message: 'This block type is not included in your plan.', details: { value: String(blocked.type || 'link') } };
+  }
+  if (!capabilities.removeBranding && site.hidePoweredBy === true) return { feature: 'removeBranding', message: 'Removing RALOA branding requires a Pro or Studio plan.' };
+  if (!capabilities.customDomains && typeof site.customDomain === 'string' && site.customDomain.trim()) return { feature: 'customDomains', message: 'Custom domains require a Pro or Studio plan.' };
+  if (!capabilities.analytics && (site.ga4Id || site.metaPixelId)) return { feature: 'analyticsIntegrations', message: 'Analytics integrations require a Pro or Studio plan.' };
+  if (!capabilities.studioControls && (site.webhookUrl || site.bookingConfig?.calendarProvider && site.bookingConfig.calendarProvider !== 'none')) return { feature: 'studioControls', message: 'These advanced integrations require the Studio plan.' };
+  return null;
 }
 
 async function consumeDistributedRateLimit(key: string, limit: number, windowMs: number): Promise<{ allowed: boolean; retryAfter: number }> {
@@ -2598,6 +2632,8 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured()) return apiError(res, 503, 'ANALYTICS_UNAVAILABLE', 'Platform analytics are temporarily unavailable.');
+  const analyticsProfile = (await adminDb.collection('users').doc(user.uid).get()).data();
+  if (!getPlanCapabilities(analyticsProfile as any).analytics) return entitlementError(res, 'analytics', 'Analytics require a Pro or Studio plan.');
   try {
     const requestedFrom = typeof req.query.from === 'string' ? req.query.from : '';
     const requestedTo = typeof req.query.to === 'string' ? req.query.to : '';
@@ -2781,8 +2817,9 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
   if (typeof merged.displayName !== 'string' || merged.displayName.length > 120 || typeof merged.bio !== 'string' || merged.bio.length > 2000) {
     return apiError(res, 400, 'INVALID_SITE_CONTENT', 'Display name and bio are required and must be within limits.');
   }
-  if (!Array.isArray(merged.links) || merged.links.length > (profileData?.plan === 'free' ? 10 : 100)) {
-    return apiError(res, 403, 'PLAN_LIMIT_REACHED', 'This plan does not allow this many links.');
+  const siteCapabilities = getPlanCapabilities(profileData as any);
+  if (!Array.isArray(merged.links) || merged.links.length > siteCapabilities.maxLinks) {
+    return entitlementError(res, 'links', `Your current plan allows up to ${siteCapabilities.maxLinks} links.`);
   }
   if (merged.links.some((link) => !link || typeof link !== 'object'
     || typeof link.id !== 'string' || link.id.length > 200
@@ -2797,8 +2834,10 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
   if (merged.bookingConfig !== undefined) merged.bookingConfig = normalizeBookingConfig(merged.bookingConfig);
   const allowedKeys = new Set(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'socials', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'bookingConfig', 'updatedAt']);
   const sanitized = Object.fromEntries(Object.entries(merged).filter(([key]) => allowedKeys.has(key)));
-  if (profileData?.plan === 'free' && (sanitized.customDomain || sanitized.hidePoweredBy === true || sanitized.ga4Id || sanitized.metaPixelId || sanitized.webhookUrl)) {
-    return apiError(res, 403, 'FEATURE_NOT_AVAILABLE', 'Upgrade your plan to use this site feature.');
+  const entitlement = validateSiteEntitlements(sanitized, profileData);
+  if (entitlement) return entitlementError(res, entitlement.feature, entitlement.message, entitlement.details);
+  if (sanitized.isPublished === true && (!sanitized.username || !sanitized.displayName || !sanitized.bio)) {
+    return apiError(res, 400, 'PUBLISH_REQUIREMENTS_NOT_MET', 'Complete your handle, display name, and bio before publishing.');
   }
   await existingRef.set(sanitized, { merge: true });
   return res.status(existing.exists ? 200 : 201).json({ site: sanitized });
@@ -3150,7 +3189,7 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
   if (requestedSiteId && !/^[a-zA-Z0-9_-]{1,64}$/.test(requestedSiteId)) return res.status(400).json({ error: 'Invalid site ID' });
 
   const userProfile = await adminDb.collection('users').doc(user.uid).get();
-  if (!hasPaidPlan(userProfile.data())) return res.status(403).json({ error: 'Custom domains require a paid plan' });
+  if (!hasPaidPlan(userProfile.data())) return entitlementError(res, 'customDomains', 'Custom domains require a Pro or Studio plan.');
 
   const sitesCollection = adminDb.collection('users').doc(user.uid).collection('sites');
   const siteSnapshot = requestedSiteId

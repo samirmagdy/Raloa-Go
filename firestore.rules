@@ -10,6 +10,21 @@ service cloud.firestore {
     function paidPlan(userId) {
       return get(/databases/$(database)/documents/users/$(userId)).data.plan in ['pro', 'studio'];
     }
+    function studioPlan(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.plan == 'studio';
+    }
+    function premiumTemplate(templateId) {
+      return !(templateId in ['elena', 'mateo', 'dr-ahmed', 'fitlife', 'wander', 'savor']);
+    }
+    function validDesign(data, userId) {
+      return (paidPlan(userId) || (!('bgStyle' in data) || data.bgStyle in ['signature', 'minimal']))
+        && (paidPlan(userId) || (!('cardRadius' in data) || data.cardRadius in ['subtle', 'rounded']))
+        && (paidPlan(userId) || (!('cardShadow' in data) || data.cardShadow in ['none', 'subtle']))
+        && (paidPlan(userId) || (!('borderStyle' in data) || data.borderStyle in ['none', 'thin']));
+    }
+    function validBlockForPlan(block, userId) {
+      return studioPlan(userId) || !('type' in block) || block.type in ['link', 'gallery', 'booking', 'shop'];
+    }
     function validEmail(value) {
       return value is string && value.size() <= 320 && value.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
     }
@@ -64,6 +79,9 @@ service cloud.firestore {
         && data.links is list && data.links.size() <= 100 && data.isPublished is bool
         && data.keys().hasOnly(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'bookingConfig', 'updatedAt'])
         && (!('bookingConfig' in data) || validBookingConfig(data.bookingConfig))
+        && (!premiumTemplate(data.templateId) || paidPlan(userId))
+        && validDesign(data, userId)
+        && data.links.all(link, validBlockForPlan(link, userId))
         && (!('userId' in data) || data.userId == userId)
         && (get(/databases/$(database)/documents/users/$(userId)).data.plan != 'free' || data.links.size() <= 10)
         && (paidPlan(userId) || (!('customDomain' in data) || data.customDomain == ''))

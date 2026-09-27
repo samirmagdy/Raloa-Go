@@ -27,11 +27,12 @@ interface StudioSchedulingSettingsProps {
   value: BookingConfig;
   onChange: (value: BookingConfig) => void;
   locale: Locale;
+  allowCalendarIntegration?: boolean;
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-export const StudioSchedulingSettings: React.FC<StudioSchedulingSettingsProps> = ({ value, onChange, locale }) => {
+export const StudioSchedulingSettings: React.FC<StudioSchedulingSettingsProps> = ({ value, onChange, locale, allowCalendarIntegration = true }) => {
   const isRtl = locale === 'ar';
   const update = (patch: Partial<BookingConfig>) => onChange({ ...value, ...patch });
   const updateService = (index: number, patch: Partial<BookingServiceConfig>) => {
@@ -89,7 +90,7 @@ export const StudioSchedulingSettings: React.FC<StudioSchedulingSettingsProps> =
 
       <div><label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'تواريخ الحجب' : 'Blackout dates'}</label><input value={value.blackoutDates.join(', ')} onChange={(event) => update({ blackoutDates: event.target.value.split(',').map((date) => date.trim()).filter(Boolean).slice(0, 366) })} placeholder="2026-12-25, 2026-12-31" className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-mono dark:border-slate-700 dark:bg-slate-800 dark:text-white" /><p className="mt-1 text-[10px] text-slate-400">{isRtl ? 'افصل بين التواريخ بفاصلة.' : 'Comma-separated YYYY-MM-DD dates.'}</p></div>
 
-      <div><label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'تكامل التقويم' : 'Calendar integration'}</label><select value={value.calendarProvider || 'none'} onChange={(event) => update({ calendarProvider: event.target.value as BookingConfig['calendarProvider'] })} className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"><option value="none">{isRtl ? 'بدون تكامل' : 'No calendar sync'}</option><option value="google">Google Calendar (connection architecture)</option><option value="outlook">Outlook Calendar (connection architecture)</option></select><p className="mt-1 text-[10px] text-slate-400">{isRtl ? 'سيتم وضع أحداث المواعيد في قائمة مزامنة آمنة.' : 'Bookings create a durable calendar sync job; OAuth provider connection is required to deliver events.'}</p></div>
+      <div><label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'تكامل التقويم' : 'Calendar integration'}</label><select value={value.calendarProvider || 'none'} disabled={!allowCalendarIntegration} onChange={(event) => update({ calendarProvider: event.target.value as BookingConfig['calendarProvider'] })} className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-white"><option value="none">{isRtl ? 'بدون تكامل' : 'No calendar sync'}</option><option value="google">Google Calendar (Studio)</option><option value="outlook">Outlook Calendar (Studio)</option></select><p className="mt-1 text-[10px] text-slate-400">{allowCalendarIntegration ? (isRtl ? 'سيتم وضع أحداث المواعيد في قائمة مزامنة آمنة.' : 'Bookings create a durable calendar sync job; OAuth provider connection is required to deliver events.') : (isRtl ? 'يتطلب تكامل التقويم باقة Studio.' : 'Calendar integrations require the Studio plan.')}</p></div>
     </div>
   );
 };

@@ -13,7 +13,8 @@
     "check:api": "node /Users/samirmagdy/.agents/skills/backend-first/scripts/api-contract-check.mjs --root . --src . --docs docs/api --openapi docs/api/openapi.yaml",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test:analytics": "tsx test-analytics.ts"
+    "test:analytics": "tsx test-analytics.ts",
+    "test:entitlements": "tsx test-plan-entitlements.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
