@@ -43,7 +43,8 @@ CREATE TABLE sites (
   published_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT sites_content_object CHECK (jsonb_typeof(content) = 'object')
+  CONSTRAINT sites_content_object CHECK (jsonb_typeof(content) = 'object'),
+  UNIQUE (id, owner_user_id)
 );
 CREATE INDEX sites_owner_updated_idx ON sites (owner_user_id, updated_at DESC);
 CREATE INDEX sites_published_handle_idx ON sites (handle) WHERE is_published;
@@ -122,7 +123,8 @@ CREATE TABLE bookings (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK (starts_at < ends_at),
-  FOREIGN KEY (service_id, site_id) REFERENCES booking_services(id, site_id)
+  FOREIGN KEY (service_id, site_id) REFERENCES booking_services(id, site_id),
+  FOREIGN KEY (site_id, host_user_id) REFERENCES sites(id, owner_user_id)
 );
 CREATE INDEX bookings_host_created_idx ON bookings (host_user_id, created_at DESC, id DESC);
 CREATE INDEX bookings_site_time_idx ON bookings (site_id, starts_at, ends_at);
@@ -163,7 +165,9 @@ CREATE TABLE calendar_sync_state (
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (provider, external_event_id)
+  UNIQUE (provider, external_event_id),
+  UNIQUE (booking_id, user_id),
+  FOREIGN KEY (booking_id, user_id) REFERENCES bookings(id, host_user_id)
 );
 CREATE INDEX calendar_sync_pending_idx ON calendar_sync_state (status, last_attempt_at)
   WHERE status IN ('pending', 'failed');
@@ -200,7 +204,8 @@ CREATE TABLE products (
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (site_id, slug),
   UNIQUE (provider_product_id),
-  UNIQUE (provider_price_id)
+  UNIQUE (provider_price_id),
+  FOREIGN KEY (site_id, creator_user_id) REFERENCES sites(id, owner_user_id)
 );
 CREATE INDEX products_creator_active_idx ON products (creator_user_id, active, created_at DESC);
 
@@ -240,7 +245,8 @@ CREATE TABLE orders (
   total_minor bigint NOT NULL CHECK (total_minor >= 0),
   currency char(3) NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (site_id, creator_user_id) REFERENCES sites(id, owner_user_id)
 );
 CREATE INDEX orders_creator_created_idx ON orders (creator_user_id, created_at DESC, id DESC);
 CREATE INDEX orders_customer_created_idx ON orders (customer_email, created_at DESC);
@@ -498,7 +504,8 @@ CREATE TABLE integrations (
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (user_id, provider, site_id)
+  UNIQUE (user_id, provider, site_id),
+  FOREIGN KEY (site_id, user_id) REFERENCES sites(id, owner_user_id)
 );
 CREATE INDEX integrations_provider_status_idx ON integrations (provider, status);
 CREATE UNIQUE INDEX integrations_user_provider_global_uniq
@@ -510,6 +517,7 @@ CREATE INDEX integrations_refresh_due_idx ON integrations (refresh_lock_until, t
 
 CREATE TABLE custom_domains (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id uuid NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   site_id uuid NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
   hostname text NOT NULL,
   verification_status text NOT NULL CHECK (verification_status IN ('pending', 'verified', 'failed')),
@@ -525,7 +533,8 @@ CREATE TABLE custom_domains (
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (hostname),
   UNIQUE (site_id),
-  UNIQUE (idempotency_key)
+  UNIQUE (idempotency_key),
+  FOREIGN KEY (site_id, owner_user_id) REFERENCES sites(id, owner_user_id)
 );
 CREATE INDEX custom_domains_ready_idx ON custom_domains (hostname) WHERE verification_status = 'verified' AND ssl_status = 'active';
 
@@ -547,6 +556,7 @@ CREATE TABLE media_assets (
   updated_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz
 );
+ALTER TABLE media_assets ADD CONSTRAINT media_assets_site_owner_fk FOREIGN KEY (site_id, owner_user_id) REFERENCES sites(id, owner_user_id);
 CREATE INDEX media_assets_owner_site_idx ON media_assets (owner_user_id, site_id, created_at DESC);
 CREATE INDEX media_assets_processing_idx ON media_assets (lifecycle_state, updated_at)
   WHERE lifecycle_state IN ('pending_upload', 'processing', 'failed');
@@ -579,7 +589,8 @@ CREATE TABLE analytics_events (
   dimensions jsonb NOT NULL DEFAULT '{}'::jsonb,
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   retention_until timestamptz NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (site_id, site_owner_id) REFERENCES sites(id, owner_user_id)
 );
 CREATE INDEX analytics_events_site_time_idx ON analytics_events (site_id, occurred_at);
 CREATE INDEX analytics_events_owner_time_idx ON analytics_events (site_owner_id, occurred_at);
@@ -595,7 +606,8 @@ CREATE TABLE analytics_daily_rollups (
   dimensions jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (site_id, day)
+  PRIMARY KEY (site_id, day),
+  FOREIGN KEY (site_id, site_owner_id) REFERENCES sites(id, owner_user_id)
 );
 CREATE INDEX analytics_rollups_owner_day_idx ON analytics_daily_rollups (site_owner_id, day);
 
@@ -606,7 +618,8 @@ CREATE TABLE analytics_visitor_days (
   visitor_hash text NOT NULL,
   dimensions jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (site_id, day, visitor_hash)
+  PRIMARY KEY (site_id, day, visitor_hash),
+  FOREIGN KEY (site_id, site_owner_id) REFERENCES sites(id, owner_user_id)
 );
 
 CREATE TABLE idempotency_keys (
