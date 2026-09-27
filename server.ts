@@ -34,6 +34,7 @@ import { templatesData } from './src/data/content';
 import { getPlanCapabilities, getPlanTier, isPremiumTemplate } from './src/lib/planCapabilities';
 import { calendarAdapter, calendarOAuthConfiguration, calendarProviderIsConfigured, decryptCalendarTokens, encryptCalendarTokens, type CalendarProvider, type CalendarBookingEvent, type CalendarTokenBundle } from './server-calendar';
 import { normalizeDesignTokens } from './src/utils/designTokens';
+import { isSupportedBlockType, isSupportedEmbedUrl } from './src/lib/blockTypes';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1168,10 +1169,14 @@ export function validateSiteEntitlements(site: Record<string, any>, profile: Doc
     if (site[field] !== undefined && !allowed.includes(site[field])) return { feature: field, message: `This ${field} option is not included in your plan.`, details: { value: String(site[field]) } };
   }
   if (Array.isArray(site.links)) {
+    const invalidType = site.links.find((link) => !isSupportedBlockType(link?.type || 'link'));
+    if (invalidType) return { feature: 'blockType', message: 'This block type is not supported.', details: { value: String(invalidType.type || 'link') } };
     const invalidGallery = site.links.find((link) => link?.type === 'gallery' && (!Array.isArray(link.galleryItems) || link.galleryItems.length < 1 || link.galleryItems.length > 50 || link.galleryItems.some((item: unknown) => !validGalleryItem(item)) || new Set(link.galleryItems.map((item: any) => item.id)).size !== link.galleryItems.length));
     if (invalidGallery) return { feature: 'gallery', message: 'Each gallery must contain 1 to 50 valid image or video items.' };
     const blocked = site.links.find((link) => !capabilities.allowedBlockTypes.includes(String(link?.type || 'link')));
     if (blocked) return { feature: 'blockType', message: 'This block type is not included in your plan.', details: { value: String(blocked.type || 'link') } };
+    const invalidEmbed = site.links.find((link) => (link?.type === 'video' || link?.type === 'music') && !isSupportedEmbedUrl(link.type, link.url));
+    if (invalidEmbed) return { feature: 'blockMedia', message: 'Video and music blocks must use a supported YouTube, Vimeo, Spotify, or SoundCloud URL.' };
   }
   if (!capabilities.removeBranding && site.hidePoweredBy === true) return { feature: 'removeBranding', message: 'Removing RALOA branding requires a Pro or Studio plan.' };
   if (!capabilities.customDomains && typeof site.customDomain === 'string' && site.customDomain.trim()) return { feature: 'customDomains', message: 'Custom domains require a Pro or Studio plan.' };

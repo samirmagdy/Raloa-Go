@@ -18,7 +18,7 @@ import { usePageSEO } from '../hooks/usePageSEO';
 import { SafeImage } from './SafeImage';
 import { BookingSchedulerModal } from './modals/BookingSchedulerModal';
 import { ProductStoreModal } from './modals/ProductStoreModal';
-import { MediaGallery } from './MediaGallery';
+import { PublicBlockRenderer } from './PublicBlockRenderer';
 import { designCardGap, designCardStyle, designContentWidth, designFontFamily, designLayoutStyle, designTokensFromSite, designTypographyStyle } from '../utils/designTokens';
 
 interface PublicCreatorProfileProps {
@@ -158,7 +158,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
     }
   };
 
-  const handleLinkSelect = (link: typeof creator.sampleLinks[0]) => {
+  const handleBlockActivate = (link: typeof creator.sampleLinks[0]) => {
     recordLinkClick(link.id, link.url, cleanHandle);
     const linkType = String(link.type || 'link');
     if (linkType === 'booking' && !/^https?:\/\//i.test(link.url)) {
@@ -174,10 +174,8 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
       setAudienceStatus('idle');
       return;
     }
-    if (link.type === 'gallery') return;
-    if (link.url.startsWith('#')) {
-      return;
-    } else {
+    if (linkType === 'gallery' || linkType === 'video' || linkType === 'music' || linkType === 'header' || linkType === 'contact' || linkType === 'newsletter') return;
+    if (linkType === 'link' && /^https?:\/\//i.test(link.url)) {
       window.open(link.url, '_blank', 'noopener,noreferrer');
     }
   };
@@ -322,56 +320,26 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
         {/* Links Stack */}
         <div className="w-full mb-8" style={{ display: 'flex', flexDirection: 'column', gap: designCardGap(designTokens) }}>
           {creator.sampleLinks.map((link, idx) => (
-            <motion.button
+            <motion.div
               key={link.id}
-              type="button"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: idx * 0.05 }}
-              onClick={() => handleLinkSelect(link)}
-              className="w-full group p-3.5 sm:p-4 flex items-center gap-3.5 text-left transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] backdrop-blur-md cursor-pointer"
-              style={{
-                ...designCardStyle(designTokens, themeConfig.mode === 'dark', designTokens.accentColor),
-                backgroundColor: designTokens.surfaceColor,
-                color: themeConfig.cardText || 'inherit',
-              }}
             >
-              {link.thumbnail && (
-                <SafeImage
-                  src={link.thumbnail}
-                  alt=""
-                  className="w-11 h-11 rounded-xl object-cover shrink-0 shadow-2xs"
-                />
-              )}
-
-              <div className="flex-1 min-w-0">
-                <div className="font-bold leading-snug truncate" style={{ ...designTypographyStyle(designTokens, 'body'), color: themeConfig.cardText }}>
-                  {isRtl ? link.titleAr : link.title}
-                </div>
-                {(link.subtitle || link.subtitleAr) && (
-                  <div className="text-xs truncate opacity-75 mt-0.5" style={{ color: themeConfig.cardSubtext }}>
-                    {isRtl ? link.subtitleAr : link.subtitle}
-                  </div>
-                )}
-              </div>
-
-              <div className="w-8 h-8 rounded-full flex items-center justify-center opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all">
-                {isRtl ? <ArrowLeft className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
-              </div>
-            </motion.button>
+              <PublicBlockRenderer
+                block={link}
+                isRtl={isRtl}
+                themeConfig={themeConfig}
+                designTokens={designTokens}
+                onActivate={handleBlockActivate}
+                onAudience={(kind) => {
+                  setAudienceMode(kind);
+                  setAudienceStatus('idle');
+                }}
+              />
+            </motion.div>
           ))}
         </div>
-
-        {creator.sampleLinks.filter((link) => link.type === 'gallery' && link.galleryItems?.length).map((link) => (
-          <div key={`${link.id}-gallery`} className="mb-8 w-full">
-            <MediaGallery items={link.galleryItems || []} title={isRtl ? link.titleAr : link.title} isRtl={isRtl} />
-          </div>
-        ))}
-        {creator.sampleLinks.some((link) => link.type === 'gallery' && !link.galleryItems?.length) && (
-          <p className="mb-8 w-full rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-center text-xs opacity-70">
-            {isRtl ? 'لا توجد وسائط في هذا المعرض بعد.' : 'This gallery has no media yet.'}
-          </p>
-        )}
 
         {/* Branded CTA Banner: Claim your handle / Create your own */}
         <div className="w-full pt-4 pb-2">

@@ -19,6 +19,7 @@ import {
 import { Locale } from '../../types';
 import { SortableBlockList, StudioBlockItem } from './SortableBlockList';
 import { optimizedMediaUrl } from '../MediaGallery';
+import { isSupportedBlockType, isSupportedEmbedUrl } from '../../lib/blockTypes';
 
 interface StudioContentTabProps {
   displayName: string;
@@ -87,7 +88,15 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
 
   const handleCreateBlock = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSupportedBlockType(newBlockType)) {
+      onEntitlementError?.('This block type is not supported.');
+      return;
+    }
     if (!newTitle.trim() || (newBlockType !== 'gallery' && !newUrl.trim())) return;
+    if ((newBlockType === 'video' || newBlockType === 'music') && !isSupportedEmbedUrl(newBlockType, newUrl.trim())) {
+      onEntitlementError?.('Use a supported YouTube, Vimeo, Spotify, or SoundCloud URL for this block.');
+      return;
+    }
     if (typeof maxLinks === 'number' && links.length >= maxLinks) {
       onEntitlementError?.('Your current plan has reached its link limit.');
       return;

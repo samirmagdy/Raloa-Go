@@ -1,4 +1,5 @@
 import { UserProfile } from '../types';
+import { SUPPORTED_BLOCK_TYPES } from './blockTypes';
 
 export type PlanTier = 'free' | 'pro' | 'studio';
 
@@ -23,7 +24,7 @@ export interface PlanCapabilities {
 const BASIC_BACKGROUND_STYLES = ['signature', 'minimal'] as const;
 const ALL_BACKGROUND_STYLES = ['signature', 'banner', 'immersive', 'gradient', 'minimal'] as const;
 const BASIC_BLOCK_TYPES = ['link', 'gallery', 'booking', 'shop'] as const;
-const ALL_BLOCK_TYPES = ['link', 'gallery', 'booking', 'shop', 'video', 'music', 'contact', 'newsletter', 'header'] as const;
+const ALL_BLOCK_TYPES = SUPPORTED_BLOCK_TYPES;
 
 const CAPABILITIES: Record<PlanTier, PlanCapabilities> = {
   free: {

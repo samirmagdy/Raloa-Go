@@ -29,7 +29,12 @@ import {
   ShoppingBag,
   Calendar,
   Image as ImageIcon,
-  Link2
+  Link2,
+  Video,
+  Music,
+  Mail,
+  MessageSquare,
+  Heading
 } from 'lucide-react';
 import { Locale, MediaGalleryItem } from '../../types';
 import { PremiumMark } from '../brand/PremiumMark';
@@ -56,6 +61,16 @@ interface SortableBlockListProps {
  */
 function getBlockTypeMeta(type: string = 'link', isRtl: boolean) {
   switch (type) {
+    case 'video':
+      return { icon: Video, label: isRtl ? 'فيديو' : 'Video', badgeBg: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800' };
+    case 'music':
+      return { icon: Music, label: isRtl ? 'موسيقى' : 'Music', badgeBg: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800' };
+    case 'contact':
+      return { icon: MessageSquare, label: isRtl ? 'تواصل' : 'Contact', badgeBg: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800' };
+    case 'newsletter':
+      return { icon: Mail, label: isRtl ? 'نشرة بريدية' : 'Newsletter', badgeBg: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800' };
+    case 'header':
+      return { icon: Heading, label: isRtl ? 'عنوان' : 'Header', badgeBg: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700' };
     case 'shop':
       return {
         icon: ShoppingBag,

@@ -163,7 +163,7 @@ export interface TemplateItem {
     url: string;
     thumbnail?: string;
     galleryItems?: MediaGalleryItem[];
-    type?: 'link' | 'gallery' | 'booking' | 'shop';
+    type?: 'link' | 'gallery' | 'booking' | 'shop' | 'video' | 'music' | 'contact' | 'newsletter' | 'header';
   }[];
   socials: {
     platform: 'instagram' | 'x' | 'youtube' | 'linkedin' | 'email' | 'tiktok' | 'github' | 'spotify';

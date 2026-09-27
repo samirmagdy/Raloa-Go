@@ -192,6 +192,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
     setTimeout(() => setClickedItem(null), 350);
 
     if (link.type === 'gallery') return;
+    if (link.type && link.type !== 'link' && link.type !== 'booking' && link.type !== 'shop') return;
     if (onOpenAction) {
       if (link.type === 'booking') onOpenAction('booking', link);
       else if (link.type === 'shop') onOpenAction('shop', link);
