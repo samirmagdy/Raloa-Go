@@ -238,7 +238,9 @@ if (allowWrites && allowExternalMutations && confirmation && process.env.SMOKE_D
     if (![200, 201].includes(provision.response.status) || !provision.body?.domain?.domainId) throw new Error(`domain provisioning returned ${provision.response.status}`);
     const domainId = provision.body.domain.domainId;
     const verify = await request('/api/domains/verify', { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ domainId }) });
-    if (![200, 502].includes(verify.response.status)) throw new Error(`domain verification returned unexpected ${verify.response.status}`);
+    if (verify.response.status !== 200 || verify.body?.domain?.verificationStatus !== 'verified' || verify.body?.domain?.sslStatus !== 'active') {
+      throw new Error(`domain verification did not reach verified/active state: HTTP ${verify.response.status} ${JSON.stringify(verify.body || {})}`);
+    }
     const remove = await request(`/api/domains/${encodeURIComponent(domainId)}`, { method: 'DELETE', headers: authHeaders() });
     if (remove.response.status !== 204) throw new Error(`domain cleanup returned ${remove.response.status}`);
     record('Cloudflare domain provision, verify, and cleanup', 'PASS');

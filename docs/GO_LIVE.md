@@ -175,14 +175,12 @@ STAGING_BASE_URL=https://staging.example.com
 STAGING_BEARER_TOKEN=<Firebase ID token for the disposable creator>
 STAGING_SITE_ID=<owned disposable site ID>
 STAGING_PUBLIC_HANDLE=<published disposable handle>
-STAGING_BOOKING_DATE=2030-01-15
-STAGING_BOOKING_SERVICE_ID=<configured service ID>
 STAGING_TEST_EMAIL=<test inbox address>
+STAGING_CALENDAR_CASES='[{"provider":"google","siteId":"google-site","publicHandle":"google-staging","serviceId":"service-id","date":"2030-01-15","slotIndex":0},{"provider":"outlook","siteId":"outlook-site","publicHandle":"outlook-staging","serviceId":"service-id","date":"2030-01-15","slotIndex":0}]'
 STAGING_STRIPE_WEBHOOK_BODY=<signed disposable Stripe event body>
 STAGING_STRIPE_WEBHOOK_SIGNATURE=<matching Stripe-Signature header>
 STAGING_PRODUCT_ID=<active disposable product ID>
 STAGING_DOMAIN_HOSTNAME=<disposable hostname delegated to Cloudflare>
-STAGING_EXPECT_CALENDAR_PROVIDER=google|outlook
 STAGING_DISPOSABLE_DATA_CONFIRMATION=I_UNDERSTAND
 ```
 

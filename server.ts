@@ -921,9 +921,15 @@ function publicProduct(data: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
-async function creatorProducts(userId: string, siteId?: string) {
-  const snapshot = await adminDb.collection('creator_products').where('creatorId', '==', userId).limit(200).get();
-  return snapshot.docs.map((document) => ({ id: document.id, ...document.data() })).filter((product) => !siteId || String((product as Record<string, unknown>).siteId || '') === siteId);
+async function creatorProducts(userId: string, siteId?: string, limit = 100, cursor?: { createdAt: string; id: string } | null) {
+  let query: Query = adminDb.collection('creator_products').where('creatorId', '==', userId);
+  if (siteId) query = query.where('siteId', '==', siteId);
+  query = query.orderBy('createdAt', 'desc').orderBy(FieldPath.documentId(), 'desc').limit(limit + 1);
+  if (cursor) query = query.startAfter(cursor.createdAt, cursor.id);
+  const snapshot = await query.get();
+  const raw = snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+  const last = snapshot.docs[limit];
+  return { products: raw.slice(0, limit), hasMore: snapshot.docs.length > limit, nextCursor: snapshot.docs.length > limit && last ? encodePageCursor({ createdAt: String(last.data()?.createdAt || ''), id: last.id }) : null };
 }
 
 function isSafePublicUrl(value: unknown, allowAnchor = false): value is string {
@@ -959,10 +965,35 @@ function minutesFromTime(value: string): number {
   return hours * 60 + minutes;
 }
 
-async function bookingRecordsForHost(hostUserId: string, siteId?: string): Promise<Array<Record<string, unknown>>> {
+async function bookingRecordsForHost(hostUserId: string, siteId?: string, fromMs?: number, toMs?: number): Promise<Array<Record<string, unknown>>> {
   if (!isAdminConfigured()) return [];
-  const snapshot = await adminDb.collection('bookings').where('hostUserId', '==', hostUserId).limit(2000).get();
-  return snapshot.docs.map((document) => document.data()).filter((booking) => !siteId || String(booking.siteId || '') === siteId);
+  let query: Query = adminDb.collection('bookings').where('hostUserId', '==', hostUserId);
+  if (siteId) query = query.where('siteId', '==', siteId);
+  if (Number.isFinite(toMs)) query = query.where('slotStartMs', '<', Number(toMs));
+  const snapshot = await query.get();
+  return snapshot.docs.map((document) => document.data()).filter((booking) => {
+    if (siteId && String(booking.siteId || '') !== siteId) return false;
+    if (Number.isFinite(fromMs) && Number(booking.slotEndMs || 0) <= Number(fromMs)) return false;
+    if (Number.isFinite(toMs) && Number(booking.slotStartMs || 0) >= Number(toMs)) return false;
+    return true;
+  });
+}
+
+async function bookingDeliveryStatus(bookingId: string): Promise<Record<string, unknown>> {
+  const [notifications, calendars] = await Promise.all([
+    adminDb.collection('notification_jobs').where('bookingId', '==', bookingId).limit(20).get(),
+    adminDb.collection('calendar_jobs').where('bookingId', '==', bookingId).limit(10).get()
+  ]);
+  const notificationStatuses = notifications.docs.map((document) => String(document.data()?.status || 'unknown'));
+  const calendarStatuses = calendars.docs.map((document) => String(document.data()?.status || 'unknown'));
+  const failed = [...notificationStatuses, ...calendarStatuses].some((status) => ['failed', 'blocked'].includes(status));
+  const retrying = [...notificationStatuses, ...calendarStatuses].some((status) => ['pending', 'retry', 'processing', 'awaiting_confirmation'].includes(status));
+  return {
+    notifications: notificationStatuses,
+    calendar: calendarStatuses,
+    state: failed ? 'failed' : retrying ? 'pending' : notificationStatuses.length === 0 ? 'unknown' : 'delivered',
+    failed
+  };
 }
 
 function availableSlots(config: BookingConfig, service: BookingServiceConfig, fromDate: string, toDate: string, existing: Array<Record<string, unknown>>): Array<{ start: string; end: string; localDate: string; localTime: string; serviceId: string }> {
@@ -1836,7 +1867,9 @@ app.get('/api/v1/public/scheduling/:handle/availability', async (req: Request, r
   const config = normalizeBookingConfig(site?.bookingConfig);
   const service = config.services.find((item) => item.id === serviceId);
   if (!site || !config.enabled || !service) return apiError(res, 404, 'SERVICE_NOT_FOUND', 'The requested booking service is unavailable.');
-  const existing = await bookingRecordsForHost(String(site.userId));
+  const rangeFrom = Date.parse(`${from}T00:00:00.000Z`) - 86400000;
+  const rangeTo = Date.parse(`${to}T00:00:00.000Z`) + 2 * 86400000;
+  const existing = await bookingRecordsForHost(String(site.userId), String(site.id || ''), rangeFrom, rangeTo);
   return res.status(200).json({ timezone: config.timezone, service, slots: availableSlots(config, service, from, to, existing) });
 });
 
@@ -1865,9 +1898,10 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
     const claimed = await claimIdempotency('booking', idempotencyKey);
     if (claimed.inProgress) return apiError(res, 409, 'IDEMPOTENCY_IN_PROGRESS', 'A booking with this idempotency key is already being processed.');
     if (claimed.replay && claimed.response) return res.status(201).json(claimed.response);
-    const existing = await bookingRecordsForHost(String(hostSite.userId), String(hostSite.id || ''));
     const localDate = dateInTimeZone(parsedStart, config.timezone);
-    const from = new Date(`${localDate}T00:00:00Z`);
+    const rangeFrom = Date.parse(`${localDate}T00:00:00.000Z`) - 86400000;
+    const rangeTo = Date.parse(`${localDate}T00:00:00.000Z`) + 2 * 86400000;
+    const existing = await bookingRecordsForHost(String(hostSite.userId), String(hostSite.id || ''), rangeFrom, rangeTo);
     const slots = availableSlots(config, service, localDate, localDate, existing);
     const selected = slots.find((slot) => slot.start === parsedStart.toISOString());
     if (!selected) return apiError(res, 409, 'SLOT_UNAVAILABLE', 'That slot is no longer available.');
@@ -1952,7 +1986,9 @@ app.get('/api/creator/bookings', async (req: Request, res: Response) => {
   let query: Query = adminDb.collection('bookings').where('hostUserId', '==', user.uid).orderBy('createdAt', 'desc').orderBy(FieldPath.documentId(), 'desc').limit(limit + 1);
   if (cursor) query = query.startAfter(cursor.createdAt, cursor.id);
   const snapshot = await query.get();
-  const bookings = snapshot.docs.filter((document) => String(document.data()?.siteId || '') === siteId).map((document) => ({ id: document.id, ...document.data() })) as Array<Record<string, any>>;
+  const bookings = await Promise.all(snapshot.docs
+    .filter((document) => String(document.data()?.siteId || '') === siteId)
+    .map(async (document) => ({ id: document.id, ...document.data(), delivery: await bookingDeliveryStatus(document.id) }))) as Array<Record<string, any>>;
   const lastScanned = snapshot.docs[snapshot.docs.length - 1];
   return res.json({
     bookings: bookings.slice(0, limit),
@@ -3434,9 +3470,12 @@ async function analyticsFromRollups(userId: string, sites: Array<QueryDocumentSn
   };
 }
 
-async function readAnalyticsEvents(collection: 'page_views' | 'link_clicks', userId: string, maxEvents = 10000): Promise<{ events: QueryDocumentSnapshot[]; capped: boolean }> {
+async function readAnalyticsEvents(collection: 'page_views' | 'link_clicks', userId: string, maxEvents = 10000, fromTimestamp?: string, toTimestamp?: string): Promise<{ events: QueryDocumentSnapshot[]; capped: boolean }> {
   const events: QueryDocumentSnapshot[] = [];
-  let query: Query = adminDb.collection(collection).where('siteOwnerId', '==', userId).orderBy('timestamp', 'asc').limit(1000);
+  let query: Query = adminDb.collection(collection).where('siteOwnerId', '==', userId);
+  if (fromTimestamp) query = query.where('timestamp', '>=', fromTimestamp);
+  if (toTimestamp) query = query.where('timestamp', '<', toTimestamp);
+  query = query.orderBy('timestamp', 'asc').limit(1000);
   while (true) {
     const page = await query.get();
     const remaining = Math.max(0, maxEvents - events.length);
@@ -3475,8 +3514,8 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
     const rollupMetrics = await analyticsFromRollups(user.uid, sitesSnapshot.docs, requestedSiteId, fromDate, toDate);
     if (rollupMetrics) return res.status(200).json(rollupMetrics);
     const [viewsResult, clicksResult] = await Promise.all([
-      readAnalyticsEvents('page_views', user.uid),
-      readAnalyticsEvents('link_clicks', user.uid)
+      readAnalyticsEvents('page_views', user.uid, 10000, new Date(cutoff).toISOString(), new Date(endExclusive).toISOString()),
+      readAnalyticsEvents('link_clicks', user.uid, 10000, new Date(cutoff).toISOString(), new Date(endExclusive).toISOString())
     ]);
     const viewsSnapshot = viewsResult.events;
     const clicksSnapshot = clicksResult.events;
@@ -3660,8 +3699,8 @@ app.get('/api/media', async (req: Request, res: Response) => {
   try {
     const site = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
     if (!site.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
-    const snapshot = await adminDb.collection('media_assets').where('userId', '==', user.uid).where('siteId', '==', siteId).where('status', '==', 'ready').limit(500).get();
-    return res.json({ media: snapshot.docs.map((document) => ({ ...document.data(), src: mediaPublicUrl(document.id), thumbnail: mediaThumbnailUrl(document.id) })) });
+    const snapshot = await adminDb.collection('media_assets').where('userId', '==', user.uid).where('siteId', '==', siteId).where('status', '==', 'ready').orderBy('createdAt', 'desc').limit(501).get();
+    return res.json({ media: snapshot.docs.slice(0, 500).map((document) => ({ ...document.data(), src: mediaPublicUrl(document.id), thumbnail: mediaThumbnailUrl(document.id) })), mediaCapped: snapshot.docs.length > 500 });
   } catch (error) {
     console.error('[Media list]', error);
     return apiError(res, 503, 'MEDIA_UNAVAILABLE', 'Media assets are temporarily unavailable.');
@@ -4035,8 +4074,12 @@ app.get('/api/creator/products', async (req: Request, res: Response) => {
     if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
     const site = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
     if (!site.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
-    const products = await creatorProducts(user.uid, siteId);
-    return res.status(200).json({ products: products.map((product) => publicProduct(product)) });
+    const requestedLimit = Number(req.query.limit || 50);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
+    const cursor = req.query.cursor ? decodePageCursor(req.query.cursor) : null;
+    if (req.query.cursor && !cursor) return apiError(res, 400, 'INVALID_CURSOR', 'The products page cursor is invalid or expired.');
+    const products = await creatorProducts(user.uid, siteId, limit, cursor);
+    return res.status(200).json({ products: products.products.map((product) => publicProduct(product)), hasMore: products.hasMore, nextCursor: products.nextCursor });
   } catch (error) {
     console.error('[Creator products list]', error);
     return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Products are temporarily unavailable.');
@@ -4484,8 +4527,13 @@ app.get('/api/integrations', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured()) return apiError(res, 503, 'INTEGRATIONS_UNAVAILABLE', 'Social integrations are not configured.');
-  const snapshot = await adminDb.collection('creator_integrations').where('userId', '==', user.uid).get();
-  return res.json({ integrations: snapshot.docs.map((doc) => publicIntegration(doc.data() as StoredIntegration)) });
+  try {
+    const snapshot = await adminDb.collection('creator_integrations').where('userId', '==', user.uid).get();
+    return res.json({ integrations: snapshot.docs.map((doc) => publicIntegration(doc.data() as StoredIntegration)) });
+  } catch (error) {
+    console.error('[Social integrations list]', error);
+    return apiError(res, 503, 'INTEGRATIONS_UNAVAILABLE', 'Social integration status is temporarily unavailable.');
+  }
 });
 
 app.get('/api/integrations/github/start', async (req: Request, res: Response) => {
@@ -4584,8 +4632,13 @@ app.get('/api/calendar/integrations', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured()) return apiError(res, 503, 'CALENDAR_UNAVAILABLE', 'Calendar integrations are not configured.');
-  const snapshot = await adminDb.collection('calendar_integrations').where('userId', '==', user.uid).get();
-  return res.json({ integrations: snapshot.docs.map((doc) => { const value = doc.data(); return { provider: value.provider, status: value.status, scopes: value.scopes || [], connectedAt: value.connectedAt, updatedAt: value.updatedAt, lastError: value.lastError || undefined }; }) });
+  try {
+    const snapshot = await adminDb.collection('calendar_integrations').where('userId', '==', user.uid).get();
+    return res.json({ integrations: snapshot.docs.map((doc) => { const value = doc.data(); return { provider: value.provider, status: value.status, scopes: value.scopes || [], connectedAt: value.connectedAt, updatedAt: value.updatedAt, lastError: value.lastError || undefined }; }) });
+  } catch (error) {
+    console.error('[Calendar integrations list]', error);
+    return apiError(res, 503, 'CALENDAR_UNAVAILABLE', 'Calendar integration status is temporarily unavailable.');
+  }
 });
 
 app.get('/api/calendar/:provider/start', async (req: Request, res: Response) => {
@@ -4648,12 +4701,17 @@ app.get('/api/domains', async (req: Request, res: Response) => {
   if (!user) return res.status(401).json({ error: 'Authentication required' });
   if (!isAdminConfigured()) return apiError(res, 503, 'DOMAINS_UNAVAILABLE', 'Custom domain persistence is temporarily unavailable.');
 
-  const snapshot = await adminDb.collection('custom_domains').where('userId', '==', user.uid).get();
-  const domains = (await Promise.all(snapshot.docs.map(async (document) => {
-    const domain = document.data();
-    return await getOwnedSite(user.uid, String(domain.siteId || '')) ? domain : null;
-  }))).filter(Boolean);
-  return res.status(200).json({ domains });
+  try {
+    const snapshot = await adminDb.collection('custom_domains').where('userId', '==', user.uid).get();
+    const domains = (await Promise.all(snapshot.docs.map(async (document) => {
+      const domain = document.data();
+      return await getOwnedSite(user.uid, String(domain.siteId || '')) ? domain : null;
+    }))).filter(Boolean);
+    return res.status(200).json({ domains });
+  } catch (error) {
+    console.error('[Domain list]', error);
+    return apiError(res, 503, 'DOMAINS_UNAVAILABLE', 'Custom domain status is temporarily unavailable.');
+  }
 });
 
 app.post('/api/domains/provision', async (req: Request, res: Response) => {

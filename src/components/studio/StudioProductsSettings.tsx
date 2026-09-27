@@ -26,6 +26,8 @@ export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ 
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [ordersHasMore, setOrdersHasMore] = useState(false);
   const [ordersCursor, setOrdersCursor] = useState<string | null>(null);
+  const [productsHasMore, setProductsHasMore] = useState(false);
+  const [productsCursor, setProductsCursor] = useState<string | null>(null);
 
   const headers = useCallback(async (): Promise<Record<string, string>> => {
     const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
@@ -46,6 +48,8 @@ export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ 
       const ordersPayload = await ordersResponse.json().catch(() => ({}));
       if (!ordersResponse.ok) throw new Error(ordersPayload.error?.message || ordersPayload.error || 'Could not load orders.');
       setProducts(Array.isArray(payload.products) ? payload.products : []);
+      setProductsHasMore(Boolean(payload.hasMore));
+      setProductsCursor(payload.nextCursor || null);
       setOrders((current) => appendOrders ? [...current, ...(Array.isArray(ordersPayload.orders) ? ordersPayload.orders : [])] : (Array.isArray(ordersPayload.orders) ? ordersPayload.orders : []));
       setOrdersHasMore(Boolean(ordersPayload.hasMore));
       setOrdersCursor(ordersPayload.nextCursor || null);
@@ -55,6 +59,19 @@ export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ 
   }, [headers, ordersCursor, siteId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const loadMoreProducts = async () => {
+    if (!productsCursor || loading) return;
+    setError('');
+    try {
+      const response = await fetch(`/api/creator/products?siteId=${encodeURIComponent(siteId)}&limit=50&cursor=${encodeURIComponent(productsCursor)}`, { headers: await headers() });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error?.message || payload.error || 'Could not load more products.');
+      setProducts((current) => [...current, ...(Array.isArray(payload.products) ? payload.products : [])]);
+      setProductsHasMore(Boolean(payload.hasMore));
+      setProductsCursor(payload.nextCursor || null);
+    } catch (loadError) { setError(loadError instanceof Error ? loadError.message : 'Could not load more products.'); }
+  };
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault(); setSaving(true); setError('');
@@ -116,7 +133,7 @@ export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ 
     </form>
     {error && <p role="alert" className="text-xs font-semibold text-rose-600">{error}</p>}
     {loading ? <Loader2 className="h-4 w-4 animate-spin text-indigo-600" aria-label={isRtl ? 'جار التحميل' : 'Loading'} /> : <>
-      <div className="space-y-2">{products.map((product) => <div key={product.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700"><div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900 dark:text-white">{product.name}</p><p className="text-xs text-slate-500">{(product.priceMinor / 100).toFixed(2)} {String(product.currency).toUpperCase()} · {product.active ? (isRtl ? 'نشط' : 'Active') : (isRtl ? 'مؤرشف' : 'Archived')} · {product.inventory === null ? (isRtl ? 'غير محدود' : 'Unlimited') : `${product.availableQuantity ?? 0} available`}</p></div><div className="flex shrink-0 gap-1"><button type="button" onClick={() => setDraft({ id: product.id, name: product.name, description: product.description || '', imageUrls: (product.imageUrls || []).join(', '), price: (product.priceMinor / 100).toFixed(2), currency: product.currency, active: product.active, inventory: product.inventory === null ? '' : String(product.inventory) })} className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold dark:border-slate-700">{isRtl ? 'تعديل' : 'Edit'}</button><button type="button" onClick={() => archive(product.id)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={isRtl ? 'أرشفة المنتج' : 'Archive product'}><Archive className="h-4 w-4" /></button></div></div>)}</div>
+      <div className="space-y-2">{products.map((product) => <div key={product.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700"><div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900 dark:text-white">{product.name}</p><p className="text-xs text-slate-500">{(product.priceMinor / 100).toFixed(2)} {String(product.currency).toUpperCase()} · {product.active ? (isRtl ? 'نشط' : 'Active') : (isRtl ? 'مؤرشف' : 'Archived')} · {product.inventory === null ? (isRtl ? 'غير محدود' : 'Unlimited') : `${product.availableQuantity ?? 0} available`}</p></div><div className="flex shrink-0 gap-1"><button type="button" onClick={() => setDraft({ id: product.id, name: product.name, description: product.description || '', imageUrls: (product.imageUrls || []).join(', '), price: (product.priceMinor / 100).toFixed(2), currency: product.currency, active: product.active, inventory: product.inventory === null ? '' : String(product.inventory) })} className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold dark:border-slate-700">{isRtl ? 'تعديل' : 'Edit'}</button><button type="button" onClick={() => archive(product.id)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={isRtl ? 'أرشفة المنتج' : 'Archive product'}><Archive className="h-4 w-4" /></button></div></div>)}{productsHasMore && <button type="button" onClick={() => void loadMoreProducts()} disabled={loading} className="inline-flex min-h-10 w-full items-center justify-center rounded-lg border border-slate-300 text-xs font-bold disabled:opacity-50 dark:border-slate-700">{isRtl ? 'تحميل المزيد من المنتجات' : 'Load more products'}</button>}</div>
       <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
         <div className="flex items-center justify-between gap-3"><div><h4 className="text-sm font-bold text-slate-900 dark:text-white">{isRtl ? 'إدارة الطلبات' : 'Order fulfillment'}</h4><p className="mt-1 text-xs text-slate-500">{isRtl ? 'حدّث حالة التنفيذ من خلال الخادم.' : 'Update fulfillment through the server-authoritative order workflow.'}</p></div><button type="button" onClick={() => void load(false)} disabled={Boolean(orderBusy)} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-700"><RefreshCw className="h-3.5 w-3.5" />{isRtl ? 'تحديث' : 'Refresh'}</button></div>
         {orderError && <p role="alert" className="mt-3 text-xs font-semibold text-rose-600">{orderError}</p>}

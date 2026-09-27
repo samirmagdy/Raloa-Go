@@ -4,9 +4,9 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 const required = [
   'STAGING_BASE_URL', 'STAGING_BEARER_TOKEN', 'STAGING_SITE_ID', 'STAGING_PUBLIC_HANDLE',
-  'STAGING_BOOKING_DATE', 'STAGING_BOOKING_SERVICE_ID', 'STAGING_TEST_EMAIL',
+  'STAGING_TEST_EMAIL', 'STAGING_CALENDAR_CASES',
   'STAGING_STRIPE_WEBHOOK_BODY', 'STAGING_STRIPE_WEBHOOK_SIGNATURE', 'STAGING_PRODUCT_ID',
-  'STAGING_DOMAIN_HOSTNAME', 'STAGING_EXPECT_CALENDAR_PROVIDER', 'STAGING_DISPOSABLE_DATA_CONFIRMATION'
+  'STAGING_DOMAIN_HOSTNAME', 'STAGING_DISPOSABLE_DATA_CONFIRMATION'
 ];
 const missing = required.filter((name) => !process.env[name]);
 if (missing.length) {
@@ -16,6 +16,23 @@ if (missing.length) {
 if (process.env.STAGING_DISPOSABLE_DATA_CONFIRMATION !== 'I_UNDERSTAND') {
   console.error('STAGING_DISPOSABLE_DATA_CONFIRMATION must equal I_UNDERSTAND.');
   process.exit(2);
+}
+let calendarCases;
+try {
+  calendarCases = JSON.parse(process.env.STAGING_CALENDAR_CASES);
+} catch {
+  console.error('STAGING_CALENDAR_CASES must be valid JSON.');
+  process.exit(2);
+}
+if (!Array.isArray(calendarCases) || calendarCases.length < 2 || new Set(calendarCases.map((item) => item?.provider)).size < 2 || !['google', 'outlook'].every((provider) => calendarCases.some((item) => item?.provider === provider))) {
+  console.error('STAGING_CALENDAR_CASES must contain at least one real google case and one real outlook case.');
+  process.exit(2);
+}
+for (const calendarCase of calendarCases) {
+  if (!['google', 'outlook'].includes(calendarCase?.provider) || !calendarCase.siteId || !calendarCase.publicHandle || !calendarCase.serviceId || !calendarCase.date) {
+    console.error('Each STAGING_CALENDAR_CASES item requires provider, siteId, publicHandle, serviceId, and date.');
+    process.exit(2);
+  }
 }
 
 const baseUrl = process.env.STAGING_BASE_URL.replace(/\/$/, '');
@@ -64,6 +81,17 @@ async function pollFirestore(collection, field, value, predicate, timeoutMs = 90
   throw new Error(`${collection} did not reach the expected state within ${timeoutMs}ms`);
 }
 
+async function readFirestoreDocument(collection, id, predicate, timeoutMs = 30_000) {
+  const db = firestore();
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const document = await db.collection(collection).doc(id).get();
+    if (document.exists && predicate(document.data() || {})) return document.data();
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  throw new Error(`${collection}/${id} did not reach the expected state within ${timeoutMs}ms`);
+}
+
 try {
   const sites = await expect('authenticated Firestore site listing', '/api/sites', 200, (r) => Array.isArray(r.body?.sites));
   const current = sites.body.sites.find((site) => site.id === process.env.STAGING_SITE_ID);
@@ -79,25 +107,28 @@ try {
   const analytics = await request('/api/v1/public/telemetry/page-view', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': eventId }, body: JSON.stringify({ eventId, visitorId: eventId, path: `/@${process.env.STAGING_PUBLIC_HANDLE}` }) });
   check('analytics ingestion', analytics.response.status === 202 && (analytics.body?.accepted === true || analytics.body?.idempotent === true));
 
-  const availability = await expect('real booking availability', `/api/v1/public/scheduling/${encodeURIComponent(process.env.STAGING_PUBLIC_HANDLE)}/availability?from=${encodeURIComponent(process.env.STAGING_BOOKING_DATE)}&to=${encodeURIComponent(process.env.STAGING_BOOKING_DATE)}&serviceId=${encodeURIComponent(process.env.STAGING_BOOKING_SERVICE_ID)}`, 200, (r) => Array.isArray(r.body?.slots));
-  const slot = availability.body.slots?.[0];
-  if (!slot?.start) throw new Error('No disposable staging booking slot is available');
-  const booking = await request('/api/v1/public/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `staging-booking-${crypto.randomUUID()}` }, body: JSON.stringify({ hostHandle: process.env.STAGING_PUBLIC_HANDLE, serviceId: process.env.STAGING_BOOKING_SERVICE_ID, slotStart: slot.start, customerName: 'Staging Integration Check', customerEmail: process.env.STAGING_TEST_EMAIL }) });
-  check('real booking persistence', booking.response.status === 201 && Boolean(booking.body?.id));
-  const bookingId = booking.body.id;
-  await expect('booking confirmation state', `/api/creator/bookings/${encodeURIComponent(bookingId)}/confirm?siteId=${encodeURIComponent(process.env.STAGING_SITE_ID)}`, 200, (r) => r.body?.confirmationStatus === 'confirmed');
-  await pollFirestore('notification_jobs', 'bookingId', bookingId, (data) => data.status === 'sent');
-  check('real email delivery worker', true);
-  if (!['google', 'outlook'].includes(process.env.STAGING_EXPECT_CALENDAR_PROVIDER)) throw new Error('STAGING_EXPECT_CALENDAR_PROVIDER must be google or outlook');
-  const calendarJob = await pollFirestore('calendar_jobs', 'bookingId', bookingId, (data) => data.provider === process.env.STAGING_EXPECT_CALENDAR_PROVIDER && data.status === 'completed');
-  check('calendar worker created a real external event', Boolean(calendarJob.externalEventId));
-  await expect('booking cancellation state', `/api/creator/bookings/${encodeURIComponent(bookingId)}/cancel?siteId=${encodeURIComponent(process.env.STAGING_SITE_ID)}`, 200, (r) => r.body?.confirmationStatus === 'cancelled');
+  for (const calendarCase of calendarCases) {
+    const availability = await expect(`${calendarCase.provider} booking availability`, `/api/v1/public/scheduling/${encodeURIComponent(calendarCase.publicHandle)}/availability?from=${encodeURIComponent(calendarCase.date)}&to=${encodeURIComponent(calendarCase.date)}&serviceId=${encodeURIComponent(calendarCase.serviceId)}`, 200, (r) => Array.isArray(r.body?.slots));
+    const slot = availability.body.slots?.[Number(calendarCase.slotIndex || 0)];
+    if (!slot?.start) throw new Error(`No disposable ${calendarCase.provider} staging booking slot is available`);
+    const booking = await request('/api/v1/public/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `staging-booking-${calendarCase.provider}-${crypto.randomUUID()}` }, body: JSON.stringify({ hostHandle: calendarCase.publicHandle, serviceId: calendarCase.serviceId, slotStart: slot.start, customerName: `Staging ${calendarCase.provider} Integration Check`, customerEmail: calendarCase.email || process.env.STAGING_TEST_EMAIL }) });
+    check(`${calendarCase.provider} booking persistence`, booking.response.status === 201 && Boolean(booking.body?.id));
+    const bookingId = booking.body.id;
+    await expect(`${calendarCase.provider} booking confirmation state`, `/api/creator/bookings/${encodeURIComponent(bookingId)}/confirm?siteId=${encodeURIComponent(calendarCase.siteId)}`, 200, (r) => r.body?.confirmationStatus === 'confirmed');
+    await pollFirestore('notification_jobs', 'bookingId', bookingId, (data) => data.status === 'sent');
+    check(`${calendarCase.provider} real email delivery worker`, true);
+    const calendarJob = await pollFirestore('calendar_jobs', 'bookingId', bookingId, (data) => data.provider === calendarCase.provider && data.status === 'completed');
+    check(`${calendarCase.provider} calendar worker created a real external event`, Boolean(calendarJob.externalEventId));
+    await expect(`${calendarCase.provider} booking cancellation state`, `/api/creator/bookings/${encodeURIComponent(bookingId)}/cancel?siteId=${encodeURIComponent(calendarCase.siteId)}`, 200, (r) => r.body?.confirmationStatus === 'cancelled');
+  }
 
   // The request must use the signed disposable fixture supplied by staging.
   const webhook = await request('/api/webhooks/stripe', { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': process.env.STAGING_STRIPE_WEBHOOK_SIGNATURE }, body: process.env.STAGING_STRIPE_WEBHOOK_BODY });
   check('Stripe webhook signature validation', webhook.response.status === 200 && webhook.body?.received === true);
   const checkout = await request(`/api/v1/public/products/${encodeURIComponent(process.env.STAGING_PUBLIC_HANDLE)}/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `staging-product-${crypto.randomUUID()}` }, body: JSON.stringify({ productId: process.env.STAGING_PRODUCT_ID, quantity: 1, customerEmail: process.env.STAGING_TEST_EMAIL }) });
   check('real Stripe checkout session creation', checkout.response.status === 201 && typeof checkout.body?.url === 'string');
+  const persistedOrder = await readFirestoreDocument('orders', checkout.body.id, (data) => data.productId === process.env.STAGING_PRODUCT_ID && data.status === 'pending_payment' && Number(data.inventoryReservation) === 1);
+  check('checkout order persistence and inventory reservation', Boolean(persistedOrder));
 
   const uploadBody = new FormData();
   uploadBody.append('siteId', process.env.STAGING_SITE_ID);
@@ -117,7 +148,7 @@ try {
   check('real Cloudflare domain provisioning', [200, 201].includes(domain.response.status) && Boolean(domain.body?.domain?.domainId));
   const domainId = domain.body.domain.domainId;
   const verify = await request('/api/domains/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ domainId }) });
-  check('real Cloudflare domain verification state', [200, 502].includes(verify.response.status) && Boolean(verify.body?.domain || verify.body?.error));
+  check('real Cloudflare domain verification state', verify.response.status === 200 && verify.body?.domain?.verificationStatus === 'verified' && verify.body?.domain?.sslStatus === 'active');
   const remove = await request(`/api/domains/${encodeURIComponent(domainId)}`, { method: 'DELETE' });
   check('real Cloudflare domain cleanup', remove.response.status === 204);
 
