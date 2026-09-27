@@ -22,4 +22,25 @@ describe('HTTP API integration boundary', () => {
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ error: 'NOT_FOUND' });
   });
+
+  it('standardizes authentication errors via centralized error handling', async () => {
+    const response = await request(app).post('/api/billing/checkout-session').send({ plan: 'pro' });
+    expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({
+      status: 'error',
+      code: 'AUTHENTICATION_REQUIRED',
+      errorCode: 'AUTHENTICATION_REQUIRED',
+      error: {
+        code: 'AUTHENTICATION_REQUIRED'
+      }
+    });
+  });
+
+  it('standardizes validation errors via centralized error handling', async () => {
+    const response = await request(app).get('/api/v1/handles/check?handle=bad*handle');
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      status: 'error'
+    });
+  });
 });

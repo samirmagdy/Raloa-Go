@@ -58,6 +58,19 @@ import { createPublicCreatorAdapter } from './server/public-site';
 import { MemoryCacheStore } from './server/infrastructure/cache/memory';
 import { cacheKey } from './server/infrastructure/cache/policy';
 import { apiErrorSchema } from './src/shared/schema';
+import {
+  ApplicationError,
+  normalizeApplicationError,
+  formatErrorResponse,
+  ValidationError,
+  AuthenticationError,
+  AuthorizationError,
+  NotFoundError,
+  ConflictError,
+  DependencyUnavailableError,
+  RateLimitError,
+  InternalError
+} from './server/core/errors';
 import { createStructuredLogger, InMemoryMetrics, traceIdFromHeaders } from './server/infrastructure/observability/logger';
 import { captureServerException, initializeServerSentry } from './server/infrastructure/observability/sentry';
 import { integrationEnvelopeCipher } from './server/infrastructure/crypto/envelope';
@@ -272,14 +285,7 @@ async function enforceRateLimitPolicy(policyName: RateLimitPolicyName, identity:
 }
 
 function apiError(res: Response, status: number, code: string, message: string, fields?: Record<string, string>) {
-  const body = apiErrorSchema.parse({
-    status: 'error',
-    error: code,
-    code,
-    message,
-    ...(fields ? { fields } : {})
-  });
-  return res.status(status).json(body);
+  return formatErrorResponse(res, new ApplicationError({ code, message, statusCode: status, fields }));
 }
 
 async function claimIdempotency(scope: string, key: string): Promise<{ replay: boolean; inProgress?: boolean; response?: Record<string, unknown> }> {
@@ -4235,8 +4241,12 @@ app.post('/api/billing/activate-free', async (req: Request, res: Response) => {
   return res.status(200).json({ plan: 'free' });
 });
 
-app.post('/api/billing/checkout-session', async (req: Request, res: Response) => {
-  return billingController.checkout(req, res);
+app.post('/api/billing/checkout-session', (req: Request, res: Response, next: NextFunction) => {
+  Promise.resolve(billingController.checkout(req, res)).catch(next);
+});
+
+app.post('/api/billing/portal-session', (req: Request, res: Response, next: NextFunction) => {
+  Promise.resolve(billingController.portal(req, res)).catch(next);
 });
 
 app.get('/api/billing/checkout-session', async (req: Request, res: Response) => {
@@ -4316,9 +4326,7 @@ app.post('/api/v1/referrals/qualify', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/billing/portal-session', async (req: Request, res: Response) => {
-  return billingController.portal(req, res);
-});
+
 
 app.get('/api/integrations/providers', async (_req: Request, res: Response) => {
   const github = githubConfig();
@@ -4962,14 +4970,21 @@ app.post('/internal/outbox/publish', async (req: Request, res: Response) => {
   return res.status(200).json(await outbox.publishPending(limit));
 });
 
-app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
+app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
   const requestId = res.getHeader('X-Request-ID');
+  const appError = normalizeApplicationError(error);
   const logger = createStructuredLogger({ requestId: String(requestId || ''), traceId: traceIdFromHeaders(req.headers) });
-  observabilityMetrics.increment('http.errors', { method: req.method, route: req.path });
-  logger.error('http.unhandled_error', { method: req.method, path: req.path, error });
-  captureServerException(error, { requestId: String(requestId || ''), traceId: traceIdFromHeaders(req.headers) });
+
+  observabilityMetrics.increment('http.errors', { method: req.method, route: req.path, status: appError.statusCode });
+  if (appError.statusCode >= 500) {
+    logger.error('http.unhandled_error', { method: req.method, path: req.path, error: appError });
+    captureServerException(error instanceof Error ? error : appError, { requestId: String(requestId || ''), traceId: traceIdFromHeaders(req.headers) });
+  } else {
+    logger.warn('http.client_error', { method: req.method, path: req.path, code: appError.code, status: appError.statusCode });
+  }
+
   if (res.headersSent) return;
-  res.status(500).json({ status: 'error', error: 'INTERNAL_ERROR', code: 'INTERNAL_ERROR', message: 'Internal server error', requestId });
+  return formatErrorResponse(res, appError);
 });
 
 // Start listening if run directly
