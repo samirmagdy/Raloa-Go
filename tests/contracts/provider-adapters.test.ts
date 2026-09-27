@@ -6,6 +6,7 @@ import { createFirebaseStore } from '../../server/adapters/firebase';
 import { createCloudflareR2StorageAdapter, createFirebaseStorageAdapter } from '../../server/adapters/media-storage';
 import { resendEmailAdapter } from '../../server/adapters/email';
 import { createStripeAdapter, stripeAdapter } from '../../server/adapters/stripe';
+import { createGoogleCalendarAdapter, createMicrosoftGraphCalendarAdapter } from '../../server/adapters/calendar';
 
 function expectProviderContract(provider: PaymentProvider | EmailProvider | CloudflareProvider, methods: string[]) {
   for (const method of methods) expect(typeof (provider as unknown as Record<string, unknown>)[method]).toBe('function');
@@ -91,6 +92,11 @@ describe('Email and Firebase Auth adapter contracts', () => {
 });
 
 describe('Google Calendar and Microsoft Graph adapter contracts', () => {
+  it('exposes provider-specific typed calendar adapters', () => {
+    expect(createGoogleCalendarAdapter().provider).toBe('google');
+    expect(createMicrosoftGraphCalendarAdapter().provider).toBe('outlook');
+  });
+
   it.each([
     ['google', 'https://www.googleapis.com/calendar/v3/calendars/primary/events'],
     ['outlook', 'https://graph.microsoft.com/v1.0/me/events']
