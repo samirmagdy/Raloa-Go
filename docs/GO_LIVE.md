@@ -1,13 +1,13 @@
 # RALOA Go-Live Runbook
 
-## Required production secrets
+## Required production configuration
 
 Configure these in Cloud Run Secret Manager or the deployment environment. Never commit them:
 
 ```text
-GEMINI_API_KEY
 APP_URL=https://raloa.app
 AUTH_SESSION_SECRET=<random 32+ character secret>
+INTEGRATION_ENCRYPTION_KEY=<separate random 32+ character secret>
 FIREBASE_PROJECT_ID=gen-lang-client-0319129908
 FIRESTORE_DATABASE_ID=ai-studio-raloadesignfirst-8ccbe7ea-5af1-4106-809a-71252bddde6f
 FIREBASE_STORAGE_BUCKET=gen-lang-client-0319129908.firebasestorage.app
@@ -20,20 +20,34 @@ STRIPE_PRICE_STUDIO_MONTHLY
 STRIPE_PRICE_STUDIO_YEARLY
 CLOUDFLARE_API_TOKEN
 CLOUDFLARE_ZONE_ID
-VITE_ANALYTICS_ENDPOINT
-SENTRY_DSN
+TRUSTED_PROXY_HOPS=1
 ```
+
+Cloud Run must provide `K_SERVICE` (automatic) or a valid
+`GOOGLE_APPLICATION_CREDENTIALS` path for Firebase Admin credentials. The
+startup validator rejects missing values, local URLs, placeholder secrets,
+Stripe test keys, incomplete provider groups, and invalid proxy/domain values.
+
+Optional configuration includes `GEMINI_API_KEY`, `VITE_ANALYTICS_ENDPOINT`,
+`SENTRY_DSN`, Resend notifications, Google/Outlook Calendar OAuth, and GitHub
+OAuth. Optional provider settings must be supplied as complete groups when
+enabled.
 
 ## Local verification
 
 ```bash
 npm ci --legacy-peer-deps
 npm run lint
-npm run build
 npm run validate:production
+npm run build:production
 npx tsx test-entrypoint.ts
 npx tsx test-modules-2-4.ts
 ```
+
+`npm run validate:production` runs with `NODE_ENV=production` and fails with
+the exact missing or invalid variable names. The server repeats the same guard
+before initializing Firebase, Stripe, or Cloudflare, so a misconfigured
+revision cannot start serving traffic.
 
 ## Firebase deployment
 

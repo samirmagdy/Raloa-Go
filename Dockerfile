@@ -14,6 +14,7 @@ RUN npm ci --omit=dev --legacy-peer-deps && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.ts ./server.ts
 COPY --from=build /app/server-services.ts ./server-services.ts
+COPY --from=build /app/server-config.mjs ./server-config.mjs
 COPY --from=build /app/src ./src
 COPY --from=build /app/index.html ./index.html
 COPY --from=build /app/firebase-applet-config.json ./firebase-applet-config.json

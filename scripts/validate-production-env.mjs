@@ -1,31 +1,17 @@
-const required = [
-  'APP_URL',
-  'AUTH_SESSION_SECRET',
-  'FIREBASE_PROJECT_ID',
-  'FIRESTORE_DATABASE_ID',
-  'FIREBASE_STORAGE_BUCKET',
-  'STRIPE_SECRET_KEY',
-  'STRIPE_WEBHOOK_SECRET',
-  'STRIPE_PRICE_PRO_MONTHLY',
-  'STRIPE_PRICE_PRO_YEARLY',
-  'STRIPE_PRICE_STUDIO_MONTHLY',
-  'STRIPE_PRICE_STUDIO_YEARLY',
-  'CLOUDFLARE_API_TOKEN',
-  'CLOUDFLARE_ZONE_ID',
-  'TRUSTED_PROXY_HOPS'
-];
+import { inspectProductionEnvironment, REQUIRED_PRODUCTION_VARIABLES, OPTIONAL_PRODUCTION_VARIABLES } from '../server-config.mjs';
 
-const missing = required.filter((name) => !process.env[name]);
-const invalid = [];
-if (process.env.APP_URL && !/^https:\/\//.test(process.env.APP_URL)) invalid.push('APP_URL must use https://');
-if (process.env.AUTH_SESSION_SECRET && process.env.AUTH_SESSION_SECRET.length < 32) invalid.push('AUTH_SESSION_SECRET must be at least 32 characters');
-if (process.env.TRUSTED_PROXY_HOPS && (!/^\d+$/.test(process.env.TRUSTED_PROXY_HOPS) || Number(process.env.TRUSTED_PROXY_HOPS) > 10)) invalid.push('TRUSTED_PROXY_HOPS must be an integer from 0 to 10');
+const result = inspectProductionEnvironment(process.env);
+const missing = result.missing.length ? `Missing required variables: ${result.missing.join(', ')}` : '';
+const invalid = result.invalid.filter((message) => !message.startsWith('NODE_ENV must be')).map((message) => `Invalid configuration: ${message}`).join('\n');
 
-if (missing.length || invalid.length) {
-  console.error('Production configuration is incomplete.');
-  if (missing.length) console.error(`Missing: ${missing.join(', ')}`);
-  invalid.forEach((message) => console.error(`Invalid: ${message}`));
+if (process.env.NODE_ENV !== 'production' || missing || invalid) {
+  console.error('Production configuration validation failed.');
+  if (process.env.NODE_ENV !== 'production') console.error('Invalid configuration: NODE_ENV must be exactly production.');
+  if (missing) console.error(missing);
+  if (invalid) console.error(invalid);
   process.exit(1);
 }
 
-console.log('Production configuration variables are present.');
+const optional = OPTIONAL_PRODUCTION_VARIABLES.filter((name) => result.optionalMissing.includes(name));
+console.log(`Production configuration is valid. Required variables checked: ${REQUIRED_PRODUCTION_VARIABLES.length}.`);
+if (optional.length) console.log(`Optional integrations not configured: ${optional.join(', ')}`);

@@ -1,6 +1,6 @@
 import http from 'node:http';
 
-process.env.NODE_ENV = 'production';
+process.env.NODE_ENV = 'staging';
 delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
 delete process.env.K_SERVICE;
 delete process.env.FIREBASE_ADMIN_ENABLED;
