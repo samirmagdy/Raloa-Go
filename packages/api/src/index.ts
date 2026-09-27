@@ -16,3 +16,8 @@ export interface Controller<TRequest, TResult> {
   handle(request: TRequest): Promise<ApiResponse<TResult>>;
 }
 
+export type HealthStatus = { status: 'ok' | 'degraded'; service: string; version: string };
+
+export interface HealthService {
+  check(): Promise<HealthStatus>;
+}

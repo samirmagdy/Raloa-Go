@@ -1,6 +1,8 @@
 node_modules/
 build/
 dist/
+.next/
+*.tsbuildinfo
 coverage/
 reports/
 .DS_Store
