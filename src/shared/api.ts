@@ -1,6 +1,6 @@
 import type { ApiError, ContactRequest, NewsletterRequest, PublicSiteResponse, TelemetryLinkClickRequest, TelemetryPageViewRequest } from '../api/types';
 import { publicApiPayloadSchemas } from './schema';
-import { publicSiteResponseSchema } from './schema';
+import { publicProfileResponseSchemaV1 } from './schema';
 
 export class SharedApiError extends Error {
   constructor(public readonly status: number, public readonly details: ApiError) {
@@ -17,7 +17,7 @@ export function createPublicApiClient(fetcher: typeof fetch = fetch, baseUrl = '
     return body as T;
   }
   return {
-    publicSite: async <T = Record<string, unknown>>(handle: string) => publicSiteResponseSchema.parse(await request<PublicSiteResponse<T>>(`/api/public/sites/${encodeURIComponent(handle)}`)) as PublicSiteResponse<T>,
+    publicSite: async <T = Record<string, unknown>>(handle: string) => publicProfileResponseSchemaV1.parse(await request<PublicSiteResponse<T>>(`/api/public/sites/${encodeURIComponent(handle)}`)) as PublicSiteResponse<T>,
     contact: (body: ContactRequest) => request<{ id: string }>('/api/v1/public/contact', { method: 'POST', body: JSON.stringify(publicApiPayloadSchemas.contact.parse(body)) }),
     newsletter: (body: NewsletterRequest) => request<{ id: string }>('/api/v1/public/newsletter', { method: 'POST', body: JSON.stringify(publicApiPayloadSchemas.newsletter.parse(body)) }),
     pageView: (body: TelemetryPageViewRequest) => request<{ status: 'accepted' }>('/api/v1/public/telemetry/page-view', { method: 'POST', body: JSON.stringify(publicApiPayloadSchemas.pageView.parse(body)) }),

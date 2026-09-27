@@ -5,6 +5,29 @@ export const apiErrorSchema = z.object({ status: z.literal('error'), error: z.st
 export const paginationQuerySchema = z.object({ cursor: z.string().max(512).optional(), limit: z.coerce.number().int().min(1).max(100).default(50) });
 export const idempotencyKeySchema = z.string().trim().min(16).max(200);
 export const publicSiteResponseSchema = z.object({ site: z.record(z.string(), z.unknown()) });
+export const apiSuccessSchema = <T extends z.ZodType>(data: T) => z.object({ status: z.literal('ok').default('ok'), data });
+export const apiListResponseSchema = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item), nextCursor: z.string().nullable().optional() });
+
+export const publicProfileResponseSchemaV1 = z.object({ site: z.record(z.string(), z.unknown()), profile: z.record(z.string(), z.unknown()).optional() }).passthrough();
+export const publicBookingResponseSchemaV1 = z.object({ bookingId: z.string(), status: z.enum(['pending', 'confirmed', 'cancelled']).optional() }).passthrough();
+export const productListResponseSchemaV1 = z.object({ items: z.array(z.record(z.string(), z.unknown())), nextCursor: z.string().nullable().optional() });
+export const apiRequestSchemasV1 = {
+  pagination: paginationQuerySchema,
+  idempotency: z.object({ idempotencyKey: idempotencyKeySchema }),
+  publicProfile: z.object({ handle: z.string().regex(/^[a-z0-9_-]{3,30}$/) }),
+  publicBooking: z.object({
+    hostHandle: z.string().regex(/^[a-z0-9_-]{3,30}$/),
+    serviceId: z.string().regex(/^[a-z0-9_-]{1,64}$/),
+    slotStart: z.string().datetime(), slotEnd: z.string().datetime(),
+    customerName: z.string().trim().min(1).max(120), customerEmail: z.string().email().max(320), notes: z.string().max(2000).optional()
+  })
+} as const;
+export const apiResponseSchemasV1 = {
+  error: apiErrorSchema,
+  publicProfile: publicProfileResponseSchemaV1,
+  publicBooking: publicBookingResponseSchemaV1,
+  products: productListResponseSchemaV1
+} as const;
 
 export type AuthRequirement = 'public' | 'authenticated' | 'owner' | 'internal';
 export interface ApiEndpointContract {

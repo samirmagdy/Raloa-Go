@@ -1,15 +1,14 @@
-# Versioned shared schemas
+# Shared runtime schemas
 
-Zod schemas in this directory are the runtime source of truth. TypeScript types
-are inferred from the same schemas and exported through `src/shared`.
+Zod schemas in this directory are the framework-independent runtime contract shared by the Vite Studio, public rendering, Express API, and background workers. TypeScript types are inferred from the same schemas.
 
 Version rules:
 
-- persisted site records are read through `migrateSiteConfig`, which accepts
-  legacy records and normalizes them to v1;
-- new persisted schema versions must add a new `...SchemaV2` and migration
-  function rather than changing v1 in place;
-- API payloads, public page data, domain events, worker payloads, and OAuth
-  token contracts validate at their boundaries;
-- validation errors are handled by the owning boundary and never leak secrets
-  or raw provider credentials.
+- schemas with a `V1` suffix are immutable contracts;
+- persisted site configuration is read through `migrateSiteConfig`;
+- a future persisted version must add a `...SchemaV2` and an explicit migration;
+- API and worker payloads are parsed at their transport boundary;
+- provider events are parsed after signature verification;
+- validation errors must not expose raw credentials or provider payloads.
+
+Keep provider SDK types, Firestore types, Express request types, and React types out of this package. The package may be imported by both browser and server code.

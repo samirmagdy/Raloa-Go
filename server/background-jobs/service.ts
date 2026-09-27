@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { BackgroundJob, BackgroundJobHandler, BackgroundJobRepository, JobDispatcher, JobKind } from './types';
-import { validateWorkerPayload } from '../../src/shared/schema';
+import { validateBackgroundJob, validateWorkerPayload } from '../../src/shared/schema';
 import type { ObservabilityMetrics } from '../infrastructure/observability/types';
 
 const DEFAULT_MAX_ATTEMPTS = 8;
@@ -19,7 +19,7 @@ export function createBackgroundJobService(repository: BackgroundJobRepository, 
   return {
     async enqueue(input: { kind: JobKind; idempotencyKey: string; payload: Record<string, unknown>; maxAttempts?: number }): Promise<BackgroundJob> {
       const now = new Date().toISOString();
-      const job = await repository.create({ id: jobId(input.kind, input.idempotencyKey), kind: input.kind, payload: input.payload, idempotencyKey: input.idempotencyKey, status: 'pending', attempts: 0, maxAttempts: input.maxAttempts || DEFAULT_MAX_ATTEMPTS, availableAt: now, createdAt: now, updatedAt: now });
+      const job = validateBackgroundJob(await repository.create({ id: jobId(input.kind, input.idempotencyKey), kind: input.kind, payload: validateWorkerPayload(input.kind, input.payload), idempotencyKey: input.idempotencyKey, status: 'pending', attempts: 0, maxAttempts: input.maxAttempts || DEFAULT_MAX_ATTEMPTS, availableAt: now, createdAt: now, updatedAt: now }));
       await dispatcher.dispatch(job);
       observability?.metrics?.increment('jobs.enqueued', { kind: job.kind });
       log('background_job_enqueued', job);
