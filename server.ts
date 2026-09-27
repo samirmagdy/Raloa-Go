@@ -865,9 +865,9 @@ function publicProduct(data: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
-async function creatorProducts(userId: string) {
+async function creatorProducts(userId: string, siteId?: string) {
   const snapshot = await adminDb.collection('creator_products').where('creatorId', '==', userId).limit(200).get();
-  return snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+  return snapshot.docs.map((document) => ({ id: document.id, ...document.data() })).filter((product) => !siteId || String((product as Record<string, unknown>).siteId || '') === siteId);
 }
 
 function isSafePublicUrl(value: unknown, allowAnchor = false): value is string {
@@ -989,10 +989,10 @@ function minutesFromTime(value: string): number {
   return hours * 60 + minutes;
 }
 
-async function bookingRecordsForHost(hostUserId: string): Promise<Array<Record<string, unknown>>> {
+async function bookingRecordsForHost(hostUserId: string, siteId?: string): Promise<Array<Record<string, unknown>>> {
   if (!isAdminConfigured()) return [];
   const snapshot = await adminDb.collection('bookings').where('hostUserId', '==', hostUserId).limit(2000).get();
-  return snapshot.docs.map((document) => document.data());
+  return snapshot.docs.map((document) => document.data()).filter((booking) => !siteId || String(booking.siteId || '') === siteId);
 }
 
 function availableSlots(config: BookingConfig, service: BookingService, fromDate: string, toDate: string, existing: Array<Record<string, unknown>>): Array<{ start: string; end: string; localDate: string; localTime: string; serviceId: string }> {
@@ -1742,7 +1742,7 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
     const claimed = await claimIdempotency('booking', idempotencyKey);
     if (claimed.inProgress) return apiError(res, 409, 'IDEMPOTENCY_IN_PROGRESS', 'A booking with this idempotency key is already being processed.');
     if (claimed.replay && claimed.response) return res.status(201).json(claimed.response);
-    const existing = await bookingRecordsForHost(String(hostSite.userId));
+    const existing = await bookingRecordsForHost(String(hostSite.userId), String(hostSite.id || ''));
     const localDate = dateInTimeZone(parsedStart, config.timezone);
     const from = new Date(`${localDate}T00:00:00Z`);
     const slots = availableSlots(config, service, localDate, localDate, existing);
@@ -1760,6 +1760,7 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
       id: bookingReference.id,
       hostHandle,
       hostUserId: String(hostSite.userId),
+      siteId: String(hostSite.id || ''),
       serviceId: service.id,
       serviceName: service.name,
       durationMinutes: service.durationMinutes,
@@ -1817,8 +1818,12 @@ app.get('/api/creator/bookings', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured()) return apiError(res, 503, 'BOOKINGS_UNAVAILABLE', 'Booking management is not configured.');
-  const snapshot = await adminDb.collection('bookings').where('hostUserId', '==', user.uid).limit(200).get();
-  const bookings = snapshot.docs.map((document) => ({ id: document.id, ...document.data() })) as Array<Record<string, any>>;
+  const siteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
+  if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
+  const site = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
+  if (!site.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+  const snapshot = await adminDb.collection('bookings').where('hostUserId', '==', user.uid).limit(500).get();
+  const bookings = snapshot.docs.filter((document) => String(document.data()?.siteId || '') === siteId).map((document) => ({ id: document.id, ...document.data() })) as Array<Record<string, any>>;
   return res.json({ bookings: bookings.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
 });
 
@@ -1830,6 +1835,7 @@ app.post('/api/creator/bookings/:bookingId/confirm', async (req: Request, res: R
   const bookingSnapshot = await bookingRef.get();
   if (!bookingSnapshot.exists || bookingSnapshot.data()?.hostUserId !== user.uid) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   const booking = bookingSnapshot.data() || {};
+  if (typeof req.query.siteId === 'string' && String(booking.siteId || '') !== req.query.siteId) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   if (booking.status === 'cancelled') return apiError(res, 409, 'BOOKING_CANCELLED', 'Cancelled bookings cannot be confirmed.');
   if (booking.status !== 'confirmed') await bookingRef.set({ status: 'confirmed', confirmationStatus: 'confirmed', confirmedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true });
   const customerEmail = String(booking.customerEmail || '');
@@ -1852,6 +1858,7 @@ app.post('/api/creator/bookings/:bookingId/cancel', async (req: Request, res: Re
   const existing = await bookingRef.get();
   if (!existing.exists || existing.data()?.hostUserId !== user.uid) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   const booking = existing.data() || {};
+  if (typeof req.query.siteId === 'string' && String(booking.siteId || '') !== req.query.siteId) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   if (booking.status === 'cancelled') return res.json({ id: bookingRef.id, status: 'cancelled', confirmationStatus: 'cancelled' });
   await adminDb.runTransaction(async (transaction) => {
     const current = await transaction.get(bookingRef);
@@ -1910,7 +1917,7 @@ function validAudienceDate(value: unknown): value is string {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-async function getOwnedAudienceSite(user: AuthenticatedUser, requestedHandle?: string): Promise<{ id: string; handle: string } | null> {
+async function getOwnedAudienceSite(user: AuthenticatedUser, requestedHandle?: string, requestedSiteId?: string): Promise<{ id: string; handle: string } | null> {
   if (!isAdminConfigured()) return null;
   const profileRef = adminDb.collection('users').doc(user.uid);
   const profile = await profileRef.get();
@@ -1920,13 +1927,13 @@ async function getOwnedAudienceSite(user: AuthenticatedUser, requestedHandle?: s
   if (!/^[a-z0-9_-]{3,30}$/.test(cleanHandle)) return null;
 
   const sites = profileRef.collection('sites');
-  const siteSnapshot = requestedHandle
-    ? await sites.where('username', '==', cleanHandle).limit(1).get()
-    : await sites.doc('default').get().then((document) => ({ docs: document.exists ? [document] : [] } as any));
+  const siteSnapshot = requestedSiteId
+    ? await sites.doc(requestedSiteId).get().then((document) => ({ docs: document.exists ? [document] : [] } as any))
+    : await sites.where('username', '==', cleanHandle).limit(1).get();
   const site = siteSnapshot.docs[0];
   if (!site) return null;
   const siteHandle = String(site.data()?.username || '').trim().toLowerCase();
-  if (siteHandle !== cleanHandle || (profileHandle && profileHandle !== cleanHandle)) return null;
+  if ((requestedSiteId && site.id !== requestedSiteId) || (requestedHandle && siteHandle !== cleanHandle)) return null;
   return { id: site.id, handle: cleanHandle };
 }
 
@@ -1997,6 +2004,7 @@ app.get('/api/creator/audience', async (req: Request, res: Response) => {
   const kind = audienceKind(req.query.type || 'subscribers');
   if (!kind) return apiError(res, 400, 'INVALID_AUDIENCE_TYPE', 'Audience type must be subscribers or submissions.');
   const requestedHandle = typeof req.query.siteHandle === 'string' ? req.query.siteHandle : undefined;
+  const requestedSiteId = typeof req.query.siteId === 'string' ? req.query.siteId : undefined;
   const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 120) : '';
   const status = typeof req.query.status === 'string' ? req.query.status.trim().slice(0, 30) : '';
   const from = req.query.from ? (validAudienceDate(req.query.from) ? req.query.from : null) : null;
@@ -2005,7 +2013,7 @@ app.get('/api/creator/audience', async (req: Request, res: Response) => {
   const requestedLimit = Number(req.query.limit || 100);
   const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 100;
   try {
-    const site = await getOwnedAudienceSite(user, requestedHandle);
+    const site = await getOwnedAudienceSite(user, requestedHandle, requestedSiteId);
     if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
     const [list, subscriberSnapshot, submissionSnapshot, viewsSnapshot] = await Promise.all([
       listAudienceRecords(kind, site, user.uid, search, status, from, to, limit),
@@ -2059,7 +2067,7 @@ app.post('/api/creator/audience/subscribers', async (req: Request, res: Response
   const source = typeof req.body?.source === 'string' ? req.body.source.trim().slice(0, 120) : 'Manual Entry';
   if (!validEmail(email)) return apiError(res, 400, 'INVALID_EMAIL', 'A valid email is required.');
   try {
-    const site = await getOwnedAudienceSite(user, typeof req.body?.siteHandle === 'string' ? req.body.siteHandle : undefined);
+    const site = await getOwnedAudienceSite(user, typeof req.body?.siteHandle === 'string' ? req.body.siteHandle : undefined, typeof req.body?.siteId === 'string' ? req.body.siteId : undefined);
     if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
     const now = new Date().toISOString();
     const id = crypto.createHash('sha256').update(`${user.uid}:${site.id}:${email}`).digest('hex').slice(0, 40);
@@ -2119,7 +2127,7 @@ app.get('/api/creator/audience/export', async (req: Request, res: Response) => {
   const kind = audienceKind(req.query.type || 'subscribers');
   if (!kind) return apiError(res, 400, 'INVALID_AUDIENCE_TYPE', 'Invalid audience type.');
   try {
-    const site = await getOwnedAudienceSite(user, typeof req.query.siteHandle === 'string' ? req.query.siteHandle : undefined);
+    const site = await getOwnedAudienceSite(user, typeof req.query.siteHandle === 'string' ? req.query.siteHandle : undefined, typeof req.query.siteId === 'string' ? req.query.siteId : undefined);
     if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
     const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 120) : '';
     const status = typeof req.query.status === 'string' ? req.query.status.trim().slice(0, 30) : '';
@@ -3011,11 +3019,6 @@ app.put('/api/account/profile', async (req: Request, res: Response) => {
     const ref = await accountDocument(user);
     if (ref) {
       await ref.set(updates, { merge: true });
-      const siteUpdates: Record<string, unknown> = {};
-      if (updates.displayName !== undefined) siteUpdates.displayName = updates.displayName;
-      if (updates.bio !== undefined) siteUpdates.bio = updates.bio;
-      if (updates.photoURL !== undefined) siteUpdates.avatar = updates.photoURL;
-      if (Object.keys(siteUpdates).length > 0) await ref.collection('sites').doc('default').set(siteUpdates, { merge: true });
     }
     const local = { ...accountSettingsFor(user), ...updates };
     LOCAL_ACCOUNT_SETTINGS.set(user.uid, local);
@@ -3166,12 +3169,12 @@ app.get('/api/account/export', async (req: Request, res: Response) => {
   try {
     const ref = await accountDocument(user);
     const profile = ref ? (await ref.get()).data() || {} : accountSettingsFor(user);
-    const site = ref ? (await ref.collection('sites').doc('default').get()).data() || null : null;
+    const sites = ref ? (await ref.collection('sites').limit(100).get()).docs.map((document) => ({ id: document.id, ...document.data() })) : [];
     const referrals = ref ? (await ref.collection('referrals').limit(1000).get()).docs.map((doc) => doc.data()) : [];
     const exportData = {
       exportedAt: new Date().toISOString(),
       account: { uid: user.uid, email: user.email || profile.email || null, profile: { ...profile, stripeCustomerId: undefined, stripeSubscriptionId: undefined } },
-      site,
+      sites,
       referrals
     };
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -3204,13 +3207,19 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
     if ((requestedFrom && !validDate(requestedFrom)) || (requestedTo && !validDate(requestedTo)) || (fromDate && fromDate > toDate)) return apiError(res, 400, 'INVALID_ANALYTICS_RANGE', 'Use a valid inclusive from/to date range.');
     const cutoff = fromDate ? Date.parse(`${fromDate}T00:00:00.000Z`) : 0;
     const endExclusive = Date.parse(`${toDate}T00:00:00.000Z`) + 86400000;
-    const [views, clicks, sites] = await Promise.all([
+    const requestedSiteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
+    const [viewsSnapshot, clicksSnapshot, sitesSnapshot] = await Promise.all([
       adminDb.collection('page_views').where('siteOwnerId', '==', user.uid).limit(10000).get(),
       adminDb.collection('link_clicks').where('siteOwnerId', '==', user.uid).limit(10000).get(),
       adminDb.collection('users').doc(user.uid).collection('sites').where('isPublished', '==', true).limit(1000).get()
     ]);
+    const selectedSite = requestedSiteId ? sitesSnapshot.docs.find((document) => document.id === requestedSiteId) : null;
+    if (requestedSiteId && !selectedSite) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found or is not published.');
+    const views = viewsSnapshot.docs.filter((document) => !requestedSiteId || String(document.data()?.siteId || '') === requestedSiteId);
+    const clicks = clicksSnapshot.docs.filter((document) => !requestedSiteId || String(document.data()?.siteId || '') === requestedSiteId);
+    const sites = selectedSite ? [selectedSite] : sitesSnapshot.docs;
     const siteLinks = new Map<string, { title: string; url: string; blockType: string }>();
-    sites.docs.forEach((siteDocument) => {
+    sites.forEach((siteDocument) => {
       const links = Array.isArray(siteDocument.data().links) ? siteDocument.data().links : [];
       links.forEach((link: any) => {
         if (typeof link?.id === 'string') siteLinks.set(link.id, { title: String(link.title || link.id), url: String(link.url || ''), blockType: String(link.type || 'link') });
@@ -3243,7 +3252,7 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
       if (data.visitorIdHash) current.visitors.add(String(data.visitorIdHash));
       utmCounts.set(key, current);
     };
-    for (const document of views.docs) {
+    for (const document of views) {
       const data = document.data() as Record<string, any>;
       const timestamp = eventTimestamp(data);
       if (!inRange(timestamp)) continue;
@@ -3260,7 +3269,7 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
       addUtm(data, 'views');
       timeline.set(date, current);
     }
-    for (const document of clicks.docs) {
+    for (const document of clicks) {
       const data = document.data() as Record<string, any>;
       const timestamp = eventTimestamp(data);
       if (!inRange(timestamp)) continue;
@@ -3284,9 +3293,9 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
       uniqueVisitors: uniqueVisitors.size,
       totalClicks,
       ctr: totalPageViews ? Number(((totalClicks / totalPageViews) * 100).toFixed(2)) : null,
-      activeSitesCount: sites.size,
+      activeSitesCount: sites.length,
       dateRange: { from: fromDate, to: toDate },
-      capped: views.size === 10000 || clicks.size === 10000 || sites.size === 1000,
+      capped: views.length === 10000 || clicks.length === 10000 || sites.length === 1000,
       timeline: timelineData,
       links: [...linkCounts.values()].sort((a, b) => b.clicks - a.clicks).map((link) => ({ ...link, share: totalClicks ? Number(((link.clicks / totalClicks) * 100).toFixed(1)) : 0 })),
       utmSources: [...utmCounts.values()].sort((a, b) => (b.clicks + b.views) - (a.clicks + a.views)).map((item) => ({ source: item.source, medium: item.medium, campaign: item.campaign, views: item.views, clicks: item.clicks, uniqueVisitors: item.visitors.size })),
@@ -3353,6 +3362,81 @@ app.get('/api/public/sites/:handle', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/sites', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'SERVICE_NOT_CONFIGURED', 'Site persistence is not configured.');
+  try {
+    const snapshot = await adminDb.collection('users').doc(user.uid).collection('sites').limit(100).get();
+    const sites = snapshot.docs.map((document) => {
+      const data = document.data();
+      return { id: document.id, username: String(data.username || ''), displayName: String(data.displayName || ''), isPublished: data.isPublished === true, updatedAt: data.updatedAt || null };
+    }).sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+    return res.status(200).json({ sites });
+  } catch (error) {
+    console.error('[Site list]', error);
+    return apiError(res, 503, 'SITE_LIST_FAILED', 'Sites are temporarily unavailable.');
+  }
+});
+
+async function siteHandleTaken(handle: string, userId: string, siteId?: string): Promise<boolean> {
+  const snapshot = await adminDb.collectionGroup('sites').where('username', '==', handle).limit(20).get();
+  return snapshot.docs.some((document) => document.ref.parent.parent?.id !== userId || document.id !== siteId);
+}
+
+app.post('/api/sites', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'SERVICE_NOT_CONFIGURED', 'Site persistence is not configured.');
+  const siteId = String(req.body?.siteId || `site_${crypto.randomUUID()}`).trim();
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(siteId)) return apiError(res, 400, 'INVALID_SITE_ID', 'Invalid site ID.');
+  const profile = await adminDb.collection('users').doc(user.uid).get();
+  if (!profile.exists) return apiError(res, 404, 'PROFILE_NOT_FOUND', 'User profile not found.');
+  const reference = adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId);
+  if ((await reference.get()).exists) return apiError(res, 409, 'SITE_EXISTS', 'A site with this ID already exists.');
+  const incoming = req.body && typeof req.body === 'object' ? req.body : {};
+  const username = String(incoming.username || '').trim().toLowerCase();
+  if (!/^[a-z0-9_-]{3,30}$/.test(username)) return apiError(res, 400, 'INVALID_HANDLE', 'A unique site handle is required.');
+  if (await siteHandleTaken(username, user.uid, siteId)) return apiError(res, 409, 'HANDLE_IN_USE', 'That site handle is already in use.');
+  const site = {
+    ...incoming,
+    id: siteId,
+    userId: user.uid,
+    username,
+    templateId: String(incoming.templateId || templatesData.find((template) => !isPremiumTemplate(template.id))?.id || 'elena'),
+    displayName: typeof incoming.displayName === 'string' ? incoming.displayName : username,
+    role: typeof incoming.role === 'string' ? incoming.role : '',
+    bio: typeof incoming.bio === 'string' ? incoming.bio : '',
+    avatar: typeof incoming.avatar === 'string' ? incoming.avatar : '',
+    coverImage: typeof incoming.coverImage === 'string' ? incoming.coverImage : '',
+    links: Array.isArray(incoming.links) ? incoming.links : [],
+    socials: Array.isArray(incoming.socials) ? incoming.socials : [],
+    isPublished: false,
+    updatedAt: new Date().toISOString()
+  } as Record<string, any>;
+  if (site.links.some((link: any) => !link || typeof link !== 'object' || typeof link.id !== 'string' || typeof link.title !== 'string' || !isSafePublicUrl(link.url, true))) return apiError(res, 400, 'INVALID_LINKS', 'Every link must have valid text and a safe public URL.');
+  site.designTokens = normalizeDesignTokens(site.designTokens, site);
+  const entitlement = validateSiteEntitlements(site, profile.data());
+  if (entitlement) return entitlementError(res, entitlement.feature, entitlement.message, entitlement.details);
+  await reference.create(site);
+  return res.status(201).json({ site });
+});
+
+app.delete('/api/sites/:siteId', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'SERVICE_NOT_CONFIGURED', 'Site persistence is not configured.');
+  const siteId = String(req.params.siteId || '').trim();
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(siteId)) return apiError(res, 400, 'INVALID_SITE_ID', 'Invalid site ID.');
+  const reference = adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId);
+  const snapshot = await reference.get();
+  if (!snapshot.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+  if (snapshot.data()?.isPublished === true) return apiError(res, 409, 'SITE_PUBLISHED', 'Unpublish the site before deleting it.');
+  if (typeof snapshot.data()?.customDomain === 'string' && snapshot.data()?.customDomain.trim()) return apiError(res, 409, 'SITE_DOMAIN_ATTACHED', 'Remove the custom domain before deleting the site.');
+  await reference.delete();
+  return res.status(204).send();
+});
+
 app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
@@ -3373,8 +3457,9 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
     userId: user.uid,
     updatedAt: new Date().toISOString()
   } as Record<string, any>;
-  const handle = String(profileData?.handle || merged.username || '').trim().toLowerCase();
+  const handle = String(merged.username || profileData?.handle || '').trim().toLowerCase();
   if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return apiError(res, 400, 'INVALID_HANDLE', 'A valid handle is required before saving a site.');
+  if (await siteHandleTaken(handle, user.uid, siteId)) return apiError(res, 409, 'HANDLE_IN_USE', 'That site handle is already in use.');
   merged.username = handle;
   if (typeof merged.displayName !== 'string' || merged.displayName.length > 120 || typeof merged.bio !== 'string' || merged.bio.length > 2000) {
     return apiError(res, 400, 'INVALID_SITE_CONTENT', 'Display name and bio are required and must be within limits.');
@@ -3411,7 +3496,11 @@ app.get('/api/creator/products', async (req: Request, res: Response) => {
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured()) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product persistence is not configured.');
   try {
-    const products = await creatorProducts(user.uid);
+    const siteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
+    if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
+    const site = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
+    if (!site.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+    const products = await creatorProducts(user.uid, siteId);
     return res.status(200).json({ products: products.map((product) => publicProduct(product)) });
   } catch (error) {
     console.error('[Creator products list]', error);
@@ -3423,6 +3512,8 @@ app.post('/api/creator/products', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured() || !stripe) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
+  const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
+  if (!siteId || !(await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get()).exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
   const name = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 120) : '';
   const description = typeof req.body?.description === 'string' ? req.body.description.trim().slice(0, 2000) : '';
   const imageUrls = Array.isArray(req.body?.imageUrls) ? req.body.imageUrls.filter(validProductImage).slice(0, 8) : [];
@@ -3443,7 +3534,7 @@ app.post('/api/creator/products', async (req: Request, res: Response) => {
     stripePriceId = stripePrice.id;
     const reference = adminDb.collection('creator_products').doc();
     const now = new Date().toISOString();
-    const product = { id: reference.id, creatorId: user.uid, name, description, imageUrls, priceMinor, currency, active, inventory, inventoryReserved: 0, stripeProductId: stripeProduct.id, stripePriceId: stripePrice.id, createdAt: now, updatedAt: now };
+    const product = { id: reference.id, creatorId: user.uid, siteId, name, description, imageUrls, priceMinor, currency, active, inventory, inventoryReserved: 0, stripeProductId: stripeProduct.id, stripePriceId: stripePrice.id, createdAt: now, updatedAt: now };
     await reference.create(product);
     return res.status(201).json({ product: publicProduct(product) });
   } catch (error) {
@@ -3463,6 +3554,7 @@ app.patch('/api/creator/products/:productId', async (req: Request, res: Response
   const reference = adminDb.collection('creator_products').doc(productId);
   const snapshot = await reference.get();
   if (!snapshot.exists || snapshot.data()?.creatorId !== user.uid) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
+  if (typeof req.body?.siteId === 'string' && String(snapshot.data()?.siteId || '') !== req.body.siteId) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
   const current = snapshot.data() || {};
   const name = req.body?.name === undefined ? String(current.name || '') : typeof req.body.name === 'string' ? req.body.name.trim().slice(0, 120) : '';
   const description = req.body?.description === undefined ? String(current.description || '') : typeof req.body.description === 'string' ? req.body.description.trim().slice(0, 2000) : '';
@@ -3502,6 +3594,7 @@ app.delete('/api/creator/products/:productId', async (req: Request, res: Respons
   const reference = adminDb.collection('creator_products').doc(String(req.params.productId || ''));
   const snapshot = await reference.get();
   if (!snapshot.exists || snapshot.data()?.creatorId !== user.uid) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
+  if (typeof req.query.siteId === 'string' && String(snapshot.data()?.siteId || '') !== req.query.siteId) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
   try {
     await stripe.products.update(String(snapshot.data()?.stripeProductId), { active: false });
     if (snapshot.data()?.stripePriceId) await stripe.prices.update(String(snapshot.data()?.stripePriceId), { active: false });
@@ -3520,7 +3613,7 @@ app.get('/api/v1/public/products/:handle', async (req: Request, res: Response) =
   const site = await getPublishedSiteByHandle(handle).catch(() => null);
   if (!site) return apiError(res, 404, 'CREATOR_NOT_FOUND', 'Creator page not found.');
   const products = await adminDb.collection('creator_products').where('creatorId', '==', String(site.userId)).where('active', '==', true).limit(100).get();
-  return res.status(200).json({ products: products.docs.map((document) => publicProduct({ id: document.id, ...document.data() })) });
+  return res.status(200).json({ products: products.docs.filter((document) => String(document.data()?.siteId || '') === String(site.id || '')).map((document) => publicProduct({ id: document.id, ...document.data() })) });
 });
 
 app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: Response) => {
@@ -3545,7 +3638,7 @@ app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: R
     if (claimed.replay && claimed.response) return res.status(201).json(claimed.response);
     const order = await adminDb.runTransaction(async (transaction) => {
       const productSnapshot = await transaction.get(productRef);
-      if (!productSnapshot.exists || productSnapshot.data()?.creatorId !== String(site.userId) || productSnapshot.data()?.active !== true) throw new Error('PRODUCT_NOT_FOUND');
+      if (!productSnapshot.exists || productSnapshot.data()?.creatorId !== String(site.userId) || String(productSnapshot.data()?.siteId || '') !== String(site.id || '') || productSnapshot.data()?.active !== true) throw new Error('PRODUCT_NOT_FOUND');
       const product = productSnapshot.data() || {};
       const available = product.inventory === null || product.inventory === undefined ? null : Number(product.inventory) - Number(product.inventoryReserved || 0);
       if (available !== null && available < quantity) throw new Error('OUT_OF_STOCK');
@@ -3579,12 +3672,14 @@ app.get('/api/account/orders', async (req: Request, res: Response) => {
   if (!isAdminConfigured()) return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Order history is not configured.');
   const profile = await adminDb.collection('users').doc(user.uid).get();
   const email = String(user.email || profile.data()?.email || '').toLowerCase();
+  const requestedSiteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
+  if (requestedSiteId && !(await adminDb.collection('users').doc(user.uid).collection('sites').doc(requestedSiteId).get()).exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
   const [creatorOrders, customerOrders] = await Promise.all([
     adminDb.collection('orders').where('creatorId', '==', user.uid).limit(100).get(),
     email ? adminDb.collection('orders').where('customerEmail', '==', email).limit(100).get() : Promise.resolve({ docs: [] } as any)
   ]);
   const unique = new Map<string, Record<string, unknown>>();
-  [...creatorOrders.docs, ...customerOrders.docs].forEach((document) => unique.set(document.id, { id: document.id, ...document.data() }));
+  [...creatorOrders.docs, ...customerOrders.docs].filter((document) => !requestedSiteId || String(document.data()?.siteId || '') === requestedSiteId).forEach((document) => unique.set(document.id, { id: document.id, ...document.data() }));
   return res.status(200).json({ orders: [...unique.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
 });
 

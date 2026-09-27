@@ -25,6 +25,7 @@ export const DEFAULT_BOOKING_CONFIG: BookingConfig = {
 };
 
 interface StudioSchedulingSettingsProps {
+  siteId: string;
   value: BookingConfig;
   onChange: (value: BookingConfig) => void;
   locale: Locale;
@@ -33,7 +34,7 @@ interface StudioSchedulingSettingsProps {
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-export const StudioSchedulingSettings: React.FC<StudioSchedulingSettingsProps> = ({ value, onChange, locale, allowCalendarIntegration = true }) => {
+export const StudioSchedulingSettings: React.FC<StudioSchedulingSettingsProps> = ({ siteId, value, onChange, locale, allowCalendarIntegration = true }) => {
   const isRtl = locale === 'ar';
   const [bookings, setBookings] = useState<Array<{ id: string; customerName?: string; customerEmail?: string; serviceName?: string; localDate?: string; localTime?: string; status?: string }>>([]);
   const [calendarConnected, setCalendarConnected] = useState(false);
@@ -44,12 +45,12 @@ export const StudioSchedulingSettings: React.FC<StudioSchedulingSettingsProps> =
     const loadBookings = async () => {
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
       if (!token) return;
-      const response = await fetch('/api/creator/bookings', { headers: { Authorization: `Bearer ${token}` } });
+      const response = await fetch(`/api/creator/bookings?siteId=${encodeURIComponent(siteId)}`, { headers: { Authorization: `Bearer ${token}` } });
       if (response.ok && active) setBookings((await response.json()).bookings || []);
     };
     void loadBookings();
     return () => { active = false; };
-  }, []);
+  }, [siteId]);
   useEffect(() => {
     let active = true;
     const loadCalendar = async () => {
@@ -68,7 +69,7 @@ export const StudioSchedulingSettings: React.FC<StudioSchedulingSettingsProps> =
     const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
     if (!token) return;
     setBookingAction(`${id}:${action}`);
-    const response = await fetch(`/api/creator/bookings/${encodeURIComponent(id)}/${action}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const response = await fetch(`/api/creator/bookings/${encodeURIComponent(id)}/${action}?siteId=${encodeURIComponent(siteId)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
     if (response.ok) setBookings((current) => current.map((booking) => booking.id === id ? { ...booking, status: action === 'confirm' ? 'confirmed' : 'cancelled' } : booking));
     setBookingAction('');
   };

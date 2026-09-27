@@ -65,6 +65,7 @@ export interface BookingConfig {
 export interface CreatorProduct {
   id: string;
   creatorId: string;
+  siteId?: string;
   name: string;
   description: string;
   imageUrls: string[];
@@ -265,10 +266,24 @@ export interface UserMiniSite {
   coverImage?: string;
   bgStyle?: BackgroundStyle;
   themeMode?: 'auto' | 'dark' | 'light';
+  accentColor?: string;
+  surfaceColor?: string;
+  cardRadius?: 'sharp' | 'subtle' | 'rounded' | 'pill';
+  cardShadow?: 'none' | 'subtle' | 'soft' | 'hard';
+  borderStyle?: 'none' | 'thin' | 'bold' | 'dashed';
+  socials?: ProfileSocialLink[];
   designTokens?: DesignTokens;
   links: any[];
   isPublished: boolean;
   bookingConfig?: BookingConfig;
+  updatedAt?: string;
+}
+
+export interface UserMiniSiteSummary {
+  id: string;
+  username: string;
+  displayName: string;
+  isPublished: boolean;
   updatedAt?: string;
 }
 

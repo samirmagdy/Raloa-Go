@@ -558,7 +558,7 @@ export async function updateUserPlan(
 export async function saveUserMiniSiteToFirestore(
   userId: string,
   siteData: Partial<UserMiniSite>,
-  siteId: string = 'default'
+  siteId: string
 ): Promise<void> {
   if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error('AUTH_REQUIRED');
   const token = await auth.currentUser.getIdToken();
@@ -581,7 +581,7 @@ export async function saveUserMiniSiteToFirestore(
  */
 export async function loadUserMiniSiteFromFirestore(
   userId: string,
-  siteId: string = 'default'
+  siteId: string
 ): Promise<UserMiniSite | null> {
   try {
     const siteDocRef = doc(db, 'users', userId, 'sites', siteId);
@@ -594,6 +594,35 @@ export async function loadUserMiniSiteFromFirestore(
     console.error('Error loading mini-site from Firestore:', error);
     return null;
   }
+}
+
+export async function listUserMiniSitesFromServer(userId: string): Promise<import('../types').UserMiniSiteSummary[]> {
+  if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error('AUTH_REQUIRED');
+  const token = await auth.currentUser.getIdToken();
+  const response = await fetch('/api/sites', { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error('SITE_LIST_FAILED');
+  const payload = await response.json();
+  return Array.isArray(payload.sites) ? payload.sites : [];
+}
+
+export async function createUserMiniSiteOnServer(userId: string, siteData: Partial<UserMiniSite>, siteId?: string): Promise<UserMiniSite> {
+  if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error('AUTH_REQUIRED');
+  const token = await auth.currentUser.getIdToken();
+  const response = await fetch('/api/sites', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...(siteId ? { siteId } : {}), ...siteData })
+  });
+  if (!response.ok) throw new Error('SITE_CREATE_FAILED');
+  const payload = await response.json();
+  return payload.site as UserMiniSite;
+}
+
+export async function deleteUserMiniSiteFromServer(userId: string, siteId: string): Promise<void> {
+  if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error('AUTH_REQUIRED');
+  const token = await auth.currentUser.getIdToken();
+  const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error('SITE_DELETE_FAILED');
 }
 
 /**

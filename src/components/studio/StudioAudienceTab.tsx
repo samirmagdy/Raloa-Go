@@ -12,7 +12,7 @@ interface SubmissionItem { id: string; name: string; email: string; subject: str
 interface AudienceMetrics { subscribers: number; activeSubscribers: number; newSubscribers: number; submissions: number; newSubmissions: number; uniqueVisitors: number; conversionRate: number | null; }
 interface AudienceResponse { data: SubscriberItem[] | SubmissionItem[]; total: number; hasMore: boolean; metrics: AudienceMetrics; }
 
-interface StudioAudienceTabProps { handle: string; locale: Locale; }
+interface StudioAudienceTabProps { siteId: string; handle: string; locale: Locale; }
 
 function formatDate(value: string | null, locale: Locale): string {
   if (!value) return '—';
@@ -21,7 +21,7 @@ function formatDate(value: string | null, locale: Locale): string {
   return parsed.toLocaleDateString(locale === 'ar' ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-export const StudioAudienceTab: React.FC<StudioAudienceTabProps> = ({ handle, locale }) => {
+export const StudioAudienceTab: React.FC<StudioAudienceTabProps> = ({ siteId, handle, locale }) => {
   const isRtl = locale === 'ar';
   const [activeTab, setActiveTab] = useState<AudienceTab>('subscribers');
   const [search, setSearch] = useState('');
@@ -54,13 +54,13 @@ export const StudioAudienceTab: React.FC<StudioAudienceTabProps> = ({ handle, lo
   }, [isRtl]);
 
   const queryString = useMemo(() => {
-    const params = new URLSearchParams({ type: activeTab, siteHandle: handle, limit: '500' });
+    const params = new URLSearchParams({ type: activeTab, siteId, siteHandle: handle, limit: '500' });
     if (search.trim()) params.set('search', search.trim());
     if (status) params.set('status', status);
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     return params.toString();
-  }, [activeTab, from, handle, search, status, to]);
+  }, [activeTab, from, handle, search, siteId, status, to]);
 
   const loadAudience = useCallback(async () => {
     setLoading(true);
@@ -100,7 +100,7 @@ export const StudioAudienceTab: React.FC<StudioAudienceTabProps> = ({ handle, lo
     event.preventDefault();
     setBusyId('new');
     try {
-      await request('/api/creator/audience/subscribers', { method: 'POST', body: JSON.stringify({ siteHandle: handle, email: newEmail, source: newSource }) });
+      await request('/api/creator/audience/subscribers', { method: 'POST', body: JSON.stringify({ siteId, siteHandle: handle, email: newEmail, source: newSource }) });
       setNewEmail(''); setNewSource('Manual Entry'); setShowAddModal(false); setActiveTab('subscribers'); await loadAudience();
     } catch (addError) { setError(addError instanceof Error ? addError.message : (isRtl ? 'تعذر إضافة المشترك.' : 'Could not add subscriber.')); }
     finally { setBusyId(null); }

@@ -22,7 +22,8 @@
     "test:calendar": "NODE_ENV=test tsx test-calendar.ts",
     "test:seo": "NODE_ENV=test tsx test-seo.ts",
     "test:design-parity": "tsx test-design-parity.ts",
-    "test:block-types": "tsx test-block-types.ts"
+    "test:block-types": "tsx test-block-types.ts",
+    "test:multi-site": "tsx test-multi-site.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

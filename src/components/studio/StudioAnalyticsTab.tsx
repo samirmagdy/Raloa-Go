@@ -6,11 +6,11 @@ import { StudioBlockItem } from './SortableBlockList';
 import { auth } from '../../lib/firebase';
 import { PlatformMetrics } from '../../api/types';
 
-interface StudioAnalyticsTabProps { links: StudioBlockItem[]; locale: Locale; analyticsEnabled?: boolean; }
+interface StudioAnalyticsTabProps { siteId: string; links: StudioBlockItem[]; locale: Locale; analyticsEnabled?: boolean; }
 type Range = '7d' | '30d' | 'all';
 const emptyMetrics: PlatformMetrics = { totalVisits: 0, totalPageViews: 0, uniqueVisitors: 0, totalClicks: 0, ctr: null, activeSitesCount: 0, timeline: [], links: [], utmSources: [], referrers: [], devices: [], browsers: [], countries: [] };
 
-export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({ links, locale, analyticsEnabled = true }) => {
+export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({ siteId, links, locale, analyticsEnabled = true }) => {
   const isRtl = locale === 'ar';
   const [range, setRange] = useState<Range>('30d');
   const [from, setFrom] = useState('');
@@ -29,7 +29,7 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({ links, l
       setLoading(true); setError(false);
       try {
         const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
-        const params = new URLSearchParams({ days: range === 'all' ? 'all' : range === '7d' ? '7' : '30' });
+        const params = new URLSearchParams({ siteId, days: range === 'all' ? 'all' : range === '7d' ? '7' : '30' });
         if (from) params.set('from', from); if (to) params.set('to', to);
         const response = await fetch(`/api/analytics/platform?${params}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
         if (!response.ok) throw new Error('ANALYTICS_UNAVAILABLE');
@@ -39,7 +39,7 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({ links, l
       finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [analyticsEnabled, range, from, to]);
+  }, [analyticsEnabled, siteId, range, from, to]);
 
   const linkStats = useMemo(() => { const byId = new Map(metrics.links.map((link) => [link.linkId, link])); return links.slice(0, 5).map((link) => ({ ...link, stats: byId.get(link.id) })); }, [links, metrics.links]);
   const hasData = metrics.totalPageViews > 0 || metrics.totalClicks > 0;

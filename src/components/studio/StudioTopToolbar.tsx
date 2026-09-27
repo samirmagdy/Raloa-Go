@@ -12,7 +12,7 @@ import {
   ChevronDown,
   ArrowLeft
 } from 'lucide-react';
-import { Locale } from '../../types';
+import { Locale, UserMiniSiteSummary } from '../../types';
 import { PremiumMark } from '../brand/PremiumMark';
 
 export interface StudioTopToolbarProps {
@@ -30,6 +30,11 @@ export interface StudioTopToolbarProps {
   onOpenQr: () => void;
   onClose: () => void;
   locale: Locale;
+  sites: UserMiniSiteSummary[];
+  activeSiteId: string;
+  onSiteSelect: (siteId: string) => void;
+  onCreateSite: () => void;
+  onDeleteSite: () => void;
 }
 
 export type PublicationState = 'draft' | 'publishing' | 'published' | 'unpublishing' | 'failed';
@@ -48,7 +53,12 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
   onRedo,
   onOpenQr,
   onClose,
-  locale
+  locale,
+  sites,
+  activeSiteId,
+  onSiteSelect,
+  onCreateSite,
+  onDeleteSite
 }) => {
   const [copied, setCopied] = useState(false);
   const [siteSwitcherOpen, setSiteSwitcherOpen] = useState(false);
@@ -106,16 +116,18 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
               <div className="px-3.5 py-1.5 border-b border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 {isRtl ? 'الموقع النشط' : 'Active Site'}
               </div>
-              <div className="p-2">
-                <div className="px-2 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-between">
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 truncate">@{cleanHandle}</p>
-                    <p className="text-[10px] text-slate-400 truncate">{publicUrl.replace('https://', '')}</p>
-                  </div>
-                  <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                </div>
+              <div className="max-h-52 overflow-y-auto p-2">
+                {sites.map((site) => (
+                  <button key={site.id} type="button" onClick={() => { onSiteSelect(site.id); setSiteSwitcherOpen(false); }} className={`w-full px-2 py-1.5 rounded-xl flex items-center justify-between text-left transition-colors ${site.id === activeSiteId ? 'bg-indigo-50 dark:bg-indigo-950/50' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                    <span className="min-w-0"><span className="block text-xs font-bold text-slate-800 dark:text-white truncate">@{site.username}</span><span className="block text-[10px] text-slate-400 truncate">{site.displayName || site.id}</span></span>
+                    {site.id === activeSiteId && <CheckCircle2 className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />}
+                  </button>
+                ))}
+                {sites.length === 0 && <p className="px-2 py-2 text-xs text-slate-500">{isRtl ? 'لا توجد مواقع بعد.' : 'No sites yet.'}</p>}
               </div>
               <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
+                <button type="button" onClick={() => { onCreateSite(); setSiteSwitcherOpen(false); }} className="w-full px-3.5 py-1.5 text-left text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40">{isRtl ? '+ موقع جديد' : '+ New site'}</button>
+                {sites.length > 1 && <button type="button" onClick={() => { onDeleteSite(); setSiteSwitcherOpen(false); }} className="w-full px-3.5 py-1.5 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30">{isRtl ? 'حذف الموقع الحالي' : 'Delete current site'}</button>}
                 {publicationState === 'published' ? <a
                   href={publicUrl}
                   target="_blank"

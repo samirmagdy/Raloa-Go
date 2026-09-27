@@ -16,6 +16,7 @@ import { StudioProductsSettings } from './StudioProductsSettings';
 import { getPlanCapabilities } from '../../lib/planCapabilities';
 
 interface StudioSettingsTabProps {
+  siteId: string;
   handle: string;
   plan: 'free' | 'pro' | 'studio' | string;
   customDomain: string;
@@ -45,6 +46,7 @@ interface StudioSettingsTabProps {
 }
 
 export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
+  siteId,
   handle,
   plan = 'free',
   customDomain,
@@ -140,7 +142,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
         const response = await fetch('/api/domains', { headers: await getApiHeaders() });
         if (!response.ok) return;
         const payload = await response.json();
-        const existing = (payload.domains || []).find((domain: any) => domain.hostname === customDomain);
+        const existing = (payload.domains || []).find((domain: any) => domain.hostname === customDomain && domain.siteId === siteId);
         if (!cancelled && existing) {
           setDomainId(existing.domainId);
           setDomainVerified(existing.verificationStatus === 'verified' && existing.sslStatus === 'active');
@@ -151,7 +153,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
       } catch (_) {}
     })();
     return () => { cancelled = true; };
-  }, [activeSubSection, customDomain]);
+  }, [activeSubSection, customDomain, siteId]);
 
   const handleVerifyDomain = async () => {
     setIsVerifying(true);
@@ -165,7 +167,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
         const provision = await fetch('/api/domains/provision', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ hostname: customDomain })
+          body: JSON.stringify({ hostname: customDomain, siteId })
         });
         payload = await provision.json();
         if (!provision.ok) throw new Error(payload.error || 'Could not provision domain');
@@ -421,8 +423,8 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
             </div>
           </div>
 
-          <StudioSchedulingSettings value={bookingConfig} onChange={onBookingConfigChange} locale={locale} allowCalendarIntegration={capabilities.studioControls} />
-          <StudioProductsSettings locale={locale} />
+          <StudioSchedulingSettings siteId={siteId} value={bookingConfig} onChange={onBookingConfigChange} locale={locale} allowCalendarIntegration={capabilities.studioControls} />
+          <StudioProductsSettings siteId={siteId} locale={locale} />
 
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">

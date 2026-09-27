@@ -12,9 +12,12 @@ import {
   saveUserMiniSiteToFirestore,
   loadUserMiniSiteFromFirestore,
   createLocalUser,
-  resetFirebasePassword
+  resetFirebasePassword,
+  listUserMiniSitesFromServer,
+  createUserMiniSiteOnServer,
+  deleteUserMiniSiteFromServer
 } from '../lib/firebase';
-import { UserProfile, UserMiniSite } from '../types';
+import { UserProfile, UserMiniSite, UserMiniSiteSummary } from '../types';
 
 interface AuthContextType {
   user: User | null;
@@ -27,8 +30,11 @@ interface AuthContextType {
   resetPassword: (oobCode: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
   updatePlan: (plan: 'free' | 'pro' | 'studio', isYearly?: boolean) => Promise<void>;
-  saveMiniSite: (siteData: Partial<UserMiniSite>, siteId?: string) => Promise<void>;
-  loadMiniSite: (siteId?: string) => Promise<UserMiniSite | null>;
+  saveMiniSite: (siteData: Partial<UserMiniSite>, siteId: string) => Promise<void>;
+  loadMiniSite: (siteId: string) => Promise<UserMiniSite | null>;
+  listMiniSites: () => Promise<UserMiniSiteSummary[]>;
+  createMiniSite: (siteData: Partial<UserMiniSite>, siteId?: string) => Promise<UserMiniSite>;
+  deleteMiniSite: (siteId: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
 
@@ -152,7 +158,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfile((prev) => (prev ? { ...prev, plan, isYearly, updatedAt: new Date().toISOString() } : null));
   }, [user]);
 
-  const saveMiniSite = useCallback(async (siteData: Partial<UserMiniSite>, siteId: string = 'default') => {
+  const saveMiniSite = useCallback(async (siteData: Partial<UserMiniSite>, siteId: string) => {
+    if (!siteId) throw new Error('SITE_ID_REQUIRED');
     if (!user) return;
     // Always persist to local cache for resilient offline & local dev support
     try {
@@ -174,7 +181,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [user]);
 
-  const loadMiniSite = useCallback(async (siteId: string = 'default') => {
+  const loadMiniSite = useCallback(async (siteId: string) => {
+    if (!siteId) throw new Error('SITE_ID_REQUIRED');
     if (!user) return null;
     let firestoreData: UserMiniSite | null = null;
     if (auth.currentUser) {
@@ -193,6 +201,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   }, [user]);
 
+  const listMiniSites = useCallback(async () => {
+    if (!user) return [];
+    if (auth.currentUser) {
+      try {
+        return await listUserMiniSitesFromServer(user.uid);
+      } catch (error) {
+        console.warn('Could not list sites from the server; checking local cache.', error);
+      }
+    }
+    if (typeof window === 'undefined') return [];
+    const prefix = `raloa_site_${user.uid}_`;
+    const sites: UserMiniSiteSummary[] = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (!key?.startsWith(prefix)) continue;
+      const id = key.slice(prefix.length);
+      try {
+        const site = JSON.parse(window.localStorage.getItem(key) || '{}');
+        sites.push({ id, username: site.username || id, displayName: site.displayName || id, isPublished: site.isPublished === true, updatedAt: site.updatedAt });
+      } catch (_) {}
+    }
+    return sites;
+  }, [user]);
+
+  const createMiniSite = useCallback(async (siteData: Partial<UserMiniSite>, siteId?: string) => {
+    if (!user) throw new Error('AUTH_REQUIRED');
+    if (auth.currentUser) return createUserMiniSiteOnServer(user.uid, siteData, siteId);
+    const resolvedId = siteId || `site_${crypto.randomUUID()}`;
+    await saveMiniSite(siteData, resolvedId);
+    return { ...siteData, id: resolvedId, userId: user.uid } as UserMiniSite;
+  }, [user, saveMiniSite]);
+
+  const deleteMiniSite = useCallback(async (siteId: string) => {
+    if (!user || !siteId) throw new Error('SITE_ID_REQUIRED');
+    if (auth.currentUser) await deleteUserMiniSiteFromServer(user.uid, siteId);
+    try { localStorage.removeItem(`raloa_site_${user.uid}_${siteId}`); } catch (_) {}
+  }, [user]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -208,6 +254,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updatePlan,
         saveMiniSite,
         loadMiniSite,
+        listMiniSites,
+        createMiniSite,
+        deleteMiniSite,
         refreshProfile
       }}
     >

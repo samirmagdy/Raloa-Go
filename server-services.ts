@@ -120,23 +120,20 @@ export async function getPublishedSiteById(userId: string, siteId: string): Prom
 export async function getPublishedSiteByHandle(handle: string, siteId?: string): Promise<Record<string, unknown> | null> {
   const cleanHandle = handle.trim().toLowerCase();
   if (!cleanHandle) return null;
-
-  const profileSnapshot = await adminDb.collection('users')
-    .where('handle', '==', cleanHandle)
-    .limit(1)
-    .get();
-  const profileDocument = profileSnapshot.docs[0];
-  if (!profileDocument) return null;
+  let siteDocument: FirebaseFirestore.QueryDocumentSnapshot | FirebaseFirestore.DocumentSnapshot | null = null;
+  let profileDocument: FirebaseFirestore.DocumentSnapshot | null = null;
+  if (siteId) {
+    const profileSnapshot = await adminDb.collection('users').where('handle', '==', cleanHandle).limit(1).get();
+    profileDocument = profileSnapshot.docs[0] || null;
+    if (profileDocument) siteDocument = await adminDb.collection('users').doc(profileDocument.id).collection('sites').doc(siteId).get();
+  } else {
+    const siteSnapshot = await adminDb.collectionGroup('sites').where('username', '==', cleanHandle).limit(100).get();
+    siteDocument = siteSnapshot.docs.find((document) => document.data()?.isPublished === true) || null;
+    const ownerId = siteDocument?.ref.parent.parent?.id;
+    if (ownerId) profileDocument = await adminDb.collection('users').doc(ownerId).get();
+  }
+  if (!profileDocument || !siteDocument?.exists || siteDocument.data()?.isPublished !== true) return null;
   if (profileDocument.data()?.privacyPreferences?.profilePublished === false) return null;
-
-  const sites = adminDb.collection('users').doc(profileDocument.id).collection('sites');
-  const siteDocument = siteId
-    ? await sites.doc(siteId).get()
-    : (await sites.where('isPublished', '==', true).limit(100).get()).docs.find((document) => {
-        const data = document.data();
-        return String(data.username || '').trim().toLowerCase() === cleanHandle;
-      }) || null;
-  if (!siteDocument || !siteDocument.exists || siteDocument.data()?.isPublished !== true) return null;
   return publicSiteData(profileDocument, siteDocument, cleanHandle);
 }
 

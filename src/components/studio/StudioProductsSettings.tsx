@@ -4,11 +4,11 @@ import { Locale } from '../../types';
 import { auth } from '../../lib/firebase';
 
 interface ProductDraft { id?: string; name: string; description: string; imageUrls: string; price: string; currency: string; active: boolean; inventory: string; }
-interface StudioProductsSettingsProps { locale: Locale; }
+interface StudioProductsSettingsProps { siteId: string; locale: Locale; }
 
 const emptyDraft: ProductDraft = { name: '', description: '', imageUrls: '', price: '', currency: 'usd', active: true, inventory: '' };
 
-export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ locale }) => {
+export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ siteId, locale }) => {
   const isRtl = locale === 'ar';
   const [products, setProducts] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
@@ -27,8 +27,8 @@ export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ 
     try {
       const requestHeaders = await headers();
       const [response, ordersResponse] = await Promise.all([
-        fetch('/api/creator/products', { headers: requestHeaders }),
-        fetch('/api/account/orders', { headers: requestHeaders })
+        fetch(`/api/creator/products?siteId=${encodeURIComponent(siteId)}`, { headers: requestHeaders }),
+        fetch(`/api/account/orders?siteId=${encodeURIComponent(siteId)}`, { headers: requestHeaders })
       ]);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message || payload.error || 'Could not load products.');
@@ -40,7 +40,7 @@ export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ 
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Could not load products.');
     } finally { setLoading(false); }
-  }, [headers]);
+  }, [headers, siteId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -49,7 +49,7 @@ export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ 
     setSaving(true); setError('');
     const body = { name: draft.name, description: draft.description, imageUrls: draft.imageUrls.split(',').map((value) => value.trim()).filter(Boolean), priceMinor: Math.round(Number(draft.price) * 100), currency: draft.currency, active: draft.active, inventory: draft.inventory.trim() === '' ? null : Number(draft.inventory) };
     try {
-      const response = await fetch(draft.id ? `/api/creator/products/${encodeURIComponent(draft.id)}` : '/api/creator/products', { method: draft.id ? 'PATCH' : 'POST', headers: await headers(), body: JSON.stringify(body) });
+      const response = await fetch(draft.id ? `/api/creator/products/${encodeURIComponent(draft.id)}` : '/api/creator/products', { method: draft.id ? 'PATCH' : 'POST', headers: await headers(), body: JSON.stringify({ ...body, siteId }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message || payload.error || 'Could not save product.');
       setDraft(emptyDraft); await load();
@@ -60,7 +60,7 @@ export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ 
   const archive = async (id: string) => {
     setError('');
     try {
-      const response = await fetch(`/api/creator/products/${encodeURIComponent(id)}`, { method: 'DELETE', headers: await headers() });
+      const response = await fetch(`/api/creator/products/${encodeURIComponent(id)}?siteId=${encodeURIComponent(siteId)}`, { method: 'DELETE', headers: await headers() });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message || payload.error || 'Could not archive product.');
       await load();

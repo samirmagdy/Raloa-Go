@@ -9,7 +9,7 @@ import {
   ArrowRight,
   Sparkles
 } from 'lucide-react';
-import { Locale, TemplateItem, BackgroundStyle, BookingConfig, ProfileSocialLink } from '../../types';
+import { Locale, TemplateItem, BackgroundStyle, BookingConfig, ProfileSocialLink, UserMiniSite, UserMiniSiteSummary } from '../../types';
 import { DEFAULT_DESIGN_TOKENS, DesignTokens, normalizeDesignTokens } from '../../utils/designTokens';
 import { templatesData } from '../../data/content';
 import { useAuth } from '../../hooks/useAuth';
@@ -75,6 +75,38 @@ export interface StudioModalProps {
   onOpenPricing?: () => void;
 }
 
+function studioConfigFromSite(savedSite: UserMiniSite, fallback: TemplateItem, resolvedHandle: string, isRtl: boolean): StudioSiteConfig {
+  return {
+    username: savedSite.username || resolvedHandle,
+    templateId: savedSite.templateId || fallback.id,
+    displayName: savedSite.displayName || fallback.name,
+    role: savedSite.role || fallback.role,
+    bio: savedSite.bio !== undefined ? savedSite.bio : (isRtl ? fallback.bioAr : fallback.bio),
+    avatar: savedSite.avatar || fallback.avatar,
+    coverImage: savedSite.coverImage || fallback.coverImage,
+    bgStyle: savedSite.bgStyle || fallback.backgroundStyle || 'signature',
+    themeMode: savedSite.themeMode || 'auto',
+    links: savedSite.links?.length ? savedSite.links as StudioBlockItem[] : fallback.sampleLinks.map((link) => ({ id: link.id, title: isRtl ? link.titleAr : link.title, url: link.url, subtitle: (isRtl ? link.subtitleAr : link.subtitle) || '', type: link.type || 'link' })),
+    socials: Array.isArray((savedSite as any).socials) ? (savedSite as any).socials : fallback.socials.map((social) => ({ ...social, enabled: true })),
+    isPublished: savedSite.isPublished ?? false,
+    accentColor: (savedSite as any).accentColor || DEFAULT_DESIGN_TOKENS.accentColor,
+    surfaceColor: (savedSite as any).surfaceColor || DEFAULT_DESIGN_TOKENS.surfaceColor,
+    cardRadius: (savedSite as any).cardRadius || DEFAULT_DESIGN_TOKENS.cardRadius,
+    cardShadow: (savedSite as any).cardShadow || DEFAULT_DESIGN_TOKENS.cardShadow,
+    borderStyle: (savedSite as any).borderStyle || DEFAULT_DESIGN_TOKENS.borderStyle,
+    designTokens: normalizeDesignTokens((savedSite as any).designTokens, savedSite as any),
+    customDomain: (savedSite as any).customDomain || '',
+    metaTitle: (savedSite as any).metaTitle || '',
+    metaDescription: (savedSite as any).metaDescription || '',
+    hidePoweredBy: (savedSite as any).hidePoweredBy ?? false,
+    sensitiveWarning: (savedSite as any).sensitiveWarning ?? false,
+    ga4Id: (savedSite as any).ga4Id || '',
+    metaPixelId: (savedSite as any).metaPixelId || '',
+    webhookUrl: (savedSite as any).webhookUrl || '',
+    bookingConfig: (savedSite as any).bookingConfig || DEFAULT_BOOKING_CONFIG
+  };
+}
+
 export const StudioModal: React.FC<StudioModalProps> = ({
   initialUsername = 'creator',
   initialTemplate,
@@ -83,7 +115,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   onOpenAuth,
   onOpenPricing
 }) => {
-  const { user, profile, loading: authLoading, saveMiniSite, loadMiniSite } = useAuth();
+  const { user, profile, loading: authLoading, saveMiniSite, loadMiniSite, listMiniSites, createMiniSite, deleteMiniSite } = useAuth();
   const isRtl = locale === 'ar';
   const capabilities = getPlanCapabilities(profile);
   const defaultTemplate = initialTemplate && (!isPremiumTemplate(initialTemplate.id) || capabilities.premiumTemplates)
@@ -106,6 +138,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | 'error'>('saved');
   const [publicationState, setPublicationState] = useState<PublicationState>('draft');
   const [entitlementMessage, setEntitlementMessage] = useState('');
+  const [sites, setSites] = useState<UserMiniSiteSummary[]>([]);
+  const [activeSiteId, setActiveSiteId] = useState('');
 
   const isInitialLoadDone = useRef(false);
   const lastTextEditRef = useRef<number>(0);
@@ -234,54 +268,39 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       return;
     }
     let isCancelled = false;
+    const userId = user.uid;
 
     async function loadData() {
       try {
-        const savedSite = await loadMiniSite('default');
+        let availableSites = await listMiniSites();
+        let selectedSiteId = typeof window !== 'undefined' ? localStorage.getItem(`raloa_active_site_${userId}`) || '' : '';
+        if (!availableSites.some((site) => site.id === selectedSiteId)) selectedSiteId = availableSites[0]?.id || '';
+        if (!selectedSiteId) {
+          const created = await createMiniSite({
+            username: resolvedHandle,
+            templateId: defaultTemplate.id,
+            displayName: defaultTemplate.name,
+            role: defaultTemplate.role,
+            bio: isRtl ? defaultTemplate.bioAr : defaultTemplate.bio,
+            avatar: defaultTemplate.avatar,
+            coverImage: defaultTemplate.coverImage,
+            bgStyle: defaultTemplate.backgroundStyle || 'signature',
+            themeMode: 'auto',
+            links: defaultTemplate.sampleLinks.map((link) => ({ id: link.id, title: isRtl ? link.titleAr : link.title, url: link.url, subtitle: (isRtl ? link.subtitleAr : link.subtitle) || '', type: link.type || 'link' })),
+            socials: defaultTemplate.socials.map((social) => ({ ...social, enabled: true })),
+            isPublished: false,
+            designTokens: normalizeDesignTokens({ ...DEFAULT_DESIGN_TOKENS, background: { ...DEFAULT_DESIGN_TOKENS.background, style: defaultTemplate.backgroundStyle || 'signature', coverImage: defaultTemplate.coverImage } })
+          });
+          selectedSiteId = String(created.id);
+          availableSites = await listMiniSites();
+        }
+        if (!selectedSiteId) throw new Error('NO_SITE_SELECTED');
+        setSites(availableSites);
+        setActiveSiteId(selectedSiteId);
+        try { localStorage.setItem(`raloa_active_site_${userId}`, selectedSiteId); } catch (_) {}
+        const savedSite = await loadMiniSite(selectedSiteId);
         if (savedSite && !isCancelled) {
-          const loadedConfig: StudioSiteConfig = {
-            username: savedSite.username || resolvedHandle,
-            templateId: savedSite.templateId || defaultTemplate.id,
-            displayName: savedSite.displayName || defaultTemplate.name,
-            role: savedSite.role || defaultTemplate.role,
-            bio:
-              savedSite.bio !== undefined
-                ? savedSite.bio
-                : isRtl
-                ? defaultTemplate.bioAr
-                : defaultTemplate.bio,
-            avatar: savedSite.avatar || defaultTemplate.avatar,
-            coverImage: savedSite.coverImage || defaultTemplate.coverImage,
-            bgStyle: savedSite.bgStyle || 'signature',
-            themeMode: savedSite.themeMode || 'auto',
-            links:
-              savedSite.links && savedSite.links.length > 0
-                ? savedSite.links
-                : defaultTemplate.sampleLinks.map((l) => ({
-                    id: l.id,
-                    title: isRtl ? l.titleAr : l.title,
-                    url: l.url,
-                    subtitle: (isRtl ? l.subtitleAr : l.subtitle) || '',
-                    type: l.type || 'link'
-                })),
-            socials: Array.isArray((savedSite as any).socials) ? (savedSite as any).socials : defaultTemplate.socials.map((social) => ({ ...social, enabled: true })),
-            isPublished: savedSite.isPublished ?? false,
-            accentColor: (savedSite as any).accentColor || '#4F46E5',
-            surfaceColor: (savedSite as any).surfaceColor || '#FFFFFF',
-            cardRadius: (savedSite as any).cardRadius || 'rounded',
-            cardShadow: (savedSite as any).cardShadow || 'subtle',
-            borderStyle: (savedSite as any).borderStyle || 'thin',
-            designTokens: normalizeDesignTokens((savedSite as any).designTokens, savedSite as any),
-            customDomain: (savedSite as any).customDomain || '',
-            metaTitle: (savedSite as any).metaTitle || '',
-            metaDescription: (savedSite as any).metaDescription || '',
-            hidePoweredBy: (savedSite as any).hidePoweredBy ?? false,
-            sensitiveWarning: (savedSite as any).sensitiveWarning ?? false,
-            ga4Id: (savedSite as any).ga4Id || '',
-            metaPixelId: (savedSite as any).metaPixelId || '',
-            webhookUrl: (savedSite as any).webhookUrl || '',
-            bookingConfig: (savedSite as any).bookingConfig || DEFAULT_BOOKING_CONFIG
-          };
+          const loadedConfig = studioConfigFromSite(savedSite, defaultTemplate, resolvedHandle, isRtl);
 
           resetHistory(loadedConfig);
         }
@@ -305,7 +324,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [user, resolvedHandle]);
+  }, [user, resolvedHandle, listMiniSites, createMiniSite, loadMiniSite]);
 
   // Persist directly to live content in Firestore (Autosave directly to live content)
   const persistSiteConfig = useCallback(
@@ -344,7 +363,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
               webhookUrl: configToSave.webhookUrl,
               bookingConfig: configToSave.bookingConfig
             } as any)
-          });
+          }, activeSiteId);
         } else {
           // Local fallback in case of unauthenticated preview mode
           try {
@@ -363,8 +382,62 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         setEntitlementMessage(err instanceof Error ? err.message : 'This change is not included in your current plan.');
       }
     },
-    [user, saveMiniSite, siteConfig]
+    [user, saveMiniSite, siteConfig, activeSiteId]
   );
+
+  const switchSite = useCallback(async (nextSiteId: string) => {
+    if (!nextSiteId || nextSiteId === activeSiteId) return;
+    try {
+      await persistSiteConfig(siteConfig);
+      const savedSite = await loadMiniSite(nextSiteId);
+      const summary = sites.find((site) => site.id === nextSiteId);
+      if (!savedSite || !summary) throw new Error('SITE_NOT_FOUND');
+      resetHistory(studioConfigFromSite(savedSite, defaultTemplate, resolvedHandle, isRtl));
+      setActiveSiteId(nextSiteId);
+      setPublicationState(savedSite.isPublished === true ? 'published' : 'draft');
+      try { localStorage.setItem(`raloa_active_site_${user?.uid}`, nextSiteId); } catch (_) {}
+      setEntitlementMessage('');
+    } catch (error) {
+      setSaveStatus('error');
+      setEntitlementMessage(error instanceof Error ? error.message : 'Could not switch sites.');
+    }
+  }, [activeSiteId, defaultTemplate, isRtl, loadMiniSite, persistSiteConfig, resetHistory, resolvedHandle, siteConfig, sites, user?.uid]);
+
+  const createNewSite = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    const requestedHandle = window.prompt(isRtl ? 'أدخل معرف الموقع الجديد' : 'Enter the new site handle');
+    const nextHandle = requestedHandle?.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!nextHandle) return;
+    const displayName = window.prompt(isRtl ? 'اسم الموقع' : 'Site display name', nextHandle) || nextHandle;
+    try {
+      const created = await createMiniSite({ ...siteConfig, username: nextHandle, displayName, isPublished: false });
+      const nextSites = await listMiniSites();
+      setSites(nextSites);
+      await switchSite(String(created.id));
+    } catch (error) {
+      setEntitlementMessage(error instanceof Error ? error.message : 'Could not create the site.');
+    }
+  }, [createMiniSite, isRtl, listMiniSites, siteConfig, switchSite]);
+
+  const deleteCurrentSite = useCallback(async () => {
+    if (!activeSiteId || sites.length <= 1 || typeof window === 'undefined') return;
+    if (!window.confirm(isRtl ? 'هل تريد حذف الموقع الحالي؟' : 'Delete the current site?')) return;
+    try {
+      await deleteMiniSite(activeSiteId);
+      const nextSites = await listMiniSites();
+      setSites(nextSites);
+      const nextSite = nextSites[0];
+      if (!nextSite) throw new Error('NO_SITE_REMAINS');
+      const savedSite = await loadMiniSite(nextSite.id);
+      if (!savedSite) throw new Error('SITE_NOT_FOUND');
+      resetHistory(studioConfigFromSite(savedSite, defaultTemplate, resolvedHandle, isRtl));
+      setActiveSiteId(nextSite.id);
+      setPublicationState(savedSite.isPublished === true ? 'published' : 'draft');
+      localStorage.setItem(`raloa_active_site_${user?.uid}`, nextSite.id);
+    } catch (error) {
+      setEntitlementMessage(error instanceof Error ? error.message : 'Could not delete the site.');
+    }
+  }, [activeSiteId, defaultTemplate, deleteMiniSite, isRtl, listMiniSites, loadMiniSite, resetHistory, resolvedHandle, sites.length, user?.uid]);
 
   const publishToggle = useCallback(async () => {
     if (publicationState === 'publishing' || publicationState === 'unpublishing') return;
@@ -545,6 +618,11 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         onOpenQr={() => setShowQrModal(true)}
         onClose={onClose}
         locale={locale}
+        sites={sites}
+        activeSiteId={activeSiteId}
+        onSiteSelect={(siteId) => { void switchSite(siteId); }}
+        onCreateSite={() => { void createNewSite(); }}
+        onDeleteSite={() => { void deleteCurrentSite(); }}
       />
 
       {/* Main Studio Body Workspace */}
@@ -714,15 +792,16 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             )}
 
             {activeTab === 'audience' && (
-              <StudioAudienceTab handle={username} locale={locale} />
+              <StudioAudienceTab siteId={activeSiteId} handle={username} locale={locale} />
             )}
 
             {activeTab === 'analytics' && (
-              <StudioAnalyticsTab links={links} locale={locale} analyticsEnabled={capabilities.analytics} />
+              <StudioAnalyticsTab siteId={activeSiteId} links={links} locale={locale} analyticsEnabled={capabilities.analytics} />
             )}
 
             {activeTab === 'settings' && (
               <StudioSettingsTab
+                siteId={activeSiteId}
                 handle={username}
                 plan={profile?.plan || 'free'}
                 customDomain={customDomain}

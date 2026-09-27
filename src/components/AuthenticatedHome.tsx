@@ -62,7 +62,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
   onManageBilling,
   billingError
 }) => {
-  const { user, profile, loadMiniSite } = useAuth();
+  const { user, profile, loadMiniSite, listMiniSites } = useAuth();
   const isRtl = locale === 'ar';
   const isDark = theme === 'dark';
 
@@ -143,7 +143,10 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
     async function fetchSite() {
       setIsLoadingSite(true);
       try {
-        const saved = await loadMiniSite('default');
+        const sites = await listMiniSites();
+        const storedSiteId = typeof window !== 'undefined' ? localStorage.getItem(`raloa_active_site_${user?.uid}`) || '' : '';
+        const selectedSite = sites.find((site) => site.id === storedSiteId) || sites[0];
+        const saved = selectedSite ? await loadMiniSite(selectedSite.id) : null;
         if (saved && !isCancelled) {
           setSiteData({
             username: saved.username || cleanHandle,
@@ -180,7 +183,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [user, cleanHandle, activeTemplate, isRtl, loadMiniSite]);
+  }, [user, cleanHandle, activeTemplate, isRtl, loadMiniSite, listMiniSites]);
 
   // Generate QR Code data URL when QR modal opens
   useEffect(() => {
