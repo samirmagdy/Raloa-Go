@@ -46,6 +46,7 @@ import { calendarProviders } from './server/adapters/calendar';
 import { stripeAdapter } from './server/adapters/stripe';
 import { cloudflareAdapter } from './server/adapters/cloudflare';
 import { createBillingController } from './server/domains/billing/controller';
+import { assertOrderTransition, legacyOrderState } from './server/domains/orders/state-machine';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -4358,10 +4359,20 @@ app.patch('/api/creator/orders/:orderId/fulfillment', async (req: Request, res: 
       if (fulfillmentStatus !== 'cancelled' && order.status !== 'paid') throw new Error('ORDER_NOT_PAID');
       if (fulfillmentStatus === 'fulfilled' && Number(order.quantity || 0) < 1) throw new Error('INVALID_ORDER_QUANTITY');
 
+      const currentState = legacyOrderState(order.state, order.fulfillmentStatus || order.status);
+      const targetState = fulfillmentStatus === 'processing' ? 'processing' : fulfillmentStatus === 'fulfilled' ? 'fulfilled' : 'cancelled';
+      if (currentState !== targetState) {
+        try {
+          assertOrderTransition(currentState, targetState);
+        } catch {
+          throw new Error(`INVALID_FULFILLMENT_TRANSITION:${current}`);
+        }
+      }
+
       const now = new Date().toISOString();
       const history = Array.isArray(order.fulfillmentHistory) ? order.fulfillmentHistory : [];
       const nextHistory = [...history, { from: current, to: fulfillmentStatus, at: now, actorId: user.uid }].slice(-50);
-      const updates: Record<string, unknown> = { fulfillmentStatus, fulfillmentHistory: nextHistory, updatedAt: now };
+      const updates: Record<string, unknown> = { fulfillmentStatus, fulfillmentHistory: nextHistory, state: targetState, updatedAt: now };
 
       // Pending-payment cancellations release the reservation. Once payment has
       // consumed the reservation, a paid cancellation returns the units to stock.
@@ -4385,6 +4396,18 @@ app.patch('/api/creator/orders/:orderId/fulfillment', async (req: Request, res: 
             updates.inventoryReconciledQuantity = Number(order.quantity || 0);
           }
         }
+      }
+      if (currentState !== targetState) {
+        const transitionKey = `api:${user.uid}:${req.headers['x-request-id'] || crypto.randomUUID()}`;
+        transaction.create(reference.collection('stateTransitions').doc(crypto.createHash('sha256').update(transitionKey).digest('hex')), {
+          orderId,
+          from: currentState,
+          to: targetState,
+          source: 'api',
+          actorUserId: user.uid,
+          transitionKey,
+          createdAt: now
+        });
       }
       transaction.update(reference, updates);
       return { id: reference.id, ...order, ...updates };

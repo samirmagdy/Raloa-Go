@@ -1,6 +1,7 @@
 export interface SiteRecord { id?: string; userId?: string; username?: string; isPublished?: boolean; [key: string]: unknown }
 export interface BookingRecord { id?: string; hostUserId?: string; siteId?: string; [key: string]: unknown }
 export interface OrderRecord { id?: string; creatorId?: string; customerEmail?: string; productId?: string; [key: string]: unknown }
+export interface OrderTransitionRecord { orderId: string; from: string | null; to: string; transitionKey: string; source: string; actorUserId?: string; metadata?: Record<string, unknown> }
 export interface InventoryRecord { id?: string; productId: string; available: number; reserved: number; [key: string]: unknown }
 export interface SubscriptionRecord { id?: string; userId: string; plan: string; status: string; [key: string]: unknown }
 export interface IntegrationRecord { id?: string; userId: string; provider: string; [key: string]: unknown }
@@ -27,6 +28,7 @@ export interface OrdersRepository {
   listByCreator(creatorId: string, limit?: number): Promise<OrderRecord[]>;
   listByCustomer(email: string, limit?: number): Promise<OrderRecord[]>;
   save(orderId: string, order: Partial<OrderRecord>): Promise<void>;
+  transition(orderId: string, transition: OrderTransitionRecord): Promise<OrderRecord>;
 }
 
 export interface InventoryRepository {

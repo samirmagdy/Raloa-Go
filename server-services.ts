@@ -6,6 +6,7 @@ import Stripe from 'stripe';
 import { canonicalSiteToLegacy, normalizeSiteContent } from './src/lib/contentSchema';
 import { normalizeSiteSlug, validateSiteSlug } from './src/lib/siteSlug';
 import { assertProductionEnvironment } from './server-config.mjs';
+import { assertOrderTransition, legacyOrderState, type OrderState } from './server/domains/orders/state-machine';
 
 // Run before any Firebase, Stripe, or Cloudflare client is initialized.
 assertProductionEnvironment();
@@ -420,6 +421,19 @@ export async function reconcileCreatorOrderFromCheckout(
     const order = orderSnapshot.data() || {};
     const currentStatus = String(order.status || 'pending_payment');
     if (currentStatus === 'paid' || currentStatus === 'refunded') return;
+    const currentState = legacyOrderState(order.state, order.fulfillmentStatus || currentStatus);
+    const targetState: OrderState = outcome === 'paid'
+      ? 'paid'
+      : outcome === 'cancelled'
+        ? 'cancelled'
+        : outcome === 'payment_failed'
+          ? 'payment_failed'
+          : 'pending';
+    const transitionKey = `stripe:${session.id}:${outcome}`;
+    const transitionRef = orderRef.collection('stateTransitions').doc(cryptoHash(transitionKey));
+    const transitionSnapshot = await transaction.get(transitionRef);
+    if (transitionSnapshot.exists) return;
+    if (currentState !== targetState) assertOrderTransition(currentState, targetState);
     const productId = String(order.productId || session.metadata?.productId || '');
     const productRef = productId ? adminDb.collection('creator_products').doc(productId) : null;
     const productSnapshot = productRef ? await transaction.get(productRef) : null;
@@ -427,6 +441,7 @@ export async function reconcileCreatorOrderFromCheckout(
     const now = new Date().toISOString();
     const updates: Record<string, unknown> = {
       status: outcome,
+      state: targetState,
       stripeCheckoutSessionId: session.id,
       updatedAt: now
     };
@@ -455,7 +470,21 @@ export async function reconcileCreatorOrderFromCheckout(
       }
     }
     transaction.update(orderRef, updates);
+    if (currentState !== targetState) {
+      transaction.create(transitionRef, {
+        orderId,
+        from: currentState,
+        to: targetState,
+        source: 'stripe_webhook',
+        transitionKey,
+        createdAt: now
+      });
+    }
   });
+}
+
+function cryptoHash(value: string): string {
+  return Buffer.from(value).toString('base64url').slice(0, 100);
 }
 
 export async function getBillingDetails(uid: string): Promise<{

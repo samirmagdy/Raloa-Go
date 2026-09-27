@@ -12,6 +12,8 @@ and does not run against the current Firebase project.
   encrypted and outside API response models.
 - Analytics events and rollups are separate from transactional tables so reporting cannot extend
   booking/order transactions.
+- Inventory is variant-scoped: `inventory` is the current stock snapshot, while
+  `inventory_movements` is the append-only audit ledger and `inventory_reservations` tracks holds.
 
 ## Transaction boundaries
 
@@ -21,8 +23,9 @@ and does not run against the current Firebase project.
    one transaction. The unique active-slot index and the `tstzrange` exclusion constraint protect
    against races and overlapping legacy/non-slot bookings.
 2. Order checkout: claim the idempotency key, lock inventory rows with `FOR UPDATE`, validate
-   available stock, insert the order/items/reservation, and commit before calling Stripe. Provider
-   confirmation is a separate webhook transaction.
+   available stock, insert the order/items/reservation and a `reservation` movement, and commit
+   before calling Stripe. Provider confirmation is a separate webhook transaction that is
+   idempotent on `(provider, provider_event_id)`.
 3. Payment webhook: lock the idempotency key and subscription/order row, apply the provider event,
    update subscription/order state, release or consume inventory, and enqueue notifications in one
    transaction.
@@ -32,6 +35,44 @@ and does not run against the current Firebase project.
    `INSERT ... ON CONFLICT DO UPDATE`.
 6. Job workers: claim work with `FOR UPDATE SKIP LOCKED`, increment attempts, perform the external
    call outside the database lock, then commit success/retry state.
+
+## Inventory transaction rules
+
+- Lock the `inventory` row for the variant with `SELECT ... FOR UPDATE` before checking
+  `on_hand - reserved`. Never derive availability from an unlocked read.
+- Create the order, order item, reservation, and corresponding append-only movement in the same
+  transaction. The movement stores the post-change balances for reconciliation.
+- Expiration workers lock active reservations whose `expires_at <= now()`, transition them to
+  `expired`, decrement `reserved`, and append one `reservation_release` movement. The reservation
+  idempotency key prevents duplicate releases.
+- Payment webhooks insert or lock the `payments` row using the provider event uniqueness constraint.
+  A paid event consumes the reservation and appends a `sale` movement; a failed/expired event
+  releases it. Replayed events return the already-applied result.
+- Fulfillment transitions are recorded separately from payment state. Returns append a `return`
+  movement instead of rewriting prior stock history.
+- `inventory_movements` rejects updates and deletes, making reconciliation derive from an immutable
+  sequence of deltas plus the current snapshot.
+
+`order_items.variant_id` and `inventory_reservations.variant_id` stay nullable only during the
+Firestore backfill. Before PostgreSQL becomes the write authority, backfill a default variant for
+legacy products and add `NOT NULL` constraints.
+
+## Order state machine
+
+The authoritative order lifecycle is stored in `orders.state`; payment state is stored separately
+in `payments.status`. The allowed graph is:
+
+```text
+pending -> paid -> processing -> fulfilled -> refunded
+   |         |          |             |
+   v         v          v             v
+payment_failed       cancelled      refunded
+```
+
+`payment_failed -> pending` supports a retry. The PostgreSQL trigger rejects every other state
+change, while the application service validates the same graph before issuing the write and inserts
+`order_state_history`. Client payloads may request fulfillment actions, but cannot set `state`,
+`payments.status`, or webhook outcomes directly.
 
 ## Booking relational semantics
 

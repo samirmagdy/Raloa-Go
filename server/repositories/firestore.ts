@@ -1,5 +1,7 @@
+import crypto from 'node:crypto';
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
-import type { AudienceRepository, AudienceRecord, AnalyticsRollup, AnalyticsRollupsRepository, BookingRecord, BookingsRepository, IntegrationRecord, IntegrationsRepository, InventoryRecord, InventoryRepository, OrderRecord, OrdersRepository, SiteRecord, SitesRepository, SubscriptionRecord, SubscriptionsRepository } from './contracts';
+import { assertOrderTransition, legacyOrderState } from '../domains/orders/state-machine';
+import type { AudienceRepository, AudienceRecord, AnalyticsRollup, AnalyticsRollupsRepository, BookingRecord, BookingsRepository, IntegrationRecord, IntegrationsRepository, InventoryRecord, InventoryRepository, OrderRecord, OrdersRepository, OrderTransitionRecord, SiteRecord, SitesRepository, SubscriptionRecord, SubscriptionsRepository } from './contracts';
 
 async function records<T>(query: any): Promise<T[]> {
   const snapshot = await query.get();
@@ -24,7 +26,28 @@ export function createFirestoreBookingsRepository(db: Firestore): BookingsReposi
 
 export function createFirestoreOrdersRepository(db: Firestore): OrdersRepository {
   const collection = db.collection('orders');
-  return { get: async (id) => { const snapshot = await collection.doc(id).get(); return snapshot.exists ? { id, ...snapshot.data() } as OrderRecord : null; }, listByCreator: (creator, limit = 100) => records<OrderRecord>(collection.where('creatorId', '==', creator).limit(limit)), listByCustomer: (email, limit = 100) => records<OrderRecord>(collection.where('customerEmail', '==', email).limit(limit)), save: async (id, order) => { await collection.doc(id).set(order, { merge: true }); } };
+  return {
+    get: async (id) => { const snapshot = await collection.doc(id).get(); return snapshot.exists ? { id, ...snapshot.data() } as OrderRecord : null; },
+    listByCreator: (creator, limit = 100) => records<OrderRecord>(collection.where('creatorId', '==', creator).limit(limit)),
+    listByCustomer: (email, limit = 100) => records<OrderRecord>(collection.where('customerEmail', '==', email).limit(limit)),
+    save: async (id, order) => { await collection.doc(id).set(order, { merge: true }); },
+    transition: async (id, transition: OrderTransitionRecord) => db.runTransaction(async (transaction) => {
+      const reference = collection.doc(id);
+      const transitionId = crypto.createHash('sha256').update(transition.transitionKey).digest('hex');
+      const historyReference = reference.collection('stateTransitions').doc(transitionId);
+      const snapshot = await transaction.get(reference);
+      const history = await transaction.get(historyReference);
+      if (!snapshot.exists) throw new Error('ORDER_NOT_FOUND');
+      if (history.exists) return { id, ...snapshot.data() } as OrderRecord;
+      const current = legacyOrderState(snapshot.data()?.state, snapshot.data()?.fulfillmentStatus || snapshot.data()?.status);
+      if (current !== transition.from) throw new Error(`STALE_ORDER_STATE:${current}`);
+      assertOrderTransition(current, transition.to as any);
+      const now = new Date().toISOString();
+      transaction.update(reference, { state: transition.to, updatedAt: now });
+      transaction.create(historyReference, { ...transition, createdAt: now });
+      return { id, ...snapshot.data(), state: transition.to, updatedAt: now } as OrderRecord;
+    })
+  };
 }
 
 export function createFirestoreInventoryRepository(db: Firestore): InventoryRepository {
