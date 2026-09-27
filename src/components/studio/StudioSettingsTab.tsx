@@ -64,7 +64,10 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   const isRtl = locale === 'ar';
   const [activeSubSection, setActiveSubSection] = useState<'site' | 'domain' | 'integrations' | 'billing' | 'advanced'>('site');
   const [domainVerified, setDomainVerified] = useState(false);
+  const [domainStatus, setDomainStatus] = useState<'idle' | 'pending' | 'verified' | 'failed'>('idle');
+  const [domainSslStatus, setDomainSslStatus] = useState<'pending' | 'active' | 'failed' | ''>('');
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
   const [domainId, setDomainId] = useState('');
   const [dnsRecords, setDnsRecords] = useState<Array<{ type: string; name: string; value: string }>>([]);
   const [domainError, setDomainError] = useState('');
@@ -86,6 +89,8 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
         if (!cancelled && existing) {
           setDomainId(existing.domainId);
           setDomainVerified(existing.verificationStatus === 'verified' && existing.sslStatus === 'active');
+          setDomainStatus(existing.verificationStatus || 'idle');
+          setDomainSslStatus(existing.sslStatus || '');
           setDnsRecords(existing.dnsRecords || []);
         }
       } catch (_) {}
@@ -96,6 +101,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   const handleVerifyDomain = async () => {
     setIsVerifying(true);
     setDomainError('');
+    setDomainStatus('pending');
     try {
       const headers = { 'Content-Type': 'application/json', ...(await getApiHeaders()) };
       let activeDomainId = domainId;
@@ -104,7 +110,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
         const provision = await fetch('/api/domains/provision', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ hostname: customDomain, siteId: 'default' })
+          body: JSON.stringify({ hostname: customDomain })
         });
         payload = await provision.json();
         if (!provision.ok) throw new Error(payload.error || 'Could not provision domain');
@@ -113,19 +119,62 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
         setDnsRecords(payload.dnsRecords || payload.domain.dnsRecords || []);
       }
 
-      const verification = await fetch('/api/domains/verify', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ domainId: activeDomainId })
-      });
-      const verifiedPayload = await verification.json();
-      if (!verification.ok) throw new Error(verifiedPayload.error || 'Could not verify domain');
-      setDomainVerified(verifiedPayload.domain.verificationStatus === 'verified' && verifiedPayload.domain.sslStatus === 'active');
-      setDnsRecords(verifiedPayload.domain.dnsRecords || dnsRecords);
+      const retryDelays = [1000, 2000, 4000, 8000, 16000];
+      for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+        const verification = await fetch('/api/domains/verify', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ domainId: activeDomainId })
+        });
+        const verifiedPayload = await verification.json();
+        if (!verification.ok) throw new Error(verifiedPayload.error || 'Could not verify domain');
+
+        const domain = verifiedPayload.domain;
+        const verified = domain.verificationStatus === 'verified' && domain.sslStatus === 'active';
+        setDomainStatus(domain.verificationStatus || 'pending');
+        setDomainSslStatus(domain.sslStatus || 'pending');
+        setDomainVerified(verified);
+        setDnsRecords(domain.dnsRecords || dnsRecords);
+        if (verified) return;
+        if (domain.verificationStatus === 'failed' || domain.sslStatus === 'failed') {
+          throw new Error(domain.lastError || 'DNS or SSL verification failed');
+        }
+        if (attempt < retryDelays.length - 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, retryDelays[attempt]));
+        }
+      }
+      throw new Error('DNS verification is still pending. Confirm the records and try again shortly.');
     } catch (error) {
-      setDomainError(error instanceof Error ? error.message : 'Could not verify domain');
+      const message = error instanceof Error ? error.message : 'Could not verify domain';
+      setDomainStatus(message.startsWith('DNS verification is still pending') ? 'pending' : 'failed');
+      setDomainError(message);
     } finally {
       setIsVerifying(false);
+    }
+  };
+
+  const handleRemoveDomain = async () => {
+    if (!domainId || isRemoving) return;
+    if (!window.confirm(isRtl ? 'هل تريد إزالة هذا النطاق؟' : 'Remove this custom domain?')) return;
+    setIsRemoving(true);
+    setDomainError('');
+    try {
+      const response = await fetch(`/api/domains/${encodeURIComponent(domainId)}`, {
+        method: 'DELETE',
+        headers: await getApiHeaders()
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Could not remove domain');
+      onCustomDomainChange('');
+      setDomainId('');
+      setDomainVerified(false);
+      setDomainStatus('idle');
+      setDomainSslStatus('');
+      setDnsRecords([]);
+    } catch (error) {
+      setDomainError(error instanceof Error ? error.message : 'Could not remove domain');
+    } finally {
+      setIsRemoving(false);
     }
   };
 
@@ -235,9 +284,11 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
               <input
                 type="text"
                 value={customDomain}
-                onChange={(e) => {
+                  onChange={(e) => {
                   onCustomDomainChange(e.target.value.toLowerCase().trim());
                   setDomainVerified(false);
+                  setDomainStatus('idle');
+                  setDomainSslStatus('');
                   setDomainId('');
                   setDnsRecords([]);
                   setDomainError('');
@@ -264,6 +315,27 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
               </button>
             </div>
           </div>
+
+          {domainId && (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+              <span className={`font-bold ${domainStatus === 'verified' && domainSslStatus === 'active' ? 'text-emerald-600 dark:text-emerald-400' : domainStatus === 'failed' || domainSslStatus === 'failed' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                {domainStatus === 'verified' && domainSslStatus === 'active'
+                  ? (isRtl ? 'تم التحقق وSSL مفعل' : 'Verified and SSL active')
+                  : domainStatus === 'failed' || domainSslStatus === 'failed'
+                  ? (isRtl ? 'فشل التحقق' : 'Verification failed')
+                  : (isRtl ? 'بانتظار DNS وSSL' : 'Waiting for DNS and SSL')}
+              </span>
+              <button
+                type="button"
+                onClick={handleRemoveDomain}
+                disabled={isRemoving || isVerifying}
+                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-400 dark:hover:bg-rose-950/30"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {isRemoving ? (isRtl ? 'جارٍ الإزالة...' : 'Removing...') : (isRtl ? 'إزالة النطاق' : 'Remove domain')}
+              </button>
+            </div>
+          )}
 
           {domainError && <p role="alert" className="text-xs font-semibold text-rose-600 dark:text-rose-400">{domainError}</p>}
 

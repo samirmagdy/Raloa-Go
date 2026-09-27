@@ -18,6 +18,7 @@ import {
   findDomainByHostname,
   findDomainById,
   getCheckoutSessionStatus,
+  getPublishedSiteById,
   getPublishedSiteByHandle,
   getCloudflareConfig,
   getPriceId,
@@ -929,6 +930,10 @@ app.get('/sitemap.xml', async (_req: Request, res: Response) => {
  * Handles CNAME/A record resolution and 526 SSL fallback (AC-06)
  */
 app.use(async (req: Request, res: Response, next: NextFunction) => {
+  // API and static asset requests must remain on their original paths when a
+  // visitor is browsing through a custom hostname.
+  if (req.path.startsWith('/api/') || req.path.startsWith('/assets/')) return next();
+
   const host = getRequestHost(req);
   const isPlatformDomain =
     host === 'raloa.app' ||
@@ -994,10 +999,37 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
     `);
   }
 
-  // Active custom domain: rewrite internally to public-render without URL path pollution
+  const verificationStatus = 'verificationStatus' in mapping
+    ? mapping.verificationStatus
+    : ('is_active' in mapping && mapping.is_active && sslStatus === 'active' ? 'verified' : 'pending');
+  if (verificationStatus !== 'verified' || sslStatus !== 'active') {
+    return res.status(526).send(`
+      <!doctype html><html lang="en"><head><meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Custom Domain Verification Pending - ${host}</title></head>
+      <body style="font-family:system-ui,sans-serif;background:#0b0f19;color:#f1f5f9;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px;box-sizing:border-box">
+      <main style="background:#131c2e;border:1px solid #1e293b;border-radius:24px;padding:40px;max-width:540px;text-align:center">
+      <h1>Custom domain verification is pending</h1><p style="color:#94a3b8;line-height:1.6">DNS verification and SSL activation must complete before this creator page is available.</p>
+      <a href="https://raloa.app/#faq" style="display:inline-block;background:#6366f1;color:#fff;font-weight:600;padding:12px 24px;border-radius:999px;text-decoration:none">View setup instructions</a>
+      </main></body></html>
+    `);
+  }
+
+  // Active custom domain: resolve the exact owned, published site before
+  // rewriting. This prevents a verified hostname from exposing another site.
   const siteHandle = 'siteHandle' in mapping ? mapping.siteHandle : undefined;
   const siteId = 'siteId' in mapping ? mapping.siteId : mapping.site_id;
-  req.url = `/@${siteHandle || siteId}`;
+  const siteUserId = 'userId' in mapping ? mapping.userId : mapping.user_id;
+  const publishedSite = isAdminConfigured() && siteUserId && siteId
+    ? await getPublishedSiteById(String(siteUserId), String(siteId)).catch(() => null)
+    : null;
+  if (isAdminConfigured() && !publishedSite) return res.status(404).send('Published site not found for this custom domain.');
+  if (publishedSite) {
+    const requestContext = req as Request & { customDomainSite?: Record<string, unknown>; customDomainHost?: string };
+    requestContext.customDomainSite = publishedSite;
+    requestContext.customDomainHost = host;
+  }
+  req.url = `/@${String(publishedSite?.handle || siteHandle || siteId)}`;
   next();
 });
 
@@ -2243,7 +2275,20 @@ app.get('/api/public/sites/:handle', async (req: Request, res: Response) => {
   if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return res.status(400).json({ error: 'Invalid handle' });
 
   try {
-    const site = isAdminConfigured() ? await getPublishedSiteByHandle(handle) : null;
+    const customDomainSite = (req as Request & { customDomainSite?: Record<string, unknown> }).customDomainSite;
+    let site: Record<string, unknown> | null | undefined = customDomainSite;
+    if (!site && isAdminConfigured()) {
+      const host = getRequestHost(req);
+      const platformHost = host === 'raloa.app' || host === 'www.raloa.app' || host === 'localhost' || host === '127.0.0.1' || host.endsWith('.raloa.app');
+      if (!platformHost) {
+        const mapping = await findDomainByHostname(host);
+        const verified = mapping?.verificationStatus === 'verified' && mapping.sslStatus === 'active';
+        if (!verified) return res.status(526).json({ error: 'Custom domain verification is pending' });
+        site = mapping ? await getPublishedSiteById(mapping.userId, mapping.siteId) : null;
+      } else {
+        site = await getPublishedSiteByHandle(handle);
+      }
+    }
     if (site) return res.status(200).json({ site });
 
     const fixture = templatesData.find((template) => template.id.toLowerCase() === handle || template.name.toLowerCase() === handle);
@@ -2462,16 +2507,20 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
   if (!isAdminConfigured() || !getCloudflareConfig()) return res.status(503).json({ error: 'Domain provisioning is not configured' });
 
   const hostname = normalizeHostname(req.body?.hostname);
-  const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : 'default';
+  const requestedSiteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
   if (!hostname) return res.status(400).json({ error: 'A valid customer-owned hostname is required' });
-  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(siteId)) return res.status(400).json({ error: 'Invalid site ID' });
+  if (requestedSiteId && !/^[a-zA-Z0-9_-]{1,64}$/.test(requestedSiteId)) return res.status(400).json({ error: 'Invalid site ID' });
 
   const userProfile = await adminDb.collection('users').doc(user.uid).get();
   if (!hasPaidPlan(userProfile.data())) return res.status(403).json({ error: 'Custom domains require a paid plan' });
 
-  const siteSnapshot = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
-  if (!siteSnapshot.exists) return res.status(404).json({ error: 'Site not found' });
+  const sitesCollection = adminDb.collection('users').doc(user.uid).collection('sites');
+  const siteSnapshot = requestedSiteId
+    ? await sitesCollection.doc(requestedSiteId).get()
+    : (await sitesCollection.limit(100).get()).docs.find((document) => document.data()?.isPublished === true);
+  if (!siteSnapshot || !siteSnapshot.exists) return res.status(404).json({ error: 'Site not found' });
   if (siteSnapshot.data()?.isPublished !== true) return res.status(409).json({ error: 'Publish the site before attaching a domain' });
+  const siteId = siteSnapshot.id;
   const siteHandle = String(siteSnapshot.data()?.username || userProfile.data()?.handle || '').trim().toLowerCase();
   if (!/^[a-z0-9_-]{3,30}$/.test(siteHandle)) return res.status(409).json({ error: 'Site handle is not configured' });
 
@@ -2533,7 +2582,14 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
     if (error instanceof Error && error.message === 'DOMAIN_ALREADY_RESERVED') {
       return res.status(409).json({ error: 'Domain is already attached' });
     }
-    if (reservedDomainId) await adminDb.collection('custom_domains').doc(reservedDomainId).delete().catch(() => undefined);
+    if (reservedDomainId) {
+      await adminDb.collection('custom_domains').doc(reservedDomainId).set({
+        verificationStatus: 'failed',
+        sslStatus: 'failed',
+        lastError: 'Cloudflare could not provision this domain',
+        updatedAt: new Date().toISOString()
+      }, { merge: true }).catch(() => undefined);
+    }
     console.error('[Domain provision]', error);
     return res.status(502).json({ error: 'Cloudflare could not provision this domain' });
   }
@@ -2553,15 +2609,25 @@ app.post('/api/domains/verify', async (req: Request, res: Response) => {
     const config = getCloudflareConfig()!;
     const { cloudflareRequest } = await import('./server-services');
     const result = await cloudflareRequest(`/zones/${config.zoneId}/custom_hostnames/${domain.cloudflareHostnameId}`);
+    const verificationStatus = result?.status === 'active' ? 'verified' : result?.status === 'failed' ? 'failed' : 'pending';
+    const sslStatus = result?.ssl?.status === 'active' ? 'active' : result?.ssl?.status === 'failed' ? 'failed' : 'pending';
     const updated: DomainRecord = {
       ...domain,
-      verificationStatus: result?.status === 'active' ? 'verified' : 'pending',
-      sslStatus: result?.ssl?.status === 'active' ? 'active' : 'pending',
+      verificationStatus,
+      sslStatus,
+      lastError: verificationStatus === 'failed' || sslStatus === 'failed' ? 'Cloudflare reported a failed DNS or SSL state' : undefined,
       updatedAt: new Date().toISOString()
     };
     await saveDomain(updated);
     return res.status(200).json({ domain: updated });
   } catch (error) {
+    await saveDomain({
+      ...domain,
+      verificationStatus: 'failed',
+      sslStatus: 'failed',
+      lastError: 'Cloudflare verification failed',
+      updatedAt: new Date().toISOString()
+    }).catch(() => undefined);
     console.error('[Domain verify]', error);
     return res.status(502).json({ error: 'Cloudflare verification failed' });
   }
@@ -2634,7 +2700,8 @@ app.get('*', async (req: Request, res: Response) => {
   const handleMatch = requestPath.match(/^\/(?:@|public-render\/)([a-zA-Z0-9._-]+)$/);
   if (handleMatch) {
     const handle = handleMatch[1].toLowerCase();
-    const publishedSite = isAdminConfigured() ? await getPublishedSiteByHandle(handle).catch(() => null) : null;
+    const customDomainSite = (req as Request & { customDomainSite?: Record<string, unknown> }).customDomainSite;
+    const publishedSite = customDomainSite || (isAdminConfigured() ? await getPublishedSiteByHandle(handle).catch(() => null) : null);
     const fixtureCreator = CREATORS_METADATA[handle];
     const creator = publishedSite
       ? {

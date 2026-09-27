@@ -31,6 +31,7 @@ export interface DomainRecord {
   sslStatus: 'pending' | 'active' | 'failed';
   dnsRecords?: Array<{ type: 'CNAME' | 'A' | 'TXT'; name: string; value: string; is_verified: boolean }>;
   cloudflareHostnameId?: string;
+  lastError?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,7 +89,33 @@ export async function deleteDomain(domainId: string): Promise<void> {
   await adminDb.collection('custom_domains').doc(domainId).delete();
 }
 
-export async function getPublishedSiteByHandle(handle: string): Promise<Record<string, unknown> | null> {
+function publicSiteData(
+  profileDocument: FirebaseFirestore.DocumentSnapshot,
+  siteDocument: FirebaseFirestore.DocumentSnapshot,
+  cleanHandle: string
+): Record<string, unknown> {
+  const siteData = siteDocument.data() || {};
+  const { webhookUrl: _webhookUrl, ga4Id: _ga4Id, metaPixelId: _metaPixelId, ...publicSiteData } = siteData;
+  return {
+    ...publicSiteData,
+    userId: profileDocument.id,
+    handle: cleanHandle,
+    searchIndexing: profileDocument.data()?.privacyPreferences?.searchIndexing !== false,
+    analyticsCollection: profileDocument.data()?.privacyPreferences?.analyticsCollection !== false
+  };
+}
+
+export async function getPublishedSiteById(userId: string, siteId: string): Promise<Record<string, unknown> | null> {
+  if (!userId || !siteId) return null;
+  const profileDocument = await adminDb.collection('users').doc(userId).get();
+  if (!profileDocument.exists || profileDocument.data()?.privacyPreferences?.profilePublished === false) return null;
+  const siteDocument = await adminDb.collection('users').doc(userId).collection('sites').doc(siteId).get();
+  if (!siteDocument.exists || siteDocument.data()?.isPublished !== true) return null;
+  const cleanHandle = String(siteDocument.data()?.username || profileDocument.data()?.handle || '').trim().toLowerCase();
+  return /^[a-z0-9_-]{3,30}$/.test(cleanHandle) ? publicSiteData(profileDocument, siteDocument, cleanHandle) : null;
+}
+
+export async function getPublishedSiteByHandle(handle: string, siteId = 'default'): Promise<Record<string, unknown> | null> {
   const cleanHandle = handle.trim().toLowerCase();
   if (!cleanHandle) return null;
 
@@ -100,22 +127,9 @@ export async function getPublishedSiteByHandle(handle: string): Promise<Record<s
   if (!profileDocument) return null;
   if (profileDocument.data()?.privacyPreferences?.profilePublished === false) return null;
 
-  const siteDocument = await adminDb.collection('users')
-    .doc(profileDocument.id)
-    .collection('sites')
-    .doc('default')
-    .get();
+  const siteDocument = await adminDb.collection('users').doc(profileDocument.id).collection('sites').doc(siteId).get();
   if (!siteDocument.exists || siteDocument.data()?.isPublished !== true) return null;
-
-  const siteData = siteDocument.data() || {};
-  const { webhookUrl: _webhookUrl, ga4Id: _ga4Id, metaPixelId: _metaPixelId, ...publicSiteData } = siteData;
-  return {
-    ...publicSiteData,
-    userId: profileDocument.id,
-    handle: cleanHandle,
-    searchIndexing: profileDocument.data()?.privacyPreferences?.searchIndexing !== false,
-    analyticsCollection: profileDocument.data()?.privacyPreferences?.analyticsCollection !== false
-  };
+  return publicSiteData(profileDocument, siteDocument, cleanHandle);
 }
 
 export async function getCheckoutSessionStatus(uid: string, sessionId: string): Promise<{
