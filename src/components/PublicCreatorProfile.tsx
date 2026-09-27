@@ -204,6 +204,8 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
 
   return (
     <div
+      data-testid="public-profile-surface"
+      data-design-tokens={JSON.stringify(designTokens)}
       className="min-h-[100dvh] flex flex-col justify-between selection:bg-indigo-500/20 selection:text-indigo-600 transition-colors duration-200 relative overflow-x-hidden"
       style={{ ...bgContainerProps.screenContainerStyle, ...designLayoutStyle(designTokens), fontFamily: designFontFamily(designTokens) }}
       dir={isRtl ? 'rtl' : 'ltr'}

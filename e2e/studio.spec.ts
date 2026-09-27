@@ -4,7 +4,10 @@ const site = {
   id: 'site-alpha', userId: 'usr_e2e', username: 'e2e_creator', displayName: 'E2E Creator',
   templateId: 'signature', role: 'Creator', bio: 'A persisted Studio profile', avatar: '', coverImage: '',
   bgStyle: 'minimal', themeMode: 'light', isPublished: false, revision: 1,
-  links: [{ id: 'link-1', type: 'link', title: 'Portfolio', subtitle: 'Selected work', url: 'https://example.com' }],
+  links: [
+    { id: 'link-1', type: 'link', title: 'Portfolio', subtitle: 'Selected work', url: 'https://example.com' },
+    { id: 'contact-1', type: 'contact', title: 'Contact me', subtitle: 'Send a message', url: '' }
+  ],
   socials: [], designTokens: { accentColor: '#4f46e5', surfaceColor: '#ffffff', cardRadius: 'rounded', cardShadow: 'soft', borderStyle: 'thin', themeMode: 'light', fontFamily: 'Inter' }
 };
 
@@ -17,6 +20,7 @@ async function mockStudioApi(page: Page, options: { saveFailure?: boolean } = {}
     const path = url.pathname;
     if (path === '/api/sites' && request.method() === 'GET') return route.fulfill({ json: { sites: [{ id: site.id, username: site.username, displayName: site.displayName, isPublished: published, updatedAt: new Date().toISOString() }] } });
     if (path === `/api/sites/${site.id}` && request.method() === 'GET') return route.fulfill({ json: { site: { ...site, isPublished: published } } });
+    if (path === `/api/public/sites/${site.username}`) return route.fulfill({ json: { site: { ...site, isPublished: true } } });
     if (path === `/api/sites/${site.id}` && request.method() === 'PUT') {
       saveAttempts += 1;
       if (options.saveFailure && saveAttempts === 1) return route.fulfill({ status: 503, json: { error: { code: 'SERVICE_UNAVAILABLE', message: 'Temporary save failure' } } });
@@ -52,7 +56,7 @@ test('creator authentication, site load, edit, autosave retry, publish and unpub
   await page.getByLabel('Block Title').fill('Contact me');
   await page.getByLabel('Destination URL').fill('https://example.com/contact');
   await page.getByRole('button', { name: 'Add to Site' }).click();
-  await expect(page.getByRole('region', { name: 'Editor controls' }).getByText('Contact me')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Editor controls' }).getByText('Contact me').first()).toBeVisible();
   await page.getByRole('button', { name: 'Publish' }).click();
   await expect(page.getByText('Published')).toBeVisible();
   await page.getByRole('button', { name: 'Unpublish' }).click();
@@ -95,6 +99,35 @@ test('mobile navigation, RTL layout, preview parity and permission failure are v
   await page.goto('/studio?e2e=1&settings=billing');
   await expect(page.locator('[dir="rtl"]').first()).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'تنقل الاستوديو' })).toBeVisible();
+});
+
+test('Studio preview and published page preserve persisted tokens, blocks and behavior', async ({ page }) => {
+  await mockStudioApi(page);
+  // Wait for the persisted site response to replace the template bootstrap;
+  // otherwise the preview can legitimately show its initial loading template.
+  await expect(page.getByRole('heading', { name: 'E2E Creator' })).toBeVisible();
+  const preview = page.getByTestId('studio-preview-surface');
+  await expect(preview).toBeVisible();
+  const expectedTokens = JSON.parse(await preview.getAttribute('data-design-tokens') || '{}');
+  expect(expectedTokens.accentColor).toBe(site.designTokens.accentColor);
+  expect(expectedTokens.surfaceColor).toBe(site.designTokens.surfaceColor);
+  expect(expectedTokens.cardRadius).toBe(site.designTokens.cardRadius);
+  expect(expectedTokens.cardShadow).toBe(site.designTokens.cardShadow);
+  expect(expectedTokens.borderStyle).toBe(site.designTokens.borderStyle);
+  await expect(preview.getByRole('button', { name: /Portfolio/ })).toBeVisible();
+  await expect(preview.getByRole('button', { name: /Contact me/ })).toBeVisible();
+  await expect(preview).toHaveScreenshot('studio-preview.png', { animations: 'disabled' });
+
+  await page.goto('/@e2e_creator');
+  const publicSurface = page.getByTestId('public-profile-surface');
+  await expect(publicSurface).toBeVisible();
+  const publicTokens = JSON.parse(await publicSurface.getAttribute('data-design-tokens') || '{}');
+  expect(publicTokens).toEqual(expectedTokens);
+  await expect(publicSurface.getByRole('button', { name: /Portfolio/ })).toBeVisible();
+  await expect(publicSurface.getByRole('button', { name: /Contact me/ })).toBeVisible();
+  await publicSurface.getByRole('button', { name: /Contact me/ }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(publicSurface).toHaveScreenshot('published-profile.png', { animations: 'disabled' });
 });
 
 test('unauthenticated creators are not allowed into Studio', async ({ browser }) => {

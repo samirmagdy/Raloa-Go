@@ -87,8 +87,11 @@ function studioConfigFromSite(savedSite: UserMiniSite, fallback: TemplateItem, r
     displayName: savedSite.displayName || fallback.name,
     role: savedSite.role || fallback.role,
     bio: savedSite.bio !== undefined ? savedSite.bio : (isRtl ? fallback.bioAr : fallback.bio),
-    avatar: savedSite.avatar || fallback.avatar,
-    coverImage: savedSite.coverImage || fallback.coverImage,
+    // Preserve persisted empty values. A published page consumes the
+    // canonical site as-is; Studio must not silently substitute template
+    // media and create preview/public drift.
+    avatar: savedSite.avatar ?? fallback.avatar,
+    coverImage: savedSite.coverImage ?? fallback.coverImage,
     links: savedSite.links?.length ? savedSite.links : fallback.sampleLinks.map((link) => ({ id: link.id, title: isRtl ? link.titleAr : link.title, url: link.url, subtitle: (isRtl ? link.subtitleAr : link.subtitle) || '', type: link.type || 'link' })),
     socials: Array.isArray((savedSite as any).socials) ? (savedSite as any).socials : fallback.socials.map((social) => ({ ...social, enabled: true })),
     designTokens: savedSite.designTokens || DEFAULT_DESIGN_TOKENS,
