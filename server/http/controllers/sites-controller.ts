@@ -1,10 +1,29 @@
 import type { Express, Request, Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
+import type { AuthorizationService } from '../../core/authorization-service';
+import type { PolicyAction } from '../../core/authorization-policy';
 
-type SitesControllerDependencies = Record<string, any> & { adminDb: Firestore; templatesData: Array<{ id: string }> };
+type SitesControllerDependencies = Record<string, any> & {
+  adminDb: Firestore;
+  templatesData: Array<{ id: string }>;
+  authorizationService: AuthorizationService;
+};
 
 export function registerSitesControllerRoutes(app: Express, dependencies: SitesControllerDependencies): void {
-  const { crypto, adminDb, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter } = dependencies;
+  const { crypto, adminDb, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter, authorizationService } = dependencies;
+
+  async function requireSiteAccess(user: { uid: string }, siteId: string, action: PolicyAction): Promise<boolean> {
+    try {
+      await authorizationService.requireSite(user, siteId, action);
+      return true;
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      if (code === 'RESOURCE_NOT_FOUND' || code === 'TENANT_BOUNDARY_VIOLATION') {
+        return false;
+      }
+      throw error;
+    }
+  }
   app.get('/api/sites', async (req: Request, res: Response) => {
     const user = await getAuthenticatedUser(req);
     if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
@@ -88,6 +107,7 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
     if (!isAdminConfigured()) return apiError(res, 503, 'SERVICE_NOT_CONFIGURED', 'Site persistence is not configured.');
     const siteId = String(req.params.siteId || '').trim();
     if (!/^[a-zA-Z0-9_-]{1,64}$/.test(siteId)) return apiError(res, 400, 'INVALID_SITE_ID', 'Invalid site ID.');
+    if (!(await requireSiteAccess(user, siteId, 'site:write'))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
     const reference = adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId);
     const snapshot = await reference.get();
     if (!snapshot.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
@@ -110,6 +130,7 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
     if (!isAdminConfigured()) return apiError(res, 503, 'SERVICE_NOT_CONFIGURED', 'Site persistence is not configured.');
     const siteId = String(req.params.siteId || '').trim();
     if (!/^[a-zA-Z0-9_-]{1,64}$/.test(siteId)) return apiError(res, 400, 'INVALID_SITE_ID', 'Invalid site ID.');
+    if (!(await requireSiteAccess(user, siteId, 'site:write'))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
     const incoming = req.body && typeof req.body === 'object' ? req.body : {};
     const profile = await adminDb.collection('users').doc(user.uid).get();
     const profileData = profile.data();

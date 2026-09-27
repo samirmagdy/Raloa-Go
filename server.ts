@@ -79,6 +79,8 @@ import { createAuditService } from './server/audit/service';
 import { registerSitesControllerRoutes } from './server/http/controllers/sites-controller';
 import { registerPublishingControllerRoutes } from './server/http/controllers/publishing-controller';
 import { registerHealthRoutes } from './server/http/controllers/health-controller';
+import { createAuthorizationService } from './server/core/authorization-service';
+import type { PolicyAction } from './server/core/authorization-policy';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -99,6 +101,44 @@ const entitlementService = createEntitlementService({ billing: getAuthoritativeB
 const publicCache = new MemoryCacheStore();
 export const publicCreatorAdapter = createPublicCreatorAdapter({ getPublishedSiteByHandle, cache: publicCache });
 export const auditService = createAuditService(createFirestoreAuditRepository(adminDb));
+export const authorizationService = createAuthorizationService({
+  async loadAccount(userId) {
+    const snapshot = await adminDb.collection('users').doc(userId).get();
+    if (!snapshot.exists) return null;
+    const data = snapshot.data() || {};
+    return {
+      id: userId,
+      plan: getPlanTier({
+        plan: data.plan || data.planTier || 'free',
+        referralProUntil: typeof data.referralProUntil === 'string' ? data.referralProUntil : undefined
+      }),
+      referralProUntil: typeof data.referralProUntil === 'string' ? data.referralProUntil : null,
+      role: data.role,
+      workspaceId: typeof data.workspaceId === 'string' ? data.workspaceId : undefined
+    };
+  },
+  async loadSite(siteId) {
+    const snapshot = await adminDb.collectionGroup('sites').where('id', '==', siteId).limit(20).get();
+    const document = snapshot.docs[0];
+    const ownerUserId = document?.ref.parent.parent?.id;
+    if (!document || !ownerUserId) return null;
+    const data = document.data() || {};
+    return {
+      id: document.id,
+      ownerUserId,
+      workspaceId: typeof data.workspaceId === 'string' ? data.workspaceId : undefined
+    };
+  },
+  async loadMembership(userId, workspaceId, siteId) {
+    const membershipIds = [`${siteId}:${userId}`, `${workspaceId}:${userId}`];
+    for (const membershipId of membershipIds) {
+      const snapshot = await adminDb.collection('site_memberships').doc(membershipId).get();
+      const role = snapshot.data()?.role;
+      if (snapshot.exists && (role === 'admin' || role === 'editor' || role === 'viewer')) return role;
+    }
+    return null;
+  }
+});
 const auditRequestId = (req: Request): string | undefined => {
   const value = req.headers['x-request-id'];
   return typeof value === 'string' && value ? value : undefined;
@@ -746,6 +786,18 @@ async function getOwnedSite(userId: string, siteId: string): Promise<OwnedSite |
   const snapshot = await adminDb.collection('users').doc(userId).collection('sites').doc(normalizedSiteId).get();
   if (!snapshot.exists) return null;
   return { id: snapshot.id, userId, data: snapshot.data() || {}, snapshot };
+}
+
+/** Shared tenant authorization for legacy handlers while they migrate to controllers. */
+async function hasAuthorizedSiteAccess(userId: string, siteId: string, action: PolicyAction): Promise<boolean> {
+  try {
+    await authorizationService.requireSite({ uid: userId }, siteId, action);
+    return true;
+  } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'RESOURCE_NOT_FOUND' || code === 'TENANT_BOUNDARY_VIOLATION') return false;
+    throw error;
+  }
 }
 
 type OAuthProvider = 'github';
@@ -3841,7 +3893,7 @@ app.post('/api/media/cleanup', async (req: Request, res: Response) => {
   const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
   if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
   try {
-    if (!(await getOwnedSite(user.uid, siteId))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+    if (!(await hasAuthorizedSiteAccess(user.uid, siteId, 'site:write'))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
     const removed = await cleanupOrphanMedia(user.uid, siteId);
     return res.json({ removed });
   } catch (error) {
@@ -3871,7 +3923,7 @@ app.get('/api/media/public/:mediaId', async (req: Request, res: Response) => {
 
 registerPublishingControllerRoutes(app, { adminDb, isAdminConfigured, getRequestHost, getCachedPublicDomain, getPublishedSiteById, getPublishedSiteByHandle, resolveSiteSlugRedirect, publicCreatorAdapter, publicDemoFixturesEnabled, templatesData, apiError });
 
-registerSitesControllerRoutes(app, { crypto, adminDb, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter });
+registerSitesControllerRoutes(app, { crypto, adminDb, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter, authorizationService });
 
 
 app.get('/api/creator/products', async (req: Request, res: Response) => {
@@ -3900,7 +3952,7 @@ app.post('/api/creator/products', async (req: Request, res: Response) => {
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured() || !stripe) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
   const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
-  if (!siteId || !(await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get()).exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+  if (!siteId || !(await hasAuthorizedSiteAccess(user.uid, siteId, 'site:write'))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
   const productInput = normalizeProductInput(req.body);
   const { name, description, imageUrls, priceMinor, currency, inventory, active } = productInput;
   const productSchema = validateProductInput(req.body);
