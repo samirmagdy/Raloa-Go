@@ -41,6 +41,8 @@ export const storage = getStorage(app);
 // E2E build. It must never be enabled in a production deployment.
 export const isE2ETestMode = import.meta.env.VITE_E2E_TEST_MODE === 'true';
 export const hasAuthenticatedSession = (): boolean => Boolean(auth.currentUser) || isE2ETestMode;
+export const isLocalDevelopment = (): boolean => import.meta.env.DEV && typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
 export function createE2ETestUser(): User {
   return createLocalUser('e2e.creator@raloa.test', 'e2e_creator');
@@ -70,8 +72,7 @@ export async function signInWithGoogle(): Promise<User> {
     await establishServerSession(user);
     return user;
   } catch (err: any) {
-    const isLocalhost = typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const isLocalhost = isLocalDevelopment();
     if (isLocalhost && (
       err?.code === 'auth/operation-not-allowed' ||
       err?.code === 'auth/unauthorized-domain' ||
@@ -174,8 +175,7 @@ async function publishReferralCode(code: string | undefined, userId: string): Pr
  * Gracefully falls back to server auth & local session if Firebase provider is disabled.
  */
 export async function signInWithEmail(email: string, pass: string): Promise<User> {
-  const isLocalhost = typeof window !== 'undefined' &&
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const isLocalhost = isLocalDevelopment();
 
   // The server fallback is deliberately limited to local development.
   if (isLocalhost) try {
@@ -244,8 +244,7 @@ export async function signInWithEmail(email: string, pass: string): Promise<User
  * Gracefully falls back to server registration & local session if Firebase provider is disabled.
  */
 export async function signUpWithEmail(email: string, pass: string, handle?: string): Promise<User> {
-  const isLocalhost = typeof window !== 'undefined' &&
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const isLocalhost = isLocalDevelopment();
 
   // The server fallback is deliberately limited to local development.
   if (isLocalhost) try {
@@ -320,7 +319,7 @@ export async function sendPasswordReset(email: string): Promise<void> {
       : undefined;
     await sendPasswordResetEmail(auth, email, actionCodeSettings);
   } catch (error) {
-    const isLocalhost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const isLocalhost = isLocalDevelopment();
     if (!isLocalhost) throw error;
     // Local development fallback only; production reset flows stay in Firebase Auth.
     try {
@@ -681,14 +680,7 @@ export interface ReferralStats {
  * Fetch user referral statistics and personal referral code from Firestore
  */
 export async function fetchUserReferralStats(userId?: string): Promise<ReferralStats> {
-  if (!userId) {
-    return {
-      completedCount: 0,
-      targetInvites: 3,
-      referralCode: 'raloa',
-      referralLink: 'https://raloa.app/join'
-    };
-  }
+  if (!userId) throw new Error('AUTH_REQUIRED');
 
   try {
     const userDocRef = doc(db, 'users', userId);
@@ -708,13 +700,7 @@ export async function fetchUserReferralStats(userId?: string): Promise<ReferralS
     console.error('Error fetching user referral stats:', error);
   }
 
-  const fallbackCode = userId.toLowerCase();
-  return {
-    completedCount: 0,
-    targetInvites: 3,
-    referralCode: fallbackCode,
-    referralLink: `https://raloa.app/join?ref=${fallbackCode}`
-  };
+  throw new Error('REFERRAL_DATA_UNAVAILABLE');
 }
 
 /**
@@ -857,14 +843,6 @@ export async function fetchPlatformMetrics(days: '7' | '30' | 'all' = '30'): Pro
     };
   } catch (error) {
     console.error('Error fetching platform metrics:', error);
-    return {
-      totalVisits: 0,
-      totalPageViews: 0,
-      uniqueVisitors: 0,
-      totalClicks: 0,
-      ctr: null,
-      activeSitesCount: 0,
-      timeline: [], links: [], utmSources: [], referrers: [], devices: [], browsers: [], countries: []
-    };
+    throw error;
   }
 }

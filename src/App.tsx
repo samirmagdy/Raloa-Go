@@ -50,7 +50,6 @@ const CommandPaletteModal = lazyWithChunkRecovery(() => import('./components/mod
 const StudioModal = lazyWithChunkRecovery(() => import('./components/modals/StudioModal').then((m) => ({ default: m.StudioModal })), 'studio');
 const TemplatePreviewModal = lazyWithChunkRecovery(() => import('./components/modals/TemplatePreviewModal').then((m) => ({ default: m.TemplatePreviewModal })), 'template-preview');
 const PlanCheckoutModal = lazyWithChunkRecovery(() => import('./components/modals/PlanCheckoutModal').then((m) => ({ default: m.PlanCheckoutModal })), 'plan-checkout');
-const MiniSiteDemoModal = lazyWithChunkRecovery(() => import('./components/modals/MiniSiteDemoModal').then((m) => ({ default: m.MiniSiteDemoModal })), 'mini-site-demo');
 const AuthModal = lazyWithChunkRecovery(() => import('./components/modals/AuthModal').then((m) => ({ default: m.AuthModal })), 'auth');
 const ContactModal = lazyWithChunkRecovery(() => import('./components/modals/ContactModal').then((m) => ({ default: m.ContactModal })), 'contact');
 const LegalModal = lazyWithChunkRecovery(() => import('./components/modals/LegalModal').then((m) => ({ default: m.LegalModal })), 'legal');
@@ -307,11 +306,6 @@ function MainApp() {
   const [contactOpen, setContactOpen] = useState(false);
   const [legalTitle, setLegalTitle] = useState<string | null>(null);
 
-  const [phoneAction, setPhoneAction] = useState<{
-    type: 'portfolio' | 'booking' | 'shop' | 'gear';
-    data?: any;
-  } | null>(null);
-
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [projectStatsOpen, setProjectStatsOpen] = useState(false);
@@ -559,7 +553,6 @@ function MainApp() {
     easterEggActive ||
     shortcutsModalOpen ||
     legalTitle ||
-    phoneAction ||
     authModal.open ||
     selectedPlanState ||
     contactOpen ||
@@ -587,10 +580,6 @@ function MainApp() {
     }
     if (legalTitle) {
       setLegalTitle(null);
-      return;
-    }
-    if (phoneAction) {
-      setPhoneAction(null);
       return;
     }
     if (authModal.open) {
@@ -859,19 +848,13 @@ function MainApp() {
             locale={locale}
             heroTemplate={templatesData[0]}
             onOpenStudio={handleOpenStudio}
-            onOpenPhoneAction={(type, data) => setPhoneAction({ type, data })}
+            onOpenPhoneAction={() => handleOpenStudio(studioUsername || undefined, studioTemplate)}
           />
         </FadeInSection>
 
         {/* 02 Trust & Benefits Section with Auto-Scrolling Marquee */}
         <FadeInSection id="trust-reveal">
-          <TrustAndBenefits
-            locale={locale}
-            onOpenPublishedSite={(site) => {
-              const username = site.handle.replace('raloa.app/@', '');
-              handleOpenStudio(username);
-            }}
-          />
+          <TrustAndBenefits locale={locale} />
         </FadeInSection>
 
         {/* 03 Templates Carousel Section */}
@@ -967,7 +950,7 @@ function MainApp() {
     </>
   )}
 
-      {/* - REAL INTERACTIVE MODALS (0% FAKE IMPLEMENTATION) - */}
+      {/* Interactive application modals */}
 
       <Suspense fallback={null}>
       {/* Project Analytics & Stats Modal (Recharts) */}
@@ -1008,19 +991,6 @@ function MainApp() {
             setAuthModal({ open: true, mode: 'signin' });
           }}
           onConfirmPlan={handleConfirmPlan}
-        />
-      )}
-
-      {/* Hero Phone Interactive Link Modal (Elena's Portfolio, Booking, Shop) */}
-      {phoneAction && (
-        <MiniSiteDemoModal
-          type={phoneAction.type}
-          locale={locale}
-          onClose={() => setPhoneAction(null)}
-          onStartOwnPage={(uname) => {
-            setPhoneAction(null);
-            handleOpenStudio(uname);
-          }}
         />
       )}
 

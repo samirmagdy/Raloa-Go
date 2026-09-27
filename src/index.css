@@ -224,7 +224,7 @@ h4 {
     display: none !important;
   }
 
-  /* When printing from within an open mini-site demo modal, isolate the mini-site content */
+  /* When printing from within an open mini-site or Studio surface, isolate the active content */
   body:has(.raloa-minisite-modal-container) > #root > div > *:not(.raloa-minisite-modal-container),
   body:has(.raloa-studio-modal-container) > #root > div > *:not(.raloa-studio-modal-container) {
     display: none !important;

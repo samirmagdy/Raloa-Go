@@ -25,6 +25,7 @@ import {
 import { Locale } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { fetchPlatformMetrics } from '../../lib/firebase';
+import { PlatformMetrics } from '../../api/types';
 
 interface ProjectStatsModalProps {
   isOpen: boolean;
@@ -33,21 +34,14 @@ interface ProjectStatsModalProps {
   onOpenStudio?: () => void;
 }
 
-interface StatDay {
-  date: string;
-  views: number;
-  clicks: number;
-}
-
-
 export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
   isOpen,
   locale,
   onClose,
   onOpenStudio
 }) => {
-  const [period, setPeriod] = useState<7 | 14 | 30>(7);
-  const [liveMetrics, setLiveMetrics] = useState<{ totalVisits: number; totalClicks: number; activeSitesCount: number; timeline: StatDay[] } | null>(null);
+  const [period, setPeriod] = useState<7 | 30>(7);
+  const [liveMetrics, setLiveMetrics] = useState<PlatformMetrics | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const isRtl = locale === 'ar';
   const dialogRef = useModalA11y<HTMLDivElement>(isOpen);
@@ -55,7 +49,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
   const fetchMetrics = async () => {
     setLoadingMetrics(true);
     try {
-      const data = await fetchPlatformMetrics(period === 7 ? '7' : period === 30 ? '30' : 'all');
+      const data = await fetchPlatformMetrics(period === 7 ? '7' : '30');
       setLiveMetrics(data);
     } catch (err) {
       console.error('Error fetching live platform metrics:', err);
@@ -77,7 +71,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
   const totals = useMemo(() => {
     const totalViews = chartData.reduce((acc, d) => acc + d.views, 0);
     const totalClicks = chartData.reduce((acc, d) => acc + d.clicks, 0);
-    const ctr = totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(1) : '0';
+    const ctr = totalViews > 0 ? `${((totalClicks / totalViews) * 100).toFixed(1)}%` : null;
 
     return {
       totalViews,
@@ -88,7 +82,12 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const topLinks: Array<{ title: string; url: string; clicks: number; share: string }> = [];
+  const topLinks = (liveMetrics?.links || []).map((link) => ({
+    title: link.title,
+    url: link.url,
+    clicks: link.clicks,
+    share: `${link.share.toFixed(1)}%`
+  }));
 
   return (
     <div
@@ -115,13 +114,13 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
                   {isRtl ? 'إحصائيات المشروع والزيارات' : 'Creator Project Stats'}
                 </h3>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200/80 dark:border-emerald-800/60">
-                  {isRtl ? 'محاكاة حية' : 'Live Preview'}
+                  {isRtl ? 'بيانات حقيقية' : 'Persisted data'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {isRtl
-                  ? 'نموذج تفاعلي يوضح بيانات الزيارات ونقرات الروابط للوحة التحكم'
-                  : 'Interactive preview of your mini-site visitor analytics & CTR'}
+                  ? 'بيانات مجمعة من أحداث موقعك المحفوظة'
+                  : 'Aggregated from persisted visitor and click events'}
               </p>
             </div>
           </div>
@@ -188,7 +187,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
               <span className="font-semibold">{isRtl ? 'الفترة الزمنية:' : 'Reporting Window:'}</span>
             </div>
             <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-              {([7, 14, 30] as const).map((d) => (
+              {([7, 30] as const).map((d) => (
                 <button
                   key={d}
                   onClick={() => setPeriod(d)}
@@ -222,7 +221,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
                 </span>
                 <span className="inline-flex items-center text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                   <TrendingUp className="w-3 h-3 mr-0.5 rtl:ml-0.5 rtl:mr-0" />
-                  +24.8%
+                  {totals.totalViews > 0 ? (isRtl ? 'بيانات مسجلة' : 'Recorded') : (isRtl ? 'لا توجد بيانات' : 'No data yet')}
                 </span>
               </div>
             </div>
@@ -243,7 +242,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
                 </span>
                 <span className="inline-flex items-center text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                   <TrendingUp className="w-3 h-3 mr-0.5 rtl:ml-0.5 rtl:mr-0" />
-                  +18.4%
+                  {totals.totalClicks > 0 ? (isRtl ? 'بيانات مسجلة' : 'Recorded') : (isRtl ? 'لا توجد بيانات' : 'No data yet')}
                 </span>
               </div>
             </div>
@@ -260,7 +259,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-black text-[#0F172A] dark:text-white">
-                  {totals.ctr}%
+                  {totals.ctr ?? (isRtl ? 'لا توجد بيانات' : 'No data yet')}
                 </span>
                 <span className="inline-flex items-center text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
                   {isRtl ? 'من البيانات المسجلة' : 'Recorded data'}

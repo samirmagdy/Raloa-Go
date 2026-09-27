@@ -9,8 +9,7 @@ import {
   AnnotationCard,
   CurvedArrowDownRight,
   CurvedArrowUpRight,
-  CurvedArrowDownLeft,
-  FloatingMetricBadge
+  CurvedArrowDownLeft
 } from './brand/Doodles';
 
 // Reserved or already claimed handles for realistic availability feedback
@@ -441,25 +440,6 @@ export const Hero: React.FC<HeroProps> = ({
                   </AnnotationCard>
                   <CurvedArrowDownLeft className="mt-1 ml-4" />
                 </div>
-              </motion.div>
-            </motion.div>
-
-            {/* Floating Metric Badge (+300% More clicks) (Middle Right) */}
-            <motion.div
-              style={{ y: phoneY }}
-              initial={{ opacity: 0, scale: 0.4, x: 25 }}
-              animate={{ opacity: 1, scale: 1, x: 0 }}
-              transition={{ type: 'spring', stiffness: 220, damping: 18, delay: 0.8 }}
-              className="hidden md:block absolute top-[48%] right-0 lg:-right-4 -translate-y-1/2 z-20 max-w-[28%]"
-            >
-              <motion.div
-                animate={prefersReducedMotion ? { y: 0 } : { y: [0, -10, 0] }}
-                transition={{ duration: 4.8, repeat: prefersReducedMotion ? 0 : Infinity, ease: 'easeInOut', delay: 1 }}
-              >
-                <FloatingMetricBadge
-                  metric={locale === 'ar' ? '+٣٠٠٪' : '+300%'}
-                  label={locale === 'ar' ? 'نقرات إضافية' : 'More clicks'}
-                />
               </motion.div>
             </motion.div>
 

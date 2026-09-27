@@ -95,7 +95,6 @@ export const Footer: React.FC<FooterProps> = ({
         { label: locale === 'ar' ? 'أدلة الاستخدام' : 'Guides', href: '#guides' },
         { label: locale === 'ar' ? 'مجتمع المبدعين' : 'Community', href: '#community' },
         { label: locale === 'ar' ? 'حالة الخدمة' : 'Status', href: '#status' },
-        { label: locale === 'ar' ? 'صفحة 404 (معاينة)' : '404 Demo Page', href: '/404' }
       ]
     },
     legal: {

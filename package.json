@@ -13,7 +13,7 @@
     "check:api": "node /Users/samirmagdy/.agents/skills/backend-first/scripts/api-contract-check.mjs --root . --src . --docs docs/api --openapi docs/api/openapi.yaml",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test:entrypoint": "NODE_ENV=test tsx test-entrypoint.ts",
+    "test:entrypoint": "NODE_ENV=test ENABLE_DEMO_FIXTURES=true tsx test-entrypoint.ts",
     "test:audience": "tsx test-audience.ts",
     "test:public-fallback": "tsx test-public-fallback.ts",
     "test:analytics": "NODE_ENV=test tsx test-analytics.ts",

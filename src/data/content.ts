@@ -759,7 +759,6 @@ export const dictionary = {
       allLinksSticker: 'All your links in one place',
       templatesSticker: 'Templates that convert',
       anyDeviceSticker: 'Looks amazing on any device',
-      clicksMetric: '+300% More clicks'
     },
     trust: {
       label: 'TRUSTED BY CREATORS, FREELANCERS AND BUSINESSES WORLDWIDE'
@@ -860,7 +859,6 @@ export const dictionary = {
       allLinksSticker: 'كل روابطك في مكان واحد',
       templatesSticker: 'قوالب تحقق نتائج',
       anyDeviceSticker: 'مظهر جذاب على كل الشاشات',
-      clicksMetric: '+٣٠٠٪ نقرات أكثر'
     },
     trust: {
       label: 'موثوق من صناع المحتوى والمستقلين وأصحاب الأعمال حول العالم'

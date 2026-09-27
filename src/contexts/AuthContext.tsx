@@ -79,7 +79,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     const getCachedLocalUser = (): User | null => {
       if (typeof window === 'undefined') return null;
-      if (!['localhost', '127.0.0.1'].includes(window.location.hostname)) return null;
+      if (!import.meta.env.DEV || !['localhost', '127.0.0.1'].includes(window.location.hostname)) return null;
       const raw = localStorage.getItem('raloa_local_user');
       if (!raw) return null;
       try {
@@ -182,80 +182,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const saveMiniSite = useCallback(async (siteData: Partial<UserMiniSite>, siteId: string) => {
     if (!siteId) throw new Error('SITE_ID_REQUIRED');
-    if (!user) return;
+    if (!user) throw new Error('AUTH_REQUIRED');
 
-    // Only attempt Firestore write if real Firebase Auth session is active
-    if (hasAuthenticatedSession()) {
-      return saveUserMiniSiteToFirestore(user.uid, siteData, siteId);
-    }
-
-    // Local-only preview mode has no authoritative server state. The Studio
-    // labels this as recovery/local-only rather than as a successful save.
-    try {
-      localStorage.setItem(`raloa_site_${user.uid}_${siteId}`, JSON.stringify(siteData));
-      if (siteData.username) localStorage.setItem(`raloa_studio_site_${siteData.username}`, JSON.stringify(siteData));
-    } catch (_) {}
+    if (!hasAuthenticatedSession()) throw new Error('AUTH_REQUIRED');
+    return saveUserMiniSiteToFirestore(user.uid, siteData, siteId);
   }, [user]);
 
   const loadMiniSite = useCallback(async (siteId: string) => {
     if (!siteId) throw new Error('SITE_ID_REQUIRED');
-    if (!user) return null;
-    let firestoreData: UserMiniSite | null = null;
-    if (hasAuthenticatedSession()) {
-      try {
-        firestoreData = await loadUserMiniSiteFromFirestore(user.uid, siteId);
-      } catch (err) {
-        console.warn('Could not load site from Firestore; local recovery requires explicit Studio recovery handling:', err);
-        throw err;
-      }
-      return firestoreData;
-    }
-    if (firestoreData) return firestoreData;
-
-    try {
-      const cached = localStorage.getItem(`raloa_site_${user.uid}_${siteId}`);
-      if (cached) return JSON.parse(cached);
-    } catch (_) {}
-    return null;
+    if (!user) throw new Error('AUTH_REQUIRED');
+    if (!hasAuthenticatedSession()) throw new Error('AUTH_REQUIRED');
+    return loadUserMiniSiteFromFirestore(user.uid, siteId);
   }, [user]);
 
   const listMiniSites = useCallback(async () => {
-    if (!user) return [];
-    if (hasAuthenticatedSession()) {
-      try {
-        return await listUserMiniSitesFromServer(user.uid);
-      } catch (error) {
-        console.warn('Could not list sites from the server; refusing to treat local cache as authoritative.', error);
-        throw error;
-      }
-    }
-    if (typeof window === 'undefined') return [];
-    const prefix = `raloa_site_${user.uid}_`;
-    const sites: UserMiniSiteSummary[] = [];
-    for (let index = 0; index < window.localStorage.length; index += 1) {
-      const key = window.localStorage.key(index);
-      if (!key?.startsWith(prefix)) continue;
-      const id = key.slice(prefix.length);
-      try {
-        const site = JSON.parse(window.localStorage.getItem(key) || '{}');
-        sites.push({ id, username: site.username || id, displayName: site.displayName || id, isPublished: site.isPublished === true, updatedAt: site.updatedAt });
-      } catch (_) {}
-    }
-    return sites;
+    if (!user) throw new Error('AUTH_REQUIRED');
+    if (!hasAuthenticatedSession()) throw new Error('AUTH_REQUIRED');
+    return listUserMiniSitesFromServer(user.uid);
   }, [user]);
 
   const createMiniSite = useCallback(async (siteData: Partial<UserMiniSite>, siteId?: string) => {
     if (!user) throw new Error('AUTH_REQUIRED');
-    if (hasAuthenticatedSession()) return createUserMiniSiteOnServer(user.uid, siteData, siteId);
-    const resolvedId = siteId || `site_${crypto.randomUUID()}`;
-    await saveMiniSite(siteData, resolvedId);
-    return { ...siteData, id: resolvedId, userId: user.uid } as UserMiniSite;
+    if (!hasAuthenticatedSession()) throw new Error('AUTH_REQUIRED');
+    return createUserMiniSiteOnServer(user.uid, siteData, siteId);
   }, [user, saveMiniSite]);
 
   const deleteMiniSite = useCallback(async (siteId: string) => {
     if (!user || !siteId) throw new Error('SITE_ID_REQUIRED');
-    if (hasAuthenticatedSession()) await deleteUserMiniSiteFromServer(user.uid, siteId);
-    try { localStorage.removeItem(`raloa_site_${user.uid}_${siteId}`); } catch (_) {}
+    if (!hasAuthenticatedSession()) throw new Error('AUTH_REQUIRED');
+    await deleteUserMiniSiteFromServer(user.uid, siteId);
   }, [user]);
 
   return (

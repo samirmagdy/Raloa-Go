@@ -1,5 +1,4 @@
 import React from 'react';
-import { ArrowUpRight } from 'lucide-react';
 
 export const AnnotationCard: React.FC<{
   children: React.ReactNode;
@@ -92,25 +91,3 @@ export const CurvedArrowDownLeft: React.FC<{ className?: string }> = ({ classNam
     />
   </svg>
 );
-
-export const FloatingMetricBadge: React.FC<{
-  metric?: string;
-  label?: string;
-  className?: string;
-}> = ({ metric = '+300%', label = 'More clicks', className = '' }) => {
-  return (
-    <div
-      className={`bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-slate-100 dark:border-slate-800 shadow-[0_12px_32px_rgba(15,23,42,0.12)] dark:shadow-[0_12px_32px_rgba(0,0,0,0.5)] flex flex-col items-center justify-center min-w-[100px] text-center ${className}`}
-    >
-      <div className="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-1.5">
-        <ArrowUpRight className="w-5 h-5 stroke-[2.5]" />
-      </div>
-      <span className="text-[17px] font-extrabold text-slate-900 dark:text-white tracking-tight leading-none">
-        {metric}
-      </span>
-      <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-        {label}
-      </span>
-    </div>
-  );
-};

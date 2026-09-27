@@ -52,12 +52,10 @@ const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS || 1);
 app.set('trust proxy', Number.isInteger(trustedProxyHops) && trustedProxyHops >= 0 ? trustedProxyHops : 1);
 const PORT = Number(process.env.PORT) || 3000;
 const AUTH_SESSION_SECRET = process.env.AUTH_SESSION_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'local-development-session-secret');
-const localAuthEnabled = process.env.NODE_ENV === 'test' ||
-  process.env.LOCAL_AUTH_ENABLED === 'true' ||
-  (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'staging' && process.env.NODE_ENV !== 'preview' && process.env.LOCAL_AUTH_ENABLED !== 'false');
-// Public demo profiles are intentionally available only to local development
-// and automated tests. Never use them as a production data fallback.
-const publicDemoFixturesEnabled = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+// Local auth and fixture data are opt-in seams for local development/tests.
+// They must never become the default behavior of a deployed environment.
+const localAuthEnabled = process.env.NODE_ENV === 'test' || process.env.LOCAL_AUTH_ENABLED === 'true';
+const publicDemoFixturesEnabled = process.env.ENABLE_DEMO_FIXTURES === 'true' && process.env.NODE_ENV !== 'production';
 const LOCAL_ACCOUNT_SETTINGS = new Map<string, Record<string, unknown>>();
 
 const DEFAULT_NOTIFICATION_PREFERENCES = {
@@ -492,38 +490,37 @@ export interface UserAccount {
 
 export const DEFAULT_SALT = 'raloa_salt_secure_2026';
 
-// Seeded user database with verified creator account (FR-4.1)
-export const USERS_DB: Record<string, UserAccount> = {
-  'creator@example.com': {
+// The local account is test/development infrastructure only. Production auth
+// is provided by the configured identity provider and starts with no seeded users.
+export const USERS_DB: Record<string, UserAccount> = {};
+if (localAuthEnabled) {
+  USERS_DB['creator@example.com'] = {
     id: 'usr_9bf7cf1a80c',
     email: 'creator@example.com',
     passwordHash: hashPassword('SecurePassword123!', DEFAULT_SALT),
     salt: DEFAULT_SALT,
     primary_handle: 'creator',
     email_verified: true,
-  },
-};
+  };
+}
 
 const USERS_CACHE_FILE = path.join(__dirname, '.local_users_cache.json');
-try {
-  if (fs.existsSync(USERS_CACHE_FILE)) {
-    const raw = fs.readFileSync(USERS_CACHE_FILE, 'utf-8');
-    const parsed = JSON.parse(raw);
-    Object.assign(USERS_DB, parsed);
+if (localAuthEnabled) {
+  try {
+    if (fs.existsSync(USERS_CACHE_FILE)) {
+      const raw = fs.readFileSync(USERS_CACHE_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      Object.assign(USERS_DB, parsed);
+    }
+  } catch (_) {
+    // Local cache is optional test/development state.
   }
-} catch (_) {}
+}
 
-// Ensure creator@example.com is always verified with SecurePassword123!
-USERS_DB['creator@example.com'] = {
-  id: 'usr_9bf7cf1a80c',
-  email: 'creator@example.com',
-  passwordHash: hashPassword('SecurePassword123!', DEFAULT_SALT),
-  salt: DEFAULT_SALT,
-  primary_handle: 'creator',
-  email_verified: true,
-};
+// Do not seed or recreate accounts when local auth is disabled.
 
 export function persistUsersCache() {
+  if (!localAuthEnabled) return;
   try {
     fs.writeFileSync(USERS_CACHE_FILE, JSON.stringify(USERS_DB, null, 2));
   } catch (_) {}
@@ -1765,7 +1762,7 @@ app.get('/api/v1/handles/check', async (req: Request, res: Response) => {
   }
 
   const isReserved = RESERVED_HANDLES.has(clean);
-  const isExistingCreator = !!CREATORS_METADATA[clean];
+  const isExistingCreator = publicDemoFixturesEnabled && !!CREATORS_METADATA[clean];
   const isExistingUser = Object.values(USERS_DB).some((u) => u.primary_handle.toLowerCase() === clean);
   const reservedSnapshot = isAdminConfigured()
     ? await adminDb.collection('handles').doc(clean).get()
@@ -3799,12 +3796,15 @@ app.post('/api/sites', async (req: Request, res: Response) => {
   const slugValidation = validateSiteSlug(username);
   if (!slugValidation.valid) return apiError(res, 400, slugValidation.code === 'reserved' ? 'RESERVED_HANDLE' : 'INVALID_HANDLE', slugValidation.code === 'reserved' ? 'That site handle is reserved.' : 'A unique site handle is required.');
   if (await siteHandleTaken(username, user.uid, siteId)) return apiError(res, 409, 'HANDLE_IN_USE', 'That site handle is already in use.');
+  const requestedTemplateId = typeof incoming.templateId === 'string' ? incoming.templateId.trim() : '';
+  if (!requestedTemplateId) return apiError(res, 400, 'TEMPLATE_REQUIRED', 'A template must be selected before creating a site.');
+  if (!templatesData.some((template) => template.id === requestedTemplateId)) return apiError(res, 400, 'INVALID_TEMPLATE', 'The selected template does not exist.');
   const site = {
     ...incoming,
     id: siteId,
     userId: user.uid,
     username,
-    templateId: String(incoming.templateId || templatesData.find((template) => !isPremiumTemplate(template.id))?.id || 'elena'),
+    templateId: requestedTemplateId,
     displayName: typeof incoming.displayName === 'string' ? incoming.displayName : username,
     role: typeof incoming.role === 'string' ? incoming.role : '',
     bio: typeof incoming.bio === 'string' ? incoming.bio : '',

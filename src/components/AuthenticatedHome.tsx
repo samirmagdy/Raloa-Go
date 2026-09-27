@@ -81,13 +81,13 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
     displayName: '',
     bio: '',
     avatar: '',
-    templateId: 'elena',
+    templateId: '',
     isPublished: false,
-    linksCount: 4,
-    updatedAt: new Date().toISOString()
+    linksCount: 0,
+    updatedAt: ''
   });
 
-  const [, setIsLoadingSite] = useState(true);
+  const [isLoadingSite, setIsLoadingSite] = useState(true);
   const [isCopied, setIsCopied] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
   const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -149,25 +149,25 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
         const saved = selectedSite ? await loadMiniSite(selectedSite.id) : null;
         if (saved && !isCancelled) {
           setSiteData({
-            username: saved.username || cleanHandle,
-            displayName: saved.displayName || user?.displayName || 'Creator',
-            bio: saved.bio || activeTemplate.bio,
-            avatar: saved.avatar || user?.photoURL || activeTemplate.avatar,
-            templateId: saved.templateId || 'elena',
+            username: typeof saved.username === 'string' ? saved.username : '',
+            displayName: typeof saved.displayName === 'string' ? saved.displayName : '',
+            bio: typeof saved.bio === 'string' ? saved.bio : '',
+            avatar: typeof saved.avatar === 'string' ? saved.avatar : '',
+            templateId: typeof saved.templateId === 'string' ? saved.templateId : '',
             isPublished: saved.isPublished ?? false,
-            linksCount: saved.links ? saved.links.length : 4,
-            updatedAt: saved.updatedAt || new Date().toISOString()
+            linksCount: Array.isArray(saved.links) ? saved.links.length : 0,
+            updatedAt: typeof saved.updatedAt === 'string' ? saved.updatedAt : ''
           });
         } else if (!isCancelled) {
           setSiteData({
-            username: cleanHandle,
-            displayName: user?.displayName || cleanHandle,
-            bio: isRtl ? activeTemplate.bioAr : activeTemplate.bio,
-            avatar: user?.photoURL || activeTemplate.avatar,
-            templateId: activeTemplate.id,
+            username: '',
+            displayName: '',
+            bio: '',
+            avatar: '',
+            templateId: '',
             isPublished: false,
-            linksCount: 4,
-            updatedAt: new Date().toISOString()
+            linksCount: 0,
+            updatedAt: ''
           });
         }
       } catch (err) {
@@ -308,6 +308,26 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
       origin: { y: 0.5 }
     });
   };
+
+  if (!isLoadingSite && !siteData.username) {
+    return (
+      <div className="min-h-[100dvh] pt-24 pb-20 px-4 sm:px-6 lg:px-8 max-w-3xl mx-auto">
+        {billingError && (
+          <div role="alert" className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+            {billingError}
+          </div>
+        )}
+        <section className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <Globe className="mx-auto mb-4 h-10 w-10 text-indigo-500" />
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{isRtl ? 'أنشئ موقعك الأول' : 'Create your first site'}</h1>
+          <p className="mx-auto mt-2 max-w-md text-slate-600 dark:text-slate-300">{isRtl ? 'لا توجد بيانات موقع محفوظة بعد.' : 'There is no persisted site data yet. Start in Studio to create one.'}</p>
+          <button type="button" onClick={() => onOpenStudio(undefined, activeTemplate)} className="mt-6 rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700">
+            {isRtl ? 'فتح الاستوديو' : 'Open Studio'}
+          </button>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-[100dvh] pt-24 pb-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto ${isRtl ? 'font-sans' : 'font-sans'}`}>
@@ -510,16 +530,10 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
                 </div>
               </div>
 
-              {/* Sample link pills */}
-              <div className="space-y-1.5 mb-3">
-                <div className="h-7 rounded-lg bg-white dark:bg-slate-700/50 border border-slate-200/80 dark:border-slate-600/40 flex items-center justify-between px-3 text-xs text-slate-700 dark:text-slate-300 font-medium">
-                  <span className="truncate">{activeTemplate.sampleLinks[0]?.title || 'Featured Project'}</span>
-                  <ExternalLink className="w-3 h-3 text-slate-400" />
-                </div>
-                <div className="h-7 rounded-lg bg-white dark:bg-slate-700/50 border border-slate-200/80 dark:border-slate-600/40 flex items-center justify-between px-3 text-xs text-slate-700 dark:text-slate-300 font-medium">
-                  <span className="truncate">{activeTemplate.sampleLinks[1]?.title || 'Contact & Booking'}</span>
-                  <ExternalLink className="w-3 h-3 text-slate-400" />
-                </div>
+              <div className="mb-3 rounded-lg border border-slate-200/80 bg-white px-3 py-2 text-xs text-slate-600 dark:border-slate-600/40 dark:bg-slate-700/50 dark:text-slate-300">
+                {siteData.linksCount > 0
+                  ? `${siteData.linksCount} ${siteData.linksCount === 1 ? 'link' : 'links'} configured`
+                  : 'No links configured yet'}
               </div>
 
               {/* Template identifier badge */}
