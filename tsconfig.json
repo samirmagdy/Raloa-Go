@@ -17,9 +17,8 @@
     "allowJs": true,
     "jsx": "react-jsx",
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"],
+      "@raloa/*": ["./packages/*/src"]
     },
     "allowImportingTsExtensions": true,
     "noEmit": true

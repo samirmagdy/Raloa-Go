@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
@@ -90,7 +91,8 @@
   "check:adrs": "node scripts/check-adrs.mjs",
   "check:capacity-plan": "node scripts/check-capacity-plan.mjs",
   "check:cost-architecture": "node scripts/check-cost-architecture.mjs",
-  "check:system-architecture": "node scripts/check-system-architecture.mjs",
+    "check:system-architecture": "node scripts/check-system-architecture.mjs",
+    "check:architecture-boundaries": "node scripts/check-architecture-boundaries.mjs",
   "test:content-schema": "tsx test-content-schema.ts",
   "test:shared-schemas": "tsx test-shared-runtime-schemas.ts",
   "test:domain-invariants": "tsx test-domain-invariants.ts",

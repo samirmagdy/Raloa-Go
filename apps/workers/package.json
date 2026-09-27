@@ -1,0 +1,6 @@
+{
+  "name": "@raloa/workers",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "tsx src/index.ts" }
+}
