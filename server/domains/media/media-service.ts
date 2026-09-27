@@ -1,5 +1,12 @@
 import type { MediaAsset, MediaMetadataRepository, MediaProcessingQueue, MediaService, MediaStorageAdapter } from './contracts';
 
+const allowedContentTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+export function validateMediaUpload(input: { contentType: string; bytes: number; maxBytes: number }): void {
+  if (!allowedContentTypes.has(input.contentType)) throw new Error('Unsupported media type');
+  if (!Number.isSafeInteger(input.bytes) || input.bytes <= 0 || input.bytes > input.maxBytes) throw new Error('Invalid media size');
+}
+
 export function createMediaDomainService(dependencies: {
   metadata: MediaMetadataRepository;
   storage: MediaStorageAdapter;
@@ -8,7 +15,7 @@ export function createMediaDomainService(dependencies: {
 }): MediaService {
   const clock = dependencies.clock ?? (() => new Date().toISOString());
 
-  return {
+  const service: MediaService = {
     async beginUpload(input) {
       const timestamp = clock();
       const objectKey = `sites/${input.siteId}/media/${input.id}/original`;
@@ -30,6 +37,7 @@ export function createMediaDomainService(dependencies: {
       if (!asset || asset.ownerUserId !== input.ownerUserId || asset.lifecycle === 'deleted') {
         throw new Error('Media asset not found');
       }
+      validateMediaUpload({ contentType: asset.original.contentType, bytes: input.bytes.byteLength, maxBytes: 25 * 1024 * 1024 });
       const stored = await dependencies.storage.put({
         objectKey: asset.original.objectKey,
         bytes: input.bytes,
@@ -54,6 +62,21 @@ export function createMediaDomainService(dependencies: {
         asset.processed ? dependencies.storage.delete(asset.processed.objectKey) : Promise.resolve(),
         asset.thumbnail ? dependencies.storage.delete(asset.thumbnail.objectKey) : Promise.resolve()
       ]);
+    },
+    async cleanup(input) {
+      const currentTime = input.now ? Date.parse(input.now) : Date.now();
+      const cutoff = new Date(currentTime - input.abandonedAfterMs).toISOString();
+      const abandoned = await dependencies.metadata.listAbandoned(cutoff);
+      for (const asset of abandoned) {
+        await dependencies.metadata.remove(asset.id);
+        await dependencies.storage.delete(asset.original.objectKey);
+      }
+      const keys = await dependencies.storage.listKeys('sites/');
+      const known = new Set((await dependencies.metadata.listAll()).flatMap((asset) => [asset.original.objectKey, asset.processed?.objectKey, asset.thumbnail?.objectKey].filter((key): key is string => Boolean(key))));
+      const orphanedKeys = keys.filter((key) => !known.has(key));
+      await Promise.all(orphanedKeys.map((key) => dependencies.storage.delete(key)));
+      return { abandoned: abandoned.length, orphaned: orphanedKeys.length };
     }
   };
+  return service;
 }

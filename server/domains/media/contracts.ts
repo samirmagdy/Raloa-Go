@@ -32,6 +32,9 @@ export interface MediaMetadataRepository {
   create(asset: MediaAsset): Promise<void>;
   get(id: string): Promise<MediaAsset | null>;
   listOwned(ownerUserId: string, siteId: string): Promise<MediaAsset[]>;
+  listAll(): Promise<MediaAsset[]>;
+  listAbandoned(cutoff: string): Promise<MediaAsset[]>;
+  remove(id: string): Promise<void>;
   update(id: string, changes: Partial<MediaAsset>): Promise<MediaAsset>;
 }
 
@@ -39,7 +42,17 @@ export interface MediaStorageAdapter {
   readonly provider: MediaObject['provider'];
   put(input: { objectKey: string; bytes: Uint8Array; contentType: string; cacheControl?: string }): Promise<MediaObject>;
   delete(objectKey: string): Promise<void>;
+  listKeys(prefix: string): Promise<string[]>;
   getCdnUrl(objectKey: string): string;
+}
+
+export interface MediaProcessor {
+  process(input: { asset: MediaAsset; bytes: Uint8Array }): Promise<{
+    processed: { bytes: Uint8Array; contentType: string };
+    thumbnail: { bytes: Uint8Array; contentType: string };
+    width?: number;
+    height?: number;
+  }>;
 }
 
 export interface MediaProcessingQueue {
@@ -51,4 +64,5 @@ export interface MediaService {
   completeUpload(input: { assetId: string; ownerUserId: string; bytes: Uint8Array; checksum?: string }): Promise<MediaAsset>;
   list(ownerUserId: string, siteId: string): Promise<MediaAsset[]>;
   remove(input: { assetId: string; ownerUserId: string }): Promise<void>;
+  cleanup(input: { now?: string; abandonedAfterMs: number }): Promise<{ abandoned: number; orphaned: number }>;
 }

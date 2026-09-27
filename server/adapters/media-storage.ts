@@ -3,6 +3,7 @@ import type { MediaObject, MediaStorageAdapter } from '../domains/media/contract
 export type FirebaseStorageClient = {
   putObject(input: { objectKey: string; bytes: Uint8Array; contentType: string; cacheControl?: string }): Promise<{ bytes: number; checksum?: string }>;
   deleteObject(objectKey: string): Promise<void>;
+  listObjects(prefix: string): Promise<string[]>;
   publicUrl(objectKey: string): string;
 };
 
@@ -24,6 +25,7 @@ function createAdapter(provider: MediaObject['provider'], client: FirebaseStorag
       return { provider, objectKey: input.objectKey, contentType: input.contentType, bytes: result.bytes, checksum: result.checksum, cdnUrl: client.publicUrl(input.objectKey) };
     },
     delete: (objectKey) => client.deleteObject(objectKey),
+    listKeys: (prefix) => client.listObjects(prefix),
     getCdnUrl: (objectKey) => client.publicUrl(objectKey)
   };
 }

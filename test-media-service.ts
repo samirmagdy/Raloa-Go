@@ -10,12 +10,16 @@ const service = createMediaDomainService({
     async create(asset) { assets.set(asset.id, asset); },
     async get(id) { return assets.get(id) ?? null; },
     async listOwned(ownerUserId, siteId) { return [...assets.values()].filter((asset) => asset.ownerUserId === ownerUserId && asset.siteId === siteId); },
+    async listAll() { return [...assets.values()]; },
+    async listAbandoned() { return []; },
+    async remove(id) { assets.delete(id); },
     async update(id, changes) { const next = { ...assets.get(id)!, ...changes }; assets.set(id, next); return next; }
   },
   storage: {
     provider: 'cloudflare_r2',
     async put(input) { return { provider: 'cloudflare_r2', objectKey: input.objectKey, contentType: input.contentType, bytes: input.bytes.byteLength, cdnUrl: `https://cdn.test/${input.objectKey}` }; },
     async delete(objectKey) { deleted.push(objectKey); },
+    async listKeys() { return []; },
     getCdnUrl: (objectKey) => `https://cdn.test/${objectKey}`
   },
   processing: { async enqueue(input) { queued.push(input.idempotencyKey); } },

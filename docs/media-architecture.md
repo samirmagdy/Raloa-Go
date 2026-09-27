@@ -21,6 +21,13 @@ Lifecycle is `pending_upload -> uploaded -> processing -> ready`, with `failed` 
 terminal/repair states. Processing is a durable idempotent job keyed by `media-processing:{assetId}`.
 Deletion marks metadata first, then removes all object variants; cleanup can retry safely.
 
+Uploads are validated for type and size before storage. The HTTP request persists metadata and the
+original bytes only; optimization and thumbnail generation run in `processMediaAsset` as a worker.
+The worker is idempotent: `ready` and `deleted` assets are no-ops, successful variants are recorded
+before the asset becomes `ready`, and processor errors produce `failed` for retry or operator repair.
+Scheduled cleanup removes stale `pending_upload` records and their originals, then scans the provider
+prefix for objects absent from metadata and deletes those orphans.
+
 The service contracts live in
 [`server/domains/media/contracts.ts`](../server/domains/media/contracts.ts), the orchestration is
 in [`media-service.ts`](../server/domains/media/media-service.ts), and provider adapters are in
