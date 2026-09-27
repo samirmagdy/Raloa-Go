@@ -110,6 +110,36 @@ function studioConfigFromSite(savedSite: UserMiniSite, fallback: TemplateItem, r
   };
 }
 
+type LocalRecoveryEnvelope = { version: 1; siteId: string; updatedAt: string; config: StudioSiteConfig };
+
+const configFingerprint = (config: StudioSiteConfig): string => JSON.stringify(config);
+const localRecoveryKey = (userId: string, siteId: string): string => `raloa_studio_recovery_${userId}_${siteId}`;
+
+function readLocalRecovery(userId: string, siteId: string): LocalRecoveryEnvelope | null {
+  if (typeof window === 'undefined' || !userId || !siteId) return null;
+  try {
+    const raw = window.localStorage.getItem(localRecoveryKey(userId, siteId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as LocalRecoveryEnvelope;
+    if (parsed?.version !== 1 || parsed.siteId !== siteId || !parsed.config || typeof parsed.config !== 'object') return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeLocalRecovery(userId: string, siteId: string, config: StudioSiteConfig): void {
+  if (typeof window === 'undefined' || !userId || !siteId) return;
+  try {
+    window.localStorage.setItem(localRecoveryKey(userId, siteId), JSON.stringify({ version: 1, siteId, updatedAt: new Date().toISOString(), config } satisfies LocalRecoveryEnvelope));
+  } catch (_) {}
+}
+
+function clearLocalRecovery(userId: string, siteId: string): void {
+  if (typeof window === 'undefined' || !userId || !siteId) return;
+  try { window.localStorage.removeItem(localRecoveryKey(userId, siteId)); } catch (_) {}
+}
+
 export const StudioModal: React.FC<StudioModalProps> = ({
   initialUsername = 'creator',
   initialTemplate,
@@ -140,7 +170,9 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   const [showQrModal, setShowQrModal] = useState(false);
 
   // Persistence status is intentionally separate from publication status.
-  const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | 'error'>('saved');
+  const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | 'error' | 'recovery'>('saving');
+  const [recoveryAvailable, setRecoveryAvailable] = useState(false);
+  const [recoveryConfig, setRecoveryConfig] = useState<StudioSiteConfig | null>(null);
   const [publicationState, setPublicationState] = useState<PublicationState>('draft');
   const [entitlementMessage, setEntitlementMessage] = useState('');
   const [sites, setSites] = useState<UserMiniSiteSummary[]>([]);
@@ -150,6 +182,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   const lastTextEditRef = useRef<number>(0);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const skipNextAutosaveRef = useRef(false);
+  const authoritativeBaselineRef = useRef('');
+  const saveAttemptRef = useRef(0);
 
   // Resolve user handle safely
   const resolvedHandle =
@@ -304,13 +338,24 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         setActiveSiteId(selectedSiteId);
         try { localStorage.setItem(`raloa_active_site_${userId}`, selectedSiteId); } catch (_) {}
         const savedSite = await loadMiniSite(selectedSiteId);
+        let loadedRecoveryAvailable = false;
         if (savedSite && !isCancelled) {
           const loadedConfig = studioConfigFromSite(savedSite, defaultTemplate, resolvedHandle, isRtl);
-
+          authoritativeBaselineRef.current = configFingerprint(loadedConfig);
           resetHistory(loadedConfig);
+          const recovery = readLocalRecovery(userId, selectedSiteId);
+          if (recovery && configFingerprint(recovery.config) !== authoritativeBaselineRef.current) {
+            setRecoveryConfig(recovery.config);
+            setRecoveryAvailable(true);
+            loadedRecoveryAvailable = true;
+          } else {
+            clearLocalRecovery(userId, selectedSiteId);
+            setRecoveryConfig(null);
+            setRecoveryAvailable(false);
+          }
         }
         if (!isCancelled) {
-          setSaveStatus('saved');
+          setSaveStatus(auth.currentUser ? (loadedRecoveryAvailable ? 'recovery' : 'saved') : 'recovery');
           setPublicationState(savedSite?.isPublished === true ? 'published' : 'draft');
         }
       } catch (e) {
@@ -334,6 +379,9 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   // Persist directly to live content in Firestore (Autosave directly to live content)
   const persistSiteConfig = useCallback(
     async (configToSave: StudioSiteConfig = siteConfig) => {
+      const saveAttempt = saveAttemptRef.current + 1;
+      saveAttemptRef.current = saveAttempt;
+      const saveStartedAt = Date.now();
       setSaveStatus('saving');
 
       try {
@@ -380,14 +428,40 @@ export const StudioModal: React.FC<StudioModalProps> = ({
           await new Promise((r) => setTimeout(r, 200));
         }
 
+        const serverPersisted = Boolean(user && auth.currentUser);
         if (user) {
-          setSites(await listMiniSites());
+          try {
+            setSites(await listMiniSites());
+          } catch (siteListError) {
+            console.warn('Site list refresh failed after a confirmed save:', siteListError);
+          }
         }
-        setSaveStatus('saved');
+        if (serverPersisted && user) {
+          if (saveAttempt !== saveAttemptRef.current) return;
+          // This baseline is authoritative only after saveMiniSite resolved.
+          authoritativeBaselineRef.current = configFingerprint(configToSave);
+          const recovery = readLocalRecovery(user.uid, activeSiteId);
+          if (!recovery || configFingerprint(recovery.config) === configFingerprint(configToSave) || Date.parse(recovery.updatedAt) <= saveStartedAt) {
+            clearLocalRecovery(user.uid, activeSiteId);
+            setRecoveryConfig(null);
+            setRecoveryAvailable(false);
+          }
+          setSaveStatus('saved');
+        } else {
+          if (saveAttempt !== saveAttemptRef.current) return;
+          setSaveStatus('recovery');
+        }
       } catch (err) {
+        if (saveAttempt !== saveAttemptRef.current) throw err;
         console.error('Failed to autosave live site configuration:', err);
+        if (user) {
+          writeLocalRecovery(user.uid, activeSiteId, configToSave);
+          setRecoveryConfig(configToSave);
+          setRecoveryAvailable(true);
+        }
         setSaveStatus('error');
         setEntitlementMessage(err instanceof Error ? err.message : 'This change is not included in your current plan.');
+        throw err;
       }
     },
     [user, saveMiniSite, siteConfig, activeSiteId, listMiniSites]
@@ -400,8 +474,19 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       const savedSite = await loadMiniSite(nextSiteId);
       const summary = sites.find((site) => site.id === nextSiteId);
       if (!savedSite || !summary) throw new Error('SITE_NOT_FOUND');
-      resetHistory(studioConfigFromSite(savedSite, defaultTemplate, resolvedHandle, isRtl));
+      const loadedConfig = studioConfigFromSite(savedSite, defaultTemplate, resolvedHandle, isRtl);
+      authoritativeBaselineRef.current = configFingerprint(loadedConfig);
+      resetHistory(loadedConfig);
       setActiveSiteId(nextSiteId);
+      const recovery = readLocalRecovery(user?.uid || '', nextSiteId);
+      if (recovery && configFingerprint(recovery.config) !== authoritativeBaselineRef.current) {
+        setRecoveryConfig(recovery.config);
+        setRecoveryAvailable(true);
+      } else {
+        clearLocalRecovery(user?.uid || '', nextSiteId);
+        setRecoveryConfig(null);
+        setRecoveryAvailable(false);
+      }
       setPublicationState(savedSite.isPublished === true ? 'published' : 'draft');
       try { localStorage.setItem(`raloa_active_site_${user?.uid}`, nextSiteId); } catch (_) {}
       setEntitlementMessage('');
@@ -438,8 +523,19 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       if (!nextSite) throw new Error('NO_SITE_REMAINS');
       const savedSite = await loadMiniSite(nextSite.id);
       if (!savedSite) throw new Error('SITE_NOT_FOUND');
-      resetHistory(studioConfigFromSite(savedSite, defaultTemplate, resolvedHandle, isRtl));
+      const loadedConfig = studioConfigFromSite(savedSite, defaultTemplate, resolvedHandle, isRtl);
+      authoritativeBaselineRef.current = configFingerprint(loadedConfig);
+      resetHistory(loadedConfig);
       setActiveSiteId(nextSite.id);
+      const recovery = readLocalRecovery(user?.uid || '', nextSite.id);
+      if (recovery && configFingerprint(recovery.config) !== authoritativeBaselineRef.current) {
+        setRecoveryConfig(recovery.config);
+        setRecoveryAvailable(true);
+      } else {
+        clearLocalRecovery(user?.uid || '', nextSite.id);
+        setRecoveryConfig(null);
+        setRecoveryAvailable(false);
+      }
       setPublicationState(savedSite.isPublished === true ? 'published' : 'draft');
       localStorage.setItem(`raloa_active_site_${user?.uid}`, nextSite.id);
     } catch (error) {
@@ -486,7 +582,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
     setSaveStatus('saving');
 
     saveTimeoutRef.current = setTimeout(() => {
-      persistSiteConfig(siteConfig);
+      void persistSiteConfig(siteConfig).catch(() => undefined);
     }, 700);
 
     return () => {
@@ -495,6 +591,37 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       }
     };
   }, [siteConfig, persistSiteConfig]);
+
+  // Keep an explicitly labelled recovery copy only while the editor differs
+  // from the last server-confirmed baseline. This copy is never loaded
+  // automatically and is removed only after a confirmed server save.
+  useEffect(() => {
+    if (!isInitialLoadDone.current || !activeSiteId || !user?.uid) return;
+    const currentFingerprint = configFingerprint(siteConfig);
+    if (authoritativeBaselineRef.current && currentFingerprint === authoritativeBaselineRef.current) {
+      const recovery = readLocalRecovery(user.uid, activeSiteId);
+      if (recovery && configFingerprint(recovery.config) !== authoritativeBaselineRef.current) return;
+      clearLocalRecovery(user.uid, activeSiteId);
+      return;
+    }
+    writeLocalRecovery(user.uid, activeSiteId, siteConfig);
+  }, [activeSiteId, siteConfig, user?.uid]);
+
+  const restoreLocalRecovery = useCallback(() => {
+    if (!recoveryConfig) return;
+    resetHistory(recoveryConfig);
+    setRecoveryConfig(null);
+    setRecoveryAvailable(false);
+    setSaveStatus('recovery');
+    setEntitlementMessage('');
+  }, [recoveryConfig, resetHistory]);
+
+  const keepServerVersion = useCallback(() => {
+    if (user?.uid && activeSiteId) clearLocalRecovery(user.uid, activeSiteId);
+    setRecoveryConfig(null);
+    setRecoveryAvailable(false);
+    setSaveStatus('saved');
+  }, [activeSiteId, user?.uid]);
 
   // Global Keyboard Shortcuts (Ctrl/Cmd+Z, Ctrl/Cmd+Y)
   useEffect(() => {
@@ -618,7 +745,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         publicationState={publicationState}
         isPublished={siteConfig.isPublished}
         onPublishToggle={publishToggle}
-        onRetrySave={() => persistSiteConfig(siteConfig)}
+        onRetrySave={() => { void persistSiteConfig(siteConfig).catch(() => undefined); }}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={undo}
@@ -632,6 +759,19 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         onCreateSite={() => { void createNewSite(); }}
         onDeleteSite={() => { void deleteCurrentSite(); }}
       />
+
+      {recoveryAvailable && recoveryConfig && (
+        <div role="alert" className="mx-3 mt-3 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950 shadow-sm dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100 sm:mx-6 sm:flex-row sm:items-center sm:justify-between lg:mx-8">
+          <div>
+            <p className="text-sm font-bold">{isRtl ? 'توجد نسخة استرداد محلية' : 'Local recovery is available'}</p>
+            <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">{isRtl ? 'هذه التعديلات لم يؤكد الخادم حفظها. اختر الإجراء قبل استعادتها.' : 'These edits were not confirmed by the server. Choose what to do before restoring them.'}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={restoreLocalRecovery} className="min-h-11 rounded-xl bg-amber-700 px-3 py-2 text-xs font-bold text-white hover:bg-amber-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600">{isRtl ? 'استعادة التعديلات' : 'Restore edits'}</button>
+            <button type="button" onClick={keepServerVersion} className="min-h-11 rounded-xl border border-amber-300 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 dark:border-amber-800 dark:text-amber-100 dark:hover:bg-amber-950/50">{isRtl ? 'الاحتفاظ بنسخة الخادم' : 'Keep server version'}</button>
+          </div>
+        </div>
+      )}
 
       {/* Main Studio Body Workspace */}
       <div className="flex-1 w-full max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col lg:flex-row gap-6 xl:gap-8 overflow-hidden">

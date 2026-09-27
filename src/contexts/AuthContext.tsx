@@ -161,24 +161,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const saveMiniSite = useCallback(async (siteData: Partial<UserMiniSite>, siteId: string) => {
     if (!siteId) throw new Error('SITE_ID_REQUIRED');
     if (!user) return;
-    // Always persist to local cache for resilient offline & local dev support
-    try {
-      localStorage.setItem(`raloa_site_${user.uid}_${siteId}`, JSON.stringify(siteData));
-      if (siteData.username) {
-        localStorage.setItem(`raloa_studio_site_${siteData.username}`, JSON.stringify(siteData));
-      }
-    } catch (_) {}
 
     // Only attempt Firestore write if real Firebase Auth session is active
     if (auth.currentUser) {
-      try {
-        await saveUserMiniSiteToFirestore(user.uid, siteData, siteId);
-      } catch (err: any) {
-        // Local storage is a recovery copy, never a substitute for server acknowledgement.
-        console.warn('Firestore save failed; a local recovery copy was retained.', err);
-        throw err;
-      }
+      await saveUserMiniSiteToFirestore(user.uid, siteData, siteId);
+      return;
     }
+
+    // Local-only preview mode has no authoritative server state. The Studio
+    // labels this as recovery/local-only rather than as a successful save.
+    try {
+      localStorage.setItem(`raloa_site_${user.uid}_${siteId}`, JSON.stringify(siteData));
+      if (siteData.username) localStorage.setItem(`raloa_studio_site_${siteData.username}`, JSON.stringify(siteData));
+    } catch (_) {}
   }, [user]);
 
   const loadMiniSite = useCallback(async (siteId: string) => {
@@ -189,8 +184,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         firestoreData = await loadUserMiniSiteFromFirestore(user.uid, siteId);
       } catch (err) {
-        console.warn('Could not load site from Firestore; checking local cache fallback:', err);
+        console.warn('Could not load site from Firestore; local recovery requires explicit Studio recovery handling:', err);
+        throw err;
       }
+      return firestoreData;
     }
     if (firestoreData) return firestoreData;
 
@@ -207,7 +204,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         return await listUserMiniSitesFromServer(user.uid);
       } catch (error) {
-        console.warn('Could not list sites from the server; checking local cache.', error);
+        console.warn('Could not list sites from the server; refusing to treat local cache as authoritative.', error);
+        throw error;
       }
     }
     if (typeof window === 'undefined') return [];

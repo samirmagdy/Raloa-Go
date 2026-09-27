@@ -19,7 +19,7 @@ import { normalizeSiteSlug } from '../../lib/siteSlug';
 export interface StudioTopToolbarProps {
   handle: string;
   plan: 'free' | 'pro' | 'studio' | string;
-  saveStatus: 'saving' | 'saved' | 'error';
+  saveStatus: 'saving' | 'saved' | 'error' | 'recovery';
   publicationState: PublicationState;
   isPublished: boolean;
   onPublishToggle: () => void;
@@ -161,7 +161,7 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
         {saveStatus === 'saved' && (
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 text-xs font-semibold">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            <span className="hidden sm:inline">{isRtl ? 'تم الحفظ' : 'Saved'}</span>
+            <span className="hidden sm:inline">{isRtl ? 'تم الحفظ على الخادم' : 'Saved to server'}</span>
           </div>
         )}
 
@@ -178,6 +178,13 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
                 {isRtl ? 'إعادة المحاولة' : 'Retry'}
               </button>
             )}
+          </div>
+        )}
+
+        {saveStatus === 'recovery' && (
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/80 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">{isRtl ? 'نسخة استرداد محلية' : 'Local recovery available'}</span>
           </div>
         )}
 

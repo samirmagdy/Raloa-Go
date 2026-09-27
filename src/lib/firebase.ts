@@ -592,7 +592,7 @@ export async function loadUserMiniSiteFromFirestore(
     return null;
   } catch (error) {
     console.error('Error loading mini-site from Firestore:', error);
-    return null;
+    throw error;
   }
 }
 
