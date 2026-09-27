@@ -5,6 +5,8 @@ import pg from 'pg';
 
 const databaseUrl = process.env.POSTGRES_DATABASE_URL || process.env.DATABASE_URL;
 if (!databaseUrl) { console.error('DATABASE_URL is required to verify PostgreSQL migrations.'); process.exit(2); }
+const environment = process.env.POSTGRES_ENVIRONMENT || (process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'local');
+if ((environment === 'staging' || environment === 'production') && process.env.POSTGRES_SSL !== 'true') { console.error('POSTGRES_SSL=true is required for staging/production migration verification.'); process.exit(2); }
 
 const files = fs.readdirSync(path.resolve('db/migrations')).filter((file) => /^\d+_[a-z0-9_]+\.sql$/.test(file)).sort();
 const expected = files.map((file) => ({

@@ -5,7 +5,7 @@
 
 ## Context
 
-PostgreSQL is being introduced as a target for transactional domains, but Firestore remains authoritative until each domain completes a controlled migration. The repository already has a SQL-first migration runner, a standard `pg` pool, Cloud Run API/worker deployments, and repository contracts that must remain stable while persistence implementations change.
+PostgreSQL is being introduced as the target authoritative database for transactional domains, but Firestore remains the active application source of truth until each domain completes a controlled migration. The repository already has a SQL-first migration runner, a standard `pg` pool, Cloud Run API/worker deployments, and repository contracts that must remain stable while persistence implementations change.
 
 The target database needs PostgreSQL-specific behavior: exclusion constraints for booking overlap, row locks for inventory, explicit transaction boundaries, idempotent upserts, append-only records, and transactional outbox writes. The ORM must remain an infrastructure detail and must not leak into application services or API contracts.
 
@@ -21,7 +21,7 @@ The database foundation consists of:
 - `server/infrastructure/postgres/schema.ts` for the typed access model;
 - `scripts/run-postgres-migrations.mjs` and `scripts/verify-postgres-migrations.mjs` for locked, checksum-tracked SQL migrations.
 
-This decision does not migrate business domains or make PostgreSQL production-authoritative. Domain repositories will be introduced separately behind existing contracts.
+This decision does not migrate business domains or switch production traffic. Domain repositories will be introduced separately behind existing contracts. The foundation is environment-complete for local, isolated test, staging, and production deployment, but traffic-inactive by design.
 
 ## Evaluation
 

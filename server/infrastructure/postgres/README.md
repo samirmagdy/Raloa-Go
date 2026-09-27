@@ -15,6 +15,7 @@ Drizzle table types, query builders, or transactions to services.
 Operational rules:
 
 - use `withPostgresTransaction` for multi-row state changes and outbox writes;
+- pass the structured logger at composition roots when transaction timing/rollback telemetry is required;
 - keep provider calls outside database transactions;
 - use parameterized Drizzle queries or explicit SQL only;
 - add indexes and constraints in the SQL migration first;

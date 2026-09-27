@@ -6,6 +6,8 @@ assert.equal(config.connectionString, 'postgresql://raloa:test@localhost/raloa')
 assert.equal(config.max, 12);
 assert.equal(config.ssl, false);
 assert.throws(() => readPostgresRuntimeConfig({ POSTGRES_DATABASE_URL: 'postgresql://localhost/db', POSTGRES_POOL_MAX: '0' }), /INVALID_POSTGRES_POOL_MAX/);
+assert.throws(() => readPostgresRuntimeConfig({ POSTGRES_DATABASE_URL: 'postgresql://localhost/db', POSTGRES_ENVIRONMENT: 'production', POSTGRES_SSL: 'false' }), /POSTGRES_SSL_REQUIRED/);
+assert.throws(() => readPostgresRuntimeConfig({ POSTGRES_DATABASE_URL: 'mysql://localhost/db' }), /INVALID_POSTGRES_DATABASE_URL/);
 assert.doesNotThrow(() => assertPostgresRuntimeAllowed({ NODE_ENV: 'test' }));
 assert.throws(() => assertPostgresRuntimeAllowed({ NODE_ENV: 'production', POSTGRES_ENABLED: 'false' }), /POSTGRES_NOT_ENABLED_FOR_PRODUCTION/);
 console.log('PostgreSQL local configuration tests passed');

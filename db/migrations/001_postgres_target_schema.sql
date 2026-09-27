@@ -125,7 +125,8 @@ CREATE TABLE bookings (
   updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK (starts_at < ends_at),
   FOREIGN KEY (service_id, site_id) REFERENCES booking_services(id, site_id),
-  FOREIGN KEY (site_id, host_user_id) REFERENCES sites(id, owner_user_id)
+  FOREIGN KEY (site_id, host_user_id) REFERENCES sites(id, owner_user_id),
+  UNIQUE (id, host_user_id)
 );
 CREATE INDEX bookings_host_created_idx ON bookings (host_user_id, created_at DESC, id DESC);
 CREATE INDEX bookings_site_time_idx ON bookings (site_id, starts_at, ends_at);

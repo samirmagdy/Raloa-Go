@@ -5,6 +5,8 @@ import pg from 'pg';
 
 const databaseUrl = process.env.POSTGRES_DATABASE_URL || process.env.DATABASE_URL;
 if (!databaseUrl) { console.error('DATABASE_URL is required to apply PostgreSQL migrations.'); process.exit(2); }
+const environment = process.env.POSTGRES_ENVIRONMENT || (process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'local');
+if ((environment === 'staging' || environment === 'production') && process.env.POSTGRES_SSL !== 'true') { console.error('POSTGRES_SSL=true is required for staging/production migrations.'); process.exit(2); }
 const { Client } = pg;
 const postgresUrlSelected = Boolean(process.env.POSTGRES_DATABASE_URL);
 const client = new Client({ connectionString: databaseUrl, ssl: process.env.POSTGRES_SSL === 'true' || (!postgresUrlSelected && process.env.DATABASE_SSL !== 'false') ? { rejectUnauthorized: false } : false });

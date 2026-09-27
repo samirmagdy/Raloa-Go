@@ -17,5 +17,24 @@ services:
       timeout: 5s
       retries: 10
 
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: raloa-postgres-test
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: raloa_test
+      POSTGRES_USER: raloa
+      POSTGRES_PASSWORD: raloa_test_only
+    ports:
+      - "5434:5432"
+    volumes:
+      - raloa_postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U raloa -d raloa_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   raloa_postgres_data:
+  raloa_postgres_test_data:
