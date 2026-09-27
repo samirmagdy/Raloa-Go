@@ -53,6 +53,7 @@ import { createBackgroundJobService, createConfiguredDispatcher, createFirestore
 import { appendOutboxEvent, createFirestoreOutboxRepository, createOutboxEvent, createOutboxService, outboxEventId } from './server/outbox';
 import { createDomainEventBus, DOMAIN_EVENTS, eventType, type DomainEvent } from './server/events';
 import { createPublicCreatorAdapter } from './server/public-site';
+import { apiErrorSchema } from './src/shared/schema';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -202,13 +203,14 @@ async function enforcePublicRateLimit(req: Request, key: string, limit: number, 
 }
 
 function apiError(res: Response, status: number, code: string, message: string, fields?: Record<string, string>) {
-  return res.status(status).json({
+  const body = apiErrorSchema.parse({
     status: 'error',
     error: code,
     code,
     message,
     ...(fields ? { fields } : {})
   });
+  return res.status(status).json(body);
 }
 
 async function claimIdempotency(scope: string, key: string): Promise<{ replay: boolean; inProgress?: boolean; response?: Record<string, unknown> }> {

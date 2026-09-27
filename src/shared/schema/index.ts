@@ -42,6 +42,7 @@ export const workerPayloadSchemas = {
   stripe_reconciliation: z.object({ eventId: z.string().optional() }).passthrough(),
   cleanup: z.object({ eventId: z.string().optional() }).passthrough()
 } as const;
+export * from './api';
 
 export type SiteConfigV1 = z.infer<typeof siteConfigSchemaV1>;
 export type PublicPageV1 = z.infer<typeof publicPageSchemaV1>;
