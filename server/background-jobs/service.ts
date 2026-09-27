@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { BackgroundJob, BackgroundJobHandler, BackgroundJobRepository, JobDispatcher, JobKind } from './types';
+import { validateWorkerPayload } from '../../src/shared/schema';
 
 const DEFAULT_MAX_ATTEMPTS = 8;
 const LEASE_MS = 5 * 60 * 1000;
@@ -30,6 +31,7 @@ export function createBackgroundJobService(repository: BackgroundJobRepository, 
       const handler = handlers[claimed.kind];
       if (!handler) return repository.fail(id, { error: 'JOB_HANDLER_NOT_REGISTERED', deadLetter: true, at: new Date().toISOString() });
       try {
+        claimed.payload = validateWorkerPayload(claimed.kind, claimed.payload);
         await handler(claimed);
         await repository.complete(id, new Date().toISOString());
         log('background_job_completed', claimed);

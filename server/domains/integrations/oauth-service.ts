@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { oauthTokenBundleSchemaV1 } from '../../../src/shared/schema';
 
 export type OAuthConnectionState = 'connected' | 'refreshing' | 'reauthorization_required' | 'revoked' | 'error';
 export interface OAuthTokenBundle { accessToken: string; refreshToken?: string; expiresAt?: number; }
@@ -51,11 +52,12 @@ export function createOAuthTokenService(repository: OAuthConnectionRepository, a
   const adapterFor = (provider: string) => adapters.find((adapter) => adapter.provider === provider) || null;
   const service = {
     async connect(input: { id: string; userId: string; siteId?: string; provider: string; scopes: string[]; tokens: OAuthTokenBundle }): Promise<void> {
+      const tokens = oauthTokenBundleSchemaV1.parse(input.tokens);
       const adapter = adapterFor(input.provider);
       if (!adapter) throw new Error('OAUTH_PROVIDER_NOT_SUPPORTED');
       assertAllowedScopes(input.scopes, adapter.allowedScopes);
       const now = new Date().toISOString();
-      await repository.save({ id: input.id, userId: input.userId, siteId: input.siteId, provider: input.provider, scopes: [...input.scopes], state: 'connected', encryptedAccessToken: encrypt(input.tokens.accessToken), ...(input.tokens.refreshToken ? { encryptedRefreshToken: encrypt(input.tokens.refreshToken) } : {}), expiresAt: input.tokens.expiresAt, tokenVersion: 1, updatedAt: now });
+      await repository.save({ id: input.id, userId: input.userId, siteId: input.siteId, provider: input.provider, scopes: [...input.scopes], state: 'connected', encryptedAccessToken: encrypt(tokens.accessToken), ...(tokens.refreshToken ? { encryptedRefreshToken: encrypt(tokens.refreshToken) } : {}), expiresAt: tokens.expiresAt, tokenVersion: 1, updatedAt: now });
     },
     async withAccessToken<T>(userId: string, provider: string, siteId: string | undefined, operation: (accessToken: string) => Promise<T>): Promise<T> {
       const connection = await repository.get(userId, provider, siteId);

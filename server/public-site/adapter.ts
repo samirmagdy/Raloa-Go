@@ -1,5 +1,6 @@
 import { normalizeSiteContent } from '../../src/shared/schemas';
 import type { PublicCreatorAdapter, PublicCreatorMetadata, PublicCreatorPage } from '../../src/shared/public';
+import { publicPageSchemaV1 } from '../../src/shared/schema';
 
 export interface PublicSiteSource {
   getPublishedSiteByHandle(handle: string): Promise<Record<string, unknown> | null>;
@@ -27,7 +28,9 @@ export function createPublicCreatorAdapter(source: PublicSiteSource): PublicCrea
       const handle = cleanHandle(value);
       if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return null;
       const site = await source.getPublishedSiteByHandle(handle);
-      return site ? pageFromSite(handle, site) : null;
+      if (!site) return null;
+      const page = pageFromSite(handle, site);
+      return publicPageSchemaV1.parse(page);
     },
     getMetadata: metadataFor
   };
