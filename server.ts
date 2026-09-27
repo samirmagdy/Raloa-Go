@@ -17,6 +17,7 @@ import {
   cloudflareRequest,
   getBillingDetails,
   getAuthoritativeBillingState,
+  reconcileStripeBillingState,
   deleteDomain,
   findDomainByHostname,
   findDomainById,
@@ -5140,6 +5141,8 @@ if (isDirectExecution && process.env.NODE_ENV !== 'test') {
   calendarWorker.unref();
   const mediaCleanupWorker = setInterval(() => { void sweepOrphanMedia().catch((error) => console.error('[Media cleanup worker]', error)); }, 60 * 60 * 1000);
   mediaCleanupWorker.unref();
+  const billingReconciliationWorker = setInterval(() => { void reconcileStripeBillingState().catch((error) => console.error('[Billing reconciliation worker]', error)); }, Number(process.env.BILLING_RECONCILIATION_INTERVAL_MS) || 15 * 60 * 1000);
+  billingReconciliationWorker.unref();
 }
 
 export default app;

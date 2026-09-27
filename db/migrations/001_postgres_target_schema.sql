@@ -21,6 +21,8 @@ CREATE TYPE fulfillment_status AS ENUM ('unfulfilled', 'processing', 'fulfilled'
 CREATE TYPE subscription_status AS ENUM ('trialing', 'active', 'past_due', 'cancelled', 'incomplete', 'paused');
 CREATE TYPE integration_status AS ENUM ('connected', 'disconnected', 'error');
 CREATE TYPE idempotency_status AS ENUM ('processing', 'completed', 'failed');
+CREATE TYPE entitlement_state AS ENUM ('free', 'trial', 'active', 'grace_period', 'past_due', 'cancellation_scheduled', 'subscription_ending', 'pending', 'failed_payment', 'canceled');
+CREATE TYPE webhook_processing_status AS ENUM ('received', 'processing', 'processed', 'failed');
 
 CREATE TABLE app_users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -383,19 +385,47 @@ CREATE TABLE fulfillments (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE billing_price_mappings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider text NOT NULL DEFAULT 'stripe',
+  plan text NOT NULL CHECK (plan IN ('pro', 'studio')),
+  billing_interval text NOT NULL CHECK (billing_interval IN ('monthly', 'yearly')),
+  provider_product_id text,
+  provider_price_id text NOT NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (provider, provider_price_id),
+  UNIQUE (provider, plan, billing_interval)
+);
+
+CREATE TABLE billing_customers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL UNIQUE REFERENCES app_users(id) ON DELETE CASCADE,
+  provider text NOT NULL DEFAULT 'stripe',
+  provider_customer_id text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (provider, provider_customer_id)
+);
+
 CREATE TABLE subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES app_users(id),
   provider text NOT NULL DEFAULT 'stripe',
   provider_customer_id text,
   provider_subscription_id text,
+  price_mapping_id uuid REFERENCES billing_price_mappings(id),
+  provider_price_id text,
   plan text NOT NULL CHECK (plan IN ('free', 'pro', 'studio')),
   status subscription_status NOT NULL,
+  entitlement_state entitlement_state NOT NULL DEFAULT 'free',
   interval text CHECK (interval IN ('monthly', 'yearly')),
   current_period_end timestamptz,
   trial_end timestamptz,
   cancel_at timestamptz,
   cancel_at_period_end boolean NOT NULL DEFAULT false,
+  renewed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (user_id, provider),
@@ -403,6 +433,50 @@ CREATE TABLE subscriptions (
   UNIQUE (provider, provider_customer_id)
 );
 CREATE INDEX subscriptions_status_idx ON subscriptions (status, current_period_end);
+CREATE INDEX subscriptions_reconciliation_idx ON subscriptions (provider, updated_at)
+  WHERE provider_subscription_id IS NOT NULL;
+
+CREATE TABLE subscription_state_history (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  subscription_id uuid NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+  previous_state entitlement_state,
+  next_state entitlement_state NOT NULL,
+  provider_event_id text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX subscription_state_history_subscription_idx ON subscription_state_history (subscription_id, created_at DESC);
+
+CREATE TABLE billing_webhook_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider text NOT NULL DEFAULT 'stripe',
+  provider_event_id text NOT NULL,
+  event_type text NOT NULL,
+  status webhook_processing_status NOT NULL DEFAULT 'received',
+  payload jsonb,
+  error_message text,
+  received_at timestamptz NOT NULL DEFAULT now(),
+  processed_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (provider, provider_event_id)
+);
+CREATE INDEX billing_webhook_events_retry_idx ON billing_webhook_events (status, received_at)
+  WHERE status IN ('received', 'failed');
+
+CREATE TABLE billing_reconciliation_runs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider text NOT NULL DEFAULT 'stripe',
+  user_id uuid REFERENCES app_users(id),
+  provider_customer_id text,
+  provider_subscription_id text,
+  status text NOT NULL CHECK (status IN ('started', 'completed', 'failed')),
+  observed_at timestamptz,
+  error_message text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX billing_reconciliation_due_idx ON billing_reconciliation_runs (provider, created_at)
+  WHERE status IN ('started', 'failed');
 
 CREATE TABLE integrations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -490,7 +564,7 @@ CREATE INDEX idempotency_expiry_idx ON idempotency_keys (expires_at);
 
 CREATE TABLE operational_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  kind text NOT NULL CHECK (kind IN ('notification', 'calendar', 'media_cleanup')),
+  kind text NOT NULL CHECK (kind IN ('notification', 'calendar', 'media_cleanup', 'billing_reconciliation')),
   aggregate_type text,
   aggregate_id uuid,
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -525,7 +599,7 @@ $$;
 DO $$
 DECLARE table_name text;
 BEGIN
-  FOREACH table_name IN ARRAY ARRAY['app_users', 'sites', 'booking_services', 'booking_slots', 'bookings', 'booking_attendees', 'calendar_sync_state', 'booking_idempotency_keys', 'products', 'product_variants', 'inventory', 'orders', 'order_items', 'inventory_reservations', 'payments', 'fulfillments', 'subscriptions', 'integrations', 'custom_domains', 'analytics_daily_rollups', 'idempotency_keys', 'operational_jobs'] LOOP
+  FOREACH table_name IN ARRAY ARRAY['app_users', 'sites', 'booking_services', 'booking_slots', 'bookings', 'booking_attendees', 'calendar_sync_state', 'booking_idempotency_keys', 'products', 'product_variants', 'inventory', 'orders', 'order_items', 'inventory_reservations', 'payments', 'fulfillments', 'billing_price_mappings', 'billing_customers', 'subscriptions', 'billing_webhook_events', 'billing_reconciliation_runs', 'integrations', 'custom_domains', 'analytics_daily_rollups', 'idempotency_keys', 'operational_jobs'] LOOP
     EXECUTE format('CREATE TRIGGER %I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION set_updated_at()', table_name, table_name);
   END LOOP;
 END;

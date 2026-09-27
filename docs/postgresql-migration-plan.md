@@ -14,6 +14,9 @@ and does not run against the current Firebase project.
   booking/order transactions.
 - Inventory is variant-scoped: `inventory` is the current stock snapshot, while
   `inventory_movements` is the append-only audit ledger and `inventory_reservations` tracks holds.
+- Stripe billing is an event source, not the application read model: `billing_customers`,
+  `billing_price_mappings`, `subscriptions`, and `subscription_state_history` hold normalized
+  internal billing state.
 
 ## Transaction boundaries
 
@@ -29,11 +32,15 @@ and does not run against the current Firebase project.
 3. Payment webhook: lock the idempotency key and subscription/order row, apply the provider event,
    update subscription/order state, release or consume inventory, and enqueue notifications in one
    transaction.
-4. Subscription changes: upsert by `(user_id, provider)`, with provider event IDs recorded in the
+4. Billing webhook: claim `(provider, provider_event_id)` in `billing_webhook_events`; if already
+   processed, return the stored result. Otherwise upsert the customer/subscription snapshot,
+   append subscription history, update entitlement state, and mark the event processed in one
+   transaction.
+5. Subscription changes: upsert by `(user_id, provider)`, with provider event IDs recorded in the
    idempotency table before applying state changes.
-5. Analytics ingestion: append the event independently; rollups are updated asynchronously with
+6. Analytics ingestion: append the event independently; rollups are updated asynchronously with
    `INSERT ... ON CONFLICT DO UPDATE`.
-6. Job workers: claim work with `FOR UPDATE SKIP LOCKED`, increment attempts, perform the external
+7. Job workers: claim work with `FOR UPDATE SKIP LOCKED`, increment attempts, perform the external
    call outside the database lock, then commit success/retry state.
 
 ## Inventory transaction rules
@@ -103,3 +110,11 @@ being reconciled.
 
 Rollback is a feature-flag change while dual-write remains enabled; no destructive Firestore
 operation is part of this migration.
+
+## Billing reconciliation
+
+The Stripe webhook path is the low-latency update path. A scheduled reconciliation worker also
+lists Stripe subscriptions for known customers, recomputes plan, price, entitlement state, renewal,
+trial, and cancellation fields, then records a `billing_reconciliation_runs` result. Reconciliation
+is bounded per run and safe to retry; it repairs missed/out-of-order webhook effects without making
+Stripe calls part of normal entitlement reads.

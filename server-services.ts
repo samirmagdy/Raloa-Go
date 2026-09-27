@@ -276,6 +276,7 @@ export async function getAuthoritativeBillingState(uid: string): Promise<Authori
         isYearly: subscriptionInterval(subscription) === 'yearly',
         stripeCustomerId: customerId,
         stripeSubscriptionId: subscription.id,
+        subscriptionPriceId: subscription.items.data[0]?.price?.id || null,
         billingStatus: subscription.status,
         subscriptionCurrentPeriodEnd: currentPeriodEnd ? new Date(currentPeriodEnd * 1000).toISOString() : null,
         subscriptionTrialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
@@ -319,6 +320,25 @@ export async function getAuthoritativeBillingState(uid: string): Promise<Authori
     subscriptionId: typeof account.stripeSubscriptionId === 'string' ? account.stripeSubscriptionId : null,
     source: 'account'
   };
+}
+
+export async function reconcileStripeBillingState(limit = 100): Promise<number> {
+  if (!stripe || !isAdminConfigured()) return 0;
+  const users = await adminDb.collection('users').limit(Math.min(Math.max(limit, 1), 500)).get();
+  let reconciled = 0;
+  for (const user of users.docs) {
+    if (typeof user.data()?.stripeCustomerId !== 'string') continue;
+    const run = adminDb.collection('billing_reconciliation_runs').doc();
+    await run.set({ provider: 'stripe', userId: user.id, providerCustomerId: user.data()?.stripeCustomerId, status: 'started', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    try {
+      const state = await getAuthoritativeBillingState(user.id);
+      await run.set({ status: 'completed', providerSubscriptionId: state.subscriptionId, observedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true });
+      reconciled += 1;
+    } catch (error) {
+      await run.set({ status: 'failed', errorMessage: error instanceof Error ? error.message : 'BILLING_RECONCILIATION_FAILED', updatedAt: new Date().toISOString() }, { merge: true }).catch(() => undefined);
+    }
+  }
+  return reconciled;
 }
 
 export function getCloudflareConfig(): { apiToken: string; zoneId: string } | null {
@@ -522,6 +542,7 @@ export async function handleStripeWebhook(payload: string | Buffer, signature: s
 
   if (isAdminConfigured()) {
     const eventRef = adminDb.collection('stripe_events').doc(event.id);
+    const billingWebhookRef = adminDb.collection('billing_webhook_events').doc(event.id);
     let shouldProcess = true;
     await adminDb.runTransaction(async (transaction) => {
       const eventSnapshot = await transaction.get(eventRef);
@@ -535,9 +556,20 @@ export async function handleStripeWebhook(payload: string | Buffer, signature: s
         throw new Error('STRIPE_EVENT_IN_PROGRESS');
       }
       transaction.set(eventRef, {
+        provider: 'stripe',
+        providerEventId: event.id,
         type: event.type,
+        eventType: event.type,
         status: 'processing',
         receivedAt: new Date().toISOString()
+      }, { merge: true });
+      transaction.set(billingWebhookRef, {
+        provider: 'stripe',
+        providerEventId: event.id,
+        eventType: event.type,
+        status: 'processing',
+        receivedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       }, { merge: true });
     });
     if (!shouldProcess) return;
@@ -591,6 +623,7 @@ export async function handleStripeWebhook(payload: string | Buffer, signature: s
         stripeSubscriptionId: subscription.id,
         billingStatus: subscription.status,
         billingState: state,
+        subscriptionPriceId: subscription.items.data[0]?.price?.id || null,
         subscriptionCurrentPeriodEnd: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
         subscriptionTrialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
         subscriptionCancelAt: cancellationDate,
@@ -610,6 +643,11 @@ export async function handleStripeWebhook(payload: string | Buffer, signature: s
     await adminDb.collection('stripe_events').doc(event.id).set({
       status: 'processed',
       processedAt: new Date().toISOString()
+    }, { merge: true });
+    await adminDb.collection('billing_webhook_events').doc(event.id).set({
+      status: 'processed',
+      processedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     }, { merge: true });
   }
 }
