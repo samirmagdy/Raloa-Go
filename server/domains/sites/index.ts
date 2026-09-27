@@ -1,17 +1,13 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { ownedSubcollectionRepository } from '../../infrastructure/firestore-repository';
-import type { DomainModule, OwnedResourceRepository } from '../../core/types';
-import { ownedDocument } from '../../core/ownership';
+import type { DomainModule } from '../../core/types';
 import { createSitesService, type SitesService } from './service';
+import { createFirestoreSitesRepository } from '../../repositories/firestore';
+import type { SiteRecord, SitesRepository } from '../../repositories/contracts';
 
-export interface SiteRecord { userId?: string; username?: string; isPublished?: boolean; [key: string]: unknown }
-export interface SitesModule extends DomainModule { repository: OwnedResourceRepository<SiteRecord>; service: SitesService; }
+export { type SiteRecord } from '../../repositories/contracts';
+export interface SitesModule extends DomainModule { repository: SitesRepository; service: SitesService; }
 
 export function createSitesModule(db: Firestore): SitesModule {
-  const repository = ownedSubcollectionRepository<SiteRecord>(db, 'sites');
+  const repository = createFirestoreSitesRepository(db);
   return { name: 'sites', routes: ['/api/sites', '/api/public/sites/:handle'], repository, service: createSitesService(repository) };
-}
-
-export async function getOwnedSite(module: SitesModule, userId: string, siteId: string): Promise<SiteRecord | null> {
-  return (await ownedDocument(module.repository, userId, siteId))?.data() as SiteRecord | null;
 }

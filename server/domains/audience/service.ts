@@ -1,5 +1,5 @@
-import type { Repository } from '../../core/types';
+import type { AudienceRepository } from '../../repositories/contracts';
 export interface AudienceService { list(userId: string, limit?: number): Promise<Record<string, unknown>[]>; save(id: string, value: Record<string, unknown>): Promise<void>; }
-export function createAudienceService(repository: Repository): AudienceService {
-  return { list: async (userId, limit) => (await repository.query().where('userId', '==', userId).limit(limit || 100).get()).docs.map((doc) => doc.data()), save: (id, value) => repository.save(id, value) };
+export function createAudienceService(repository: AudienceRepository): AudienceService {
+  return { list: (userId, limit) => repository.list(userId, undefined, limit), save: (id, value) => repository.save('subscriber', id, value) };
 }

@@ -1,7 +1,5 @@
-import type { OwnedResourceRepository } from '../../core/types';
-import { ownedDocument } from '../../core/ownership';
 import { requiredString, type ValidationResult } from '../../core/validation';
-import type { SiteRecord } from './index';
+import type { SiteRecord, SitesRepository } from '../../repositories/contracts';
 
 export interface SitesService {
   listSites(userId: string): Promise<SiteRecord[]>;
@@ -9,10 +7,10 @@ export interface SitesService {
   validateHandle(value: unknown): ValidationResult<string>;
 }
 
-export function createSitesService(repository: OwnedResourceRepository<SiteRecord>): SitesService {
+export function createSitesService(repository: SitesRepository): SitesService {
   return {
-    listSites: async (userId) => (await repository.listOwned(userId)).map((snapshot) => snapshot.data()),
-    getSite: async (userId, siteId) => (await ownedDocument(repository, userId, siteId))?.data() as SiteRecord | null,
+    listSites: (userId) => repository.listOwned(userId),
+    getSite: (userId, siteId) => repository.getOwned(userId, siteId),
     validateHandle: (value) => requiredString(value, 'handle', 30)
   };
 }
