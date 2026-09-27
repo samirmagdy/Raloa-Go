@@ -49,6 +49,7 @@ import { stripeAdapter } from './server/adapters/stripe';
 import { cloudflareAdapter } from './server/adapters/cloudflare';
 import { createBillingController } from './server/domains/billing/controller';
 import { assertOrderTransition, legacyOrderState } from './server/domains/orders/state-machine';
+import { createBackgroundJobService, createConfiguredDispatcher, createFirestoreBackgroundJobRepository } from './server/background-jobs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,6 +63,16 @@ export const domainModules = createDomainModules(adminDb, {
   cloudflare: cloudflareAdapter,
   oauthAdapters: oauthProviderAdapters(),
   providers: calendarProviders()
+});
+export const backgroundJobs = createBackgroundJobService(createFirestoreBackgroundJobRepository(adminDb), createConfiguredDispatcher(), {
+  email_delivery: async () => processPendingBookingNotifications(),
+  calendar_sync: async () => processPendingCalendarJobs(),
+  media_processing: async () => sweepOrphanMedia(),
+  cleanup: async () => sweepOrphanMedia(),
+  stripe_reconciliation: async () => { await reconcileStripeBillingState(); },
+  domain_verification: async () => undefined,
+  oauth_refresh: async () => undefined,
+  analytics_rollup: async () => undefined
 });
 const billingController = createBillingController(domainModules.billing.service, (request) => getAuthenticatedUser(request));
 const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS || 1);
@@ -1976,7 +1987,8 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
     };
     if (calendarProvider !== 'none' && !calendarReady) calendarJob.lastError = 'CALENDAR_PROVIDER_NOT_CONFIGURED';
     await adminDb.collection('calendar_jobs').add(calendarJob);
-    void processPendingBookingNotifications();
+    void backgroundJobs.enqueue({ kind: 'email_delivery', idempotencyKey: `booking:${bookingReference.id}:notifications`, payload: { bookingId: bookingReference.id } }).catch((error) => console.error('[Background job enqueue]', error));
+    if (calendarProvider !== 'none' && calendarReady) void backgroundJobs.enqueue({ kind: 'calendar_sync', idempotencyKey: `booking:${bookingReference.id}:calendar`, payload: { bookingId: bookingReference.id } }).catch((error) => console.error('[Background job enqueue]', error));
     const response = { id: bookingReference.id, status: booking.status, confirmationStatus: booking.confirmationStatus, timezone: config.timezone, slotStart: booking.slotStart, slotEnd: booking.slotEnd };
     await completeIdempotency('booking', idempotencyKey, response);
     return res.status(201).json(response);
@@ -2027,12 +2039,14 @@ app.post('/api/creator/bookings/:bookingId/confirm', async (req: Request, res: R
   if (booking.status !== 'confirmed') await bookingRef.set({ status: 'confirmed', confirmationStatus: 'confirmed', confirmedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true });
   const customerEmail = String(booking.customerEmail || '');
   await adminDb.collection('notification_jobs').add({ audience: 'customer', email: customerEmail, type: 'booking_confirmed', bookingId: bookingRef.id, status: 'pending', attempts: 0, maxAttempts: 8, createdAt: new Date().toISOString() });
+  void backgroundJobs.enqueue({ kind: 'email_delivery', idempotencyKey: `booking:${bookingRef.id}:confirmed`, payload: { bookingId: bookingRef.id } }).catch((error) => console.error('[Background job enqueue]', error));
   const hostSite = await getPublishedSiteByHandle(String(booking.hostHandle || '')).catch(() => null);
   const provider = String((hostSite?.bookingConfig as Record<string, unknown> | undefined)?.calendarProvider || 'none') as CalendarProvider | 'none';
   if (provider !== 'none') {
     const calendarRef = adminDb.collection('calendar_jobs').where('bookingId', '==', bookingRef.id).limit(1);
     const jobs = await calendarRef.get();
     if (!jobs.empty) await jobs.docs[0].ref.set({ status: calendarProviderIsConfigured(provider) ? 'pending' : 'blocked', operation: 'create', lastError: calendarProviderIsConfigured(provider) ? null : 'CALENDAR_PROVIDER_NOT_CONFIGURED', updatedAt: new Date().toISOString() }, { merge: true });
+    if (calendarProviderIsConfigured(provider)) void backgroundJobs.enqueue({ kind: 'calendar_sync', idempotencyKey: `booking:${bookingRef.id}:calendar`, payload: { bookingId: bookingRef.id } }).catch((error) => console.error('[Background job enqueue]', error));
   }
   return res.json({ id: bookingRef.id, status: 'confirmed', confirmationStatus: 'confirmed' });
 });
@@ -2062,6 +2076,8 @@ app.post('/api/creator/bookings/:bookingId/cancel', async (req: Request, res: Re
     await job.ref.set(data.externalEventId ? { status: 'pending', operation: 'cancel', updatedAt: new Date().toISOString() } : { status: 'cancelled', updatedAt: new Date().toISOString() }, { merge: true });
   }
   await adminDb.collection('notification_jobs').add({ audience: 'customer', email: String(booking.customerEmail || ''), type: 'booking_cancelled', bookingId: bookingRef.id, status: 'pending', attempts: 0, maxAttempts: 8, createdAt: new Date().toISOString() });
+  void backgroundJobs.enqueue({ kind: 'email_delivery', idempotencyKey: `booking:${bookingRef.id}:cancelled`, payload: { bookingId: bookingRef.id } }).catch((error) => console.error('[Background job enqueue]', error));
+  if (!calendarJobs.empty && calendarJobs.docs[0].data()?.externalEventId) void backgroundJobs.enqueue({ kind: 'calendar_sync', idempotencyKey: `booking:${bookingRef.id}:cancel`, payload: { bookingId: bookingRef.id } }).catch((error) => console.error('[Background job enqueue]', error));
   return res.json({ id: bookingRef.id, status: 'cancelled', confirmationStatus: 'cancelled' });
 });
 
@@ -5118,6 +5134,21 @@ app.get('*', async (req: Request, res: Response) => {
   return res.status(200).send(html);
 });
 
+app.post('/internal/background-jobs/run', async (req: Request, res: Response) => {
+  const configuredSecret = process.env.BACKGROUND_JOB_SECRET;
+  const providedSecret = req.headers['x-background-job-secret'];
+  if (!configuredSecret || providedSecret !== configuredSecret) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  const jobId = typeof req.body?.jobId === 'string' ? req.body.jobId : '';
+  if (!jobId) return res.status(400).json({ error: 'JOB_ID_REQUIRED' });
+  try {
+    await backgroundJobs.run(jobId);
+    return res.status(202).json({ accepted: true, jobId });
+  } catch (error) {
+    console.error('[Background job worker]', error);
+    return res.status(500).json({ error: 'JOB_PROCESSING_FAILED' });
+  }
+});
+
 app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
   const requestId = res.getHeader('X-Request-ID');
   console.error(JSON.stringify({
@@ -5137,14 +5168,6 @@ if (isDirectExecution && process.env.NODE_ENV !== 'test') {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[RALOA Edge Proxy] Listening on http://0.0.0.0:${PORT}`);
   });
-  const notificationWorker = setInterval(() => { void processPendingBookingNotifications(); }, 30_000);
-  notificationWorker.unref();
-  const calendarWorker = setInterval(() => { void processPendingCalendarJobs(); }, 30_000);
-  calendarWorker.unref();
-  const mediaCleanupWorker = setInterval(() => { void sweepOrphanMedia().catch((error) => console.error('[Media cleanup worker]', error)); }, 60 * 60 * 1000);
-  mediaCleanupWorker.unref();
-  const billingReconciliationWorker = setInterval(() => { void reconcileStripeBillingState().catch((error) => console.error('[Billing reconciliation worker]', error)); }, Number(process.env.BILLING_RECONCILIATION_INTERVAL_MS) || 15 * 60 * 1000);
-  billingReconciliationWorker.unref();
 }
 
 export default app;

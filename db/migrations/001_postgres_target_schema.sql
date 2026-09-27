@@ -579,17 +579,23 @@ CREATE INDEX idempotency_expiry_idx ON idempotency_keys (expires_at);
 
 CREATE TABLE operational_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  kind text NOT NULL CHECK (kind IN ('notification', 'calendar', 'media_cleanup', 'billing_reconciliation')),
+  kind text NOT NULL CHECK (kind IN ('calendar_sync', 'email_delivery', 'domain_verification', 'oauth_refresh', 'analytics_rollup', 'media_processing', 'stripe_reconciliation', 'cleanup')),
   aggregate_type text,
   aggregate_id uuid,
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
-  status text NOT NULL CHECK (status IN ('pending', 'processing', 'completed', 'retry', 'failed')),
+  idempotency_key text NOT NULL,
+  status text NOT NULL CHECK (status IN ('pending', 'processing', 'completed', 'retry', 'dead_letter')),
   attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 8 CHECK (max_attempts > 0),
   available_at timestamptz NOT NULL DEFAULT now(),
+  lease_until timestamptz,
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz,
+  dead_lettered_at timestamptz
 );
+CREATE UNIQUE INDEX operational_jobs_idempotency_idx ON operational_jobs (kind, idempotency_key);
 CREATE INDEX operational_jobs_claim_idx ON operational_jobs (status, available_at, created_at);
 
 CREATE TABLE audit_log (
