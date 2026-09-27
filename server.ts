@@ -49,6 +49,7 @@ import { stripeAdapter } from './server/adapters/stripe';
 import { cloudflareAdapter } from './server/adapters/cloudflare';
 import { createBillingController } from './server/domains/billing/controller';
 import { createEntitlementService } from './server/domains/billing/entitlement-service';
+import { buildRateLimitKey, RATE_LIMIT_POLICIES, type RateLimitIdentity, type RateLimitPolicyName } from './server/core/rate-limit-policy';
 import { assertOrderTransition, legacyOrderState } from './server/domains/orders/state-machine';
 import { createBackgroundJobService, createConfiguredDispatcher, createFirestoreBackgroundJobRepository, type JobKind } from './server/background-jobs';
 import { appendOutboxEvent, createFirestoreOutboxRepository, createOutboxEvent, createOutboxService, outboxEventId } from './server/outbox';
@@ -202,6 +203,19 @@ async function enforcePublicRateLimit(req: Request, key: string, limit: number, 
   if (allowed) bucket.count += 1;
   PUBLIC_RATE_LIMITS.set(identity, bucket);
   return { allowed, retryAfter: Math.max(1, Math.ceil((bucket.startedAt + windowMs - now) / 1000)) };
+}
+
+async function enforceRateLimitPolicy(policyName: RateLimitPolicyName, identity: RateLimitIdentity): Promise<{ allowed: boolean; retryAfter: number }> {
+  const policy = RATE_LIMIT_POLICIES[policyName];
+  const key = buildRateLimitKey(policyName, identity);
+  if (isAdminConfigured()) return consumeDistributedRateLimit(key, policy.limit, policy.windowMs);
+  const now = Date.now();
+  const current = PUBLIC_RATE_LIMITS.get(key);
+  const bucket = !current || now - current.startedAt >= policy.windowMs ? { startedAt: now, count: 0 } : current;
+  const allowed = bucket.count < policy.limit;
+  if (allowed) bucket.count += 1;
+  PUBLIC_RATE_LIMITS.set(key, bucket);
+  return { allowed, retryAfter: Math.max(1, Math.ceil((bucket.startedAt + policy.windowMs - now) / 1000)) };
 }
 
 function apiError(res: Response, status: number, code: string, message: string, fields?: Record<string, string>) {
@@ -1943,7 +1957,7 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
   const config = normalizeBookingConfig(hostSite?.bookingConfig);
   const service = config.services.find((item) => item.id === serviceId);
   if (!hostSite || !config.enabled || !service) return apiError(res, 404, 'SCHEDULING_DISABLED', 'This booking service is unavailable.');
-  const rate = await enforcePublicRateLimit(req, 'booking', 10, 60 * 60 * 1000);
+  const rate = await enforceRateLimitPolicy('publicBooking', { ip: clientIdentity(req), site: hostHandle });
   if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many booking requests', retry_after: rate.retryAfter });
   const idempotencyKey = req.headers['idempotency-key'];
   if (typeof idempotencyKey !== 'string') return apiError(res, 400, 'IDEMPOTENCY_REQUIRED', 'Idempotency-Key header is required.');
@@ -2123,7 +2137,7 @@ app.post('/api/v1/public/newsletter', async (req: Request, res: Response) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   const siteHandle = typeof req.body?.siteHandle === 'string' ? req.body.siteHandle.trim().toLowerCase() : '';
   if (!validEmail(email)) return res.status(400).json({ error: 'A valid email is required' });
-  const rate = await enforcePublicRateLimit(req, 'newsletter', 5, 60 * 60 * 1000);
+  const rate = await enforceRateLimitPolicy('publicForms', { ip: clientIdentity(req), site: siteHandle || 'unknown' });
   if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many newsletter requests', retry_after: rate.retryAfter });
   try {
     if (!isAdminConfigured()) return res.status(503).json({ error: 'Newsletter service is not configured' });
@@ -2412,6 +2426,8 @@ app.get('/api/creator/audience/export', async (req: Request, res: Response) => {
   try {
     const site = await getOwnedAudienceSite(user, typeof req.query.siteHandle === 'string' ? req.query.siteHandle : undefined, typeof req.query.siteId === 'string' ? req.query.siteId : undefined);
     if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
+    const exportRate = await enforceRateLimitPolicy('imports', { ip: clientIdentity(req), user: user.uid, site: site.id });
+    if (!exportRate.allowed) return res.status(429).set('Retry-After', String(exportRate.retryAfter)).json({ error: 'Too many audience export requests', retry_after: exportRate.retryAfter });
     const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 120) : '';
     const status = typeof req.query.status === 'string' ? req.query.status.trim().slice(0, 30) : '';
     const from = req.query.from && validAudienceDate(req.query.from) ? req.query.from : null;
@@ -2448,13 +2464,13 @@ app.post('/api/v1/public/contact', async (req: Request, res: Response) => {
 
   // Rate limit: Max 5 submissions per hour per IP (FR-2.4)
   const timestamps = (CONTACT_RATE_LIMITS.get(ip) || []).filter((t) => t > oneHourAgo);
-  const distributedLimit = await consumeDistributedRateLimit(`contact:${ip}`, 5, 3600000);
-  if ((!isAdminConfigured() && timestamps.length >= 5) || (isAdminConfigured() && !distributedLimit.allowed)) {
+  const formLimit = await enforceRateLimitPolicy('publicForms', { ip, site: typeof req.body?.siteHandle === 'string' ? req.body.siteHandle.trim().toLowerCase() : 'unknown' });
+  if ((!isAdminConfigured() && timestamps.length >= RATE_LIMIT_POLICIES.publicForms.limit) || (isAdminConfigured() && !formLimit.allowed)) {
     return res.status(429).json({
       status: 'error',
       error: 'Too Many Requests',
       message: 'Rate limit exceeded: maximum 5 contact inquiries per hour per IP.',
-      retry_after: distributedLimit.retryAfter || 3600
+      retry_after: formLimit.retryAfter || 3600
     });
   }
 
@@ -2524,7 +2540,7 @@ app.post('/api/v1/public/telemetry/page-view', async (req: Request, res: Respons
   if (!pathValue || pathValue.length > 500 || !pathValue.startsWith('/')) {
     return apiError(res, 400, 'INVALID_TELEMETRY', 'A valid path is required.');
   }
-  const limit = await enforcePublicRateLimit(req, 'page-view', 60, 60 * 60 * 1000);
+  const limit = await enforceRateLimitPolicy('analyticsIngestion', { ip: clientIdentity(req), site: pathValue.match(/^\/@([a-z0-9_-]{3,30})/i)?.[1]?.toLowerCase() || 'unknown' });
   if (!limit.allowed) {
     res.setHeader('Retry-After', String(limit.retryAfter));
     return apiError(res, 429, 'RATE_LIMITED', 'Too many telemetry events.', { retryAfter: String(limit.retryAfter) });
@@ -2552,7 +2568,7 @@ app.post('/api/v1/public/telemetry/link-click', async (req: Request, res: Respon
   if (!linkId || linkId.length > 200 || !url || url.length > 2000 || !/^[a-z0-9_-]{3,30}$/.test(siteHandle)) {
     return apiError(res, 400, 'INVALID_TELEMETRY', 'Valid link, URL, and site handle are required.');
   }
-  const limit = await enforcePublicRateLimit(req, 'link-click', 120, 60 * 60 * 1000);
+  const limit = await enforceRateLimitPolicy('analyticsIngestion', { ip: clientIdentity(req), site: siteHandle || 'unknown' });
   if (!limit.allowed) {
     res.setHeader('Retry-After', String(limit.retryAfter));
     return apiError(res, 429, 'RATE_LIMITED', 'Too many telemetry events.', { retryAfter: String(limit.retryAfter) });
@@ -2728,7 +2744,7 @@ app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
         });
       }
     } else {
-      const distributedLimit = await consumeDistributedRateLimit(`login:${rateLimitKey}`, 5, 600000);
+      const distributedLimit = await consumeDistributedRateLimit(`login:${rateLimitKey}`, RATE_LIMIT_POLICIES.authLogin.limit, RATE_LIMIT_POLICIES.authLogin.windowMs);
       if (!distributedLimit.allowed) {
         res.setHeader('Retry-After', distributedLimit.retryAfter.toString());
         return res.status(429).json({ status: 'error', error: 'Too Many Requests', retry_after: distributedLimit.retryAfter });
@@ -2824,8 +2840,8 @@ app.post('/api/v1/auth/forgot-password', async (req: Request, res: Response) => 
   const fifteenMinutesAgo = now - 900000;
 
   const timestamps = (FORGOT_PW_RATE_LIMITS.get(rateKey) || []).filter((t) => t > fifteenMinutesAgo);
-  const distributedLimit = await consumeDistributedRateLimit(`password-reset:${rateKey}`, 3, 900000);
-  if ((!isAdminConfigured() && timestamps.length >= 3) || (isAdminConfigured() && !distributedLimit.allowed)) {
+  const distributedLimit = await consumeDistributedRateLimit(`password-reset:${rateKey}`, RATE_LIMIT_POLICIES.authPasswordReset.limit, RATE_LIMIT_POLICIES.authPasswordReset.windowMs);
+  if ((!isAdminConfigured() && timestamps.length >= RATE_LIMIT_POLICIES.authPasswordReset.limit) || (isAdminConfigured() && !distributedLimit.allowed)) {
     return res.status(429).json({
       status: 'error',
       error: 'Too Many Requests',
@@ -3691,6 +3707,8 @@ app.post('/api/media/upload', authenticateMediaUpload, parseMediaUpload, async (
   const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
   const purpose = typeof req.body?.purpose === 'string' ? req.body.purpose.trim().toLowerCase() : '';
   if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
+  const mediaRate = await enforceRateLimitPolicy('mediaUploads', { ip: clientIdentity(req), user: user.uid, site: siteId });
+  if (!mediaRate.allowed) return res.status(429).set('Retry-After', String(mediaRate.retryAfter)).json({ error: 'Too many media uploads', retry_after: mediaRate.retryAfter });
   if (!MEDIA_PURPOSES.has(purpose)) return apiError(res, 400, 'INVALID_MEDIA_PURPOSE', 'The media purpose is not supported.');
   if (!file?.buffer?.length) return apiError(res, 400, 'MEDIA_FILE_REQUIRED', 'Choose an image to upload.');
   if (!MEDIA_MIME_TYPES.has(file.mimetype)) return apiError(res, 415, 'UNSUPPORTED_MEDIA_TYPE', 'Only JPEG, PNG, and WebP images are supported.');
@@ -4272,7 +4290,7 @@ app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: R
   const customerEmail = typeof req.body?.customerEmail === 'string' ? req.body.customerEmail.trim().toLowerCase() : '';
   if (!/^[a-z0-9_-]{3,30}$/.test(handle) || !/^[A-Za-z0-9_-]{1,128}$/.test(productId) || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 20 || !validEmail(customerEmail)) return apiError(res, 400, 'INVALID_ORDER', 'A valid product, quantity, and email are required.');
   if (!isAdminConfigured() || !stripe) return apiError(res, 503, 'CHECKOUT_UNAVAILABLE', 'Checkout is not configured.');
-  const rate = await enforcePublicRateLimit(req, 'product-checkout', 10, 60 * 60 * 1000);
+  const rate = await enforceRateLimitPolicy('checkoutCreation', { ip: clientIdentity(req), site: handle });
   if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many checkout attempts', retry_after: rate.retryAfter });
   const idempotencyKey = req.headers['idempotency-key'];
   if (typeof idempotencyKey !== 'string' || idempotencyKey.length < 16 || idempotencyKey.length > 200) return apiError(res, 400, 'IDEMPOTENCY_REQUIRED', 'Idempotency-Key header is required.');
@@ -4604,6 +4622,8 @@ app.get('/api/integrations/github/start', async (req: Request, res: Response) =>
   const config = githubConfig();
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!config || !integrationEncryptionConfigured() || !isAdminConfigured()) return apiError(res, 503, 'GITHUB_NOT_CONFIGURED', 'GitHub integration is not configured.');
+  const oauthRate = await enforceRateLimitPolicy('oauthFlows', { ip: clientIdentity(req), user: user.uid, provider: 'github' });
+  if (!oauthRate.allowed) return res.status(429).set('Retry-After', String(oauthRate.retryAfter)).json({ error: 'Too many OAuth attempts', retry_after: oauthRate.retryAfter });
   const nonce = crypto.randomBytes(24).toString('base64url');
   const expiresAt = Date.now() + OAUTH_STATE_TTL_MS;
   const payload = Buffer.from(JSON.stringify({ uid: user.uid, nonce, exp: expiresAt })).toString('base64url');
@@ -4891,6 +4911,8 @@ app.post('/api/domains/verify', async (req: Request, res: Response) => {
   if (!domain || domain.userId !== user.uid) return res.status(404).json({ error: 'Domain not found' });
   if (!(await getOwnedSite(user.uid, domain.siteId))) return res.status(404).json({ error: 'Domain site not found' });
   if (!domain.cloudflareHostnameId) return res.status(409).json({ error: 'Cloudflare hostname is missing' });
+  const domainRate = await enforceRateLimitPolicy('domainVerification', { ip: clientIdentity(req), user: user.uid, site: domain.siteId, domain: domainId });
+  if (!domainRate.allowed) return res.status(429).set('Retry-After', String(domainRate.retryAfter)).json({ error: 'Too many domain verification attempts', retry_after: domainRate.retryAfter });
 
   try {
     const config = getCloudflareConfig()!;
