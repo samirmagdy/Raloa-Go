@@ -780,6 +780,15 @@ paths:
         '200': { description: Authenticated creator site summaries }
         '401': { description: Authentication required }
         '503': { description: Site persistence unavailable }
+    post:
+      operationId: post_post_api_sites
+      responses:
+        '201': { description: Draft site created }
+        '400': { description: Invalid site content }
+        '401': { description: Authentication required }
+        '403': { description: Entitlement denied }
+        '409': { description: Site handle conflict }
+        '503': { description: Site persistence unavailable }
   /api/sites/{siteId}/publish:
     post:
       operationId: post_post_api_sites_siteid_publish
@@ -812,15 +821,6 @@ paths:
         '401': { description: Authentication required }
         '404': { description: Site or publication version not found }
         '409': { description: Publication concurrency conflict }
-    post:
-      operationId: post_post_api_sites
-      responses:
-        '201': { description: Draft site created }
-        '400': { description: Invalid site content }
-        '401': { description: Authentication required }
-        '403': { description: Entitlement denied }
-        '409': { description: Site handle conflict }
-        '503': { description: Site persistence unavailable }
   /api/sites/{siteId}:
     delete:
       operationId: delete_delete_api_sites_siteid
