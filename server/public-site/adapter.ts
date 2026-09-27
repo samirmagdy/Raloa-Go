@@ -1,5 +1,5 @@
-import { normalizeSiteContent } from '../../src/lib/contentSchema';
-import type { PublicCreatorAdapter, PublicCreatorMetadata, PublicCreatorPage } from '../../src/public-site/contract';
+import { normalizeSiteContent } from '../../src/shared/schemas';
+import type { PublicCreatorAdapter, PublicCreatorMetadata, PublicCreatorPage } from '../../src/shared/public';
 
 export interface PublicSiteSource {
   getPublishedSiteByHandle(handle: string): Promise<Record<string, unknown> | null>;
