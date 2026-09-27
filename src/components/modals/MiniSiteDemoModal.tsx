@@ -3,7 +3,7 @@ import { X, Check, ShoppingBag, ArrowRight, Printer, Loader2 } from 'lucide-reac
 import { Locale } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { useAuth } from '../../hooks/useAuth';
-import { saveBookingAppointment, saveStoreOrder } from '../../lib/firebase';
+import { saveStoreOrder } from '../../lib/firebase';
 import { SafeImage } from '../SafeImage';
 
 interface MiniSiteDemoModalProps {
@@ -22,42 +22,10 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
   const { user } = useAuth();
   const isRtl = locale === 'ar';
   const dialogRef = useModalA11y<HTMLDivElement>(Boolean(type));
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [selectedTime, setSelectedTime] = useState('02:00 PM');
-  const [bookingEmail, setBookingEmail] = useState(user?.email || 'creator@raloa.app');
-  const [bookingLoading, setBookingLoading] = useState(false);
-  const [bookingError, setBookingError] = useState('');
-  const [bookingConfirmed, setBookingConfirmed] = useState(false);
-  
   const [orderLoading, setOrderLoading] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderId, setOrderId] = useState('');
   const [cartSuccess, setCartSuccess] = useState(false);
-
-  const handleBookingSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!bookingEmail.trim()) return;
-    setBookingLoading(true);
-    setBookingError('');
-    try {
-      await saveBookingAppointment({
-        hostHandle: 'elena',
-        date: selectedDate,
-        timeSlot: selectedTime,
-        clientEmail: bookingEmail.trim()
-      });
-      setBookingConfirmed(true);
-    } catch (err) {
-      console.error('Error saving booking appointment:', err);
-      setBookingError(
-        isRtl
-          ? 'تعذر تأكيد الحجز. يرجى المحاولة مرة أخرى.'
-          : 'Could not confirm booking. Please try again.'
-      );
-    } finally {
-      setBookingLoading(false);
-    }
-  };
 
   const handleOrderPurchase = async () => {
     setOrderLoading(true);
@@ -175,114 +143,19 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
 
           {/* 2. BOOKING CALENDAR */}
           {type === 'booking' && (
-            <div>
-              {bookingConfirmed ? (
-                <div className="text-center py-8 space-y-3">
-                  <div className="w-14 h-14 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 rounded-full mx-auto flex items-center justify-center">
-                    <Check className="w-7 h-7 stroke-[3]" />
-                  </div>
-                  <h4 className="font-extrabold text-lg text-slate-900 dark:text-white">
-                    {isRtl ? 'تم تأكيد موعدك بنجاح!' : 'Session Scheduled!'}
-                  </h4>
-                  <p className="text-sm text-slate-600 dark:text-slate-300 max-w-xs mx-auto">
-                    {isRtl
-                      ? `تم حفظ وتأكيد موعدك بتاريخ ${selectedDate} الساعة ${selectedTime}. أُرسلت التفاصيل إلى ${bookingEmail}.`
-                      : `Confirmed for ${selectedDate} at ${selectedTime}. Appointment saved to database. Invite sent to ${bookingEmail}.`}
-                  </p>
-                  <button
-                    onClick={() => {
-                      setBookingConfirmed(false);
-                      setBookingError('');
-                    }}
-                    className="mt-4 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-semibold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                  >
-                    {isRtl ? 'حجز موعد آخر' : 'Book another slot'}
-                  </button>
-                </div>
-              ) : (
-                <form
-                  onSubmit={handleBookingSubmit}
-                  className="space-y-4"
-                >
-                  <div className="p-3.5 bg-indigo-50/60 dark:bg-indigo-950/40 rounded-2xl border border-indigo-100 dark:border-indigo-900/60 text-xs text-indigo-900 dark:text-indigo-200">
-                    {isRtl
-                      ? 'جلسة استشارية فنية لمدة ٦٠ دقيقة عبر جوجل ميت لمناقشة التوجيه الإبداعي والتصوير.'
-                      : '60 min Architecture & Creative Direction Consultation via Google Meet.'}
-                  </div>
-
-                  <div>
-                    <label htmlFor="booking-date" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                      {isRtl ? 'اختر اليوم' : 'Select Date'}
-                    </label>
-                    <input
-                      id="booking-date"
-                      type="date"
-                      value={selectedDate}
-                      onChange={(e) => setSelectedDate(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="booking-time-select" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                      {isRtl ? 'اختر الوقت' : 'Select Time Slot'}
-                    </label>
-                    <div id="booking-time-select" className="grid grid-cols-3 gap-2">
-                      {['10:00 AM', '02:00 PM', '04:30 PM'].map((slot) => (
-                        <button
-                          key={slot}
-                          type="button"
-                          onClick={() => setSelectedTime(slot)}
-                          className={`py-2 px-3 text-xs font-medium rounded-xl border transition-all cursor-pointer ${
-                            selectedTime === slot
-                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500'
-                          }`}
-                        >
-                          {slot}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label htmlFor="booking-email" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                      {isRtl ? 'بريدك الإلكتروني' : 'Your Email'}
-                    </label>
-                    <input
-                      id="booking-email"
-                      type="email"
-                      placeholder="you@domain.com"
-                      value={bookingEmail}
-                      onChange={(e) => setBookingEmail(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
-                      required
-                    />
-                  </div>
-
-                  {bookingError && (
-                    <p className="text-xs text-rose-600 dark:text-rose-400 font-medium" role="alert">
-                      {bookingError}
-                    </p>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={bookingLoading}
-                    className="w-full py-3 bg-[#0F172A] hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 disabled:opacity-60 text-white dark:text-slate-900 font-bold text-sm rounded-xl transition-colors shadow-sm cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    {bookingLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>{isRtl ? 'جاري تأكيد الحجز...' : 'Confirming Booking...'}</span>
-                      </>
-                    ) : (
-                      <span>{isRtl ? 'تأكيد الحجز الفوري' : 'Confirm Instant Booking'}</span>
-                    )}
-                  </button>
-                </form>
-              )}
+            <div className="space-y-4">
+              <div className="p-4 bg-indigo-50/60 dark:bg-indigo-950/40 rounded-2xl border border-indigo-100 dark:border-indigo-900/60 text-sm text-indigo-900 dark:text-indigo-200">
+                {isRtl
+                  ? 'هذه معاينة فقط. بعد نشر صفحتك، سيستخدم الزوار جدولك الحقيقي مع التحقق من التوفر وإشعارات الحجز.'
+                  : 'This is a preview only. Once your page is published, visitors use your configured schedule with server-side availability checks and booking notifications.'}
+              </div>
+              <button
+                type="button"
+                onClick={() => onStartOwnPage?.('creator')}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl transition-colors shadow-sm cursor-pointer"
+              >
+                {isRtl ? 'أنشئ جدولك الحقيقي' : 'Create your live schedule'}
+              </button>
             </div>
           )}
 

@@ -33,13 +33,37 @@ service cloud.firestore {
         && (!('thumbnail' in link) || link.thumbnail is string)
         && (!('type' in link) || link.type in ['link', 'gallery', 'booking', 'shop']);
     }
+    function validBookingService(service) {
+      return service is map
+        && service.keys().hasOnly(['id', 'name', 'description', 'durationMinutes', 'bufferMinutes'])
+        && service.id is string && service.id.matches('^[a-z0-9_-]{1,64}$')
+        && service.name is string && service.name.size() <= 120
+        && (!('description' in service) || service.description is string && service.description.size() <= 500)
+        && service.durationMinutes is number && service.durationMinutes >= 15 && service.durationMinutes <= 480
+        && (!('bufferMinutes' in service) || service.bufferMinutes is number && service.bufferMinutes >= 0 && service.bufferMinutes <= 120);
+    }
+    function validBookingConfig(config) {
+      return config is map
+        && config.keys().hasOnly(['enabled', 'timezone', 'services', 'weeklyAvailability', 'blackoutDates', 'minNoticeMinutes', 'bookingWindowDays', 'bufferMinutes', 'maxBookingsPerDay', 'calendarProvider'])
+        && config.enabled is bool
+        && config.timezone is string && config.timezone.size() <= 100
+        && config.services is list && config.services.size() <= 50 && config.services.all(service, validBookingService(service))
+        && config.weeklyAvailability is map
+        && config.blackoutDates is list && config.blackoutDates.size() <= 366
+        && config.minNoticeMinutes is number && config.minNoticeMinutes >= 0 && config.minNoticeMinutes <= 10080
+        && config.bookingWindowDays is number && config.bookingWindowDays >= 1 && config.bookingWindowDays <= 365
+        && config.bufferMinutes is number && config.bufferMinutes >= 0 && config.bufferMinutes <= 120
+        && config.maxBookingsPerDay is number && config.maxBookingsPerDay >= 1 && config.maxBookingsPerDay <= 100
+        && (!('calendarProvider' in config) || config.calendarProvider in ['none', 'google', 'outlook']);
+    }
     function validSite(data, userId) {
       return data.username is string && data.username.matches('^[a-z0-9_-]{3,30}$')
         && data.templateId is string && data.templateId.size() <= 100
         && data.displayName is string && data.displayName.size() <= 120
         && data.bio is string && data.bio.size() <= 2000
         && data.links is list && data.links.size() <= 100 && data.isPublished is bool
-        && data.keys().hasOnly(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'bookingConfig', 'updatedAt'])
+        && (!('bookingConfig' in data) || validBookingConfig(data.bookingConfig))
         && (!('userId' in data) || data.userId == userId)
         && (get(/databases/$(database)/documents/users/$(userId)).data.plan != 'free' || data.links.size() <= 10)
         && (paidPlan(userId) || (!('customDomain' in data) || data.customDomain == ''))

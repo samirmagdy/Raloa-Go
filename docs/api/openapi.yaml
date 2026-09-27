@@ -382,6 +382,52 @@ paths:
           description: Invalid request
         '401':
           description: Authentication required
+  /api/v1/public/scheduling/{handle}/config:
+    get:
+      operationId: get_get_api_v1_public_scheduling_handle_config
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Published creator scheduling configuration
+        '400':
+          description: Invalid handle
+        '404':
+          description: Scheduling is disabled or unavailable
+        '503':
+          description: Scheduling backend is not configured
+  /api/v1/public/scheduling/{handle}/availability:
+    get:
+      operationId: get_get_api_v1_public_scheduling_handle_availability
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { type: string }
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: serviceId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Server-calculated available slots
+        '400':
+          description: Invalid date range or service request
+        '404':
+          description: Service is unavailable
+        '503':
+          description: Scheduling backend is not configured
   /api/v1/public/contact:
     post:
       operationId: post_post_api_v1_public_contact

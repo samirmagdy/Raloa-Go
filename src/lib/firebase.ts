@@ -614,32 +614,6 @@ export async function saveNewsletterSubscription(email: string): Promise<string>
   return payload.id;
 }
 
-export interface BookingAppointment {
-  id?: string;
-  hostHandle: string;
-  date: string;
-  timeSlot: string;
-  clientEmail: string;
-  status: 'confirmed' | 'pending' | 'cancelled';
-  createdAt?: string;
-}
-
-/**
- * Record a booking appointment in Firestore
- */
-export async function saveBookingAppointment(
-  data: Omit<BookingAppointment, 'id' | 'status' | 'createdAt'>
-): Promise<string> {
-  const response = await fetch('/api/v1/public/bookings', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
-    body: JSON.stringify(data)
-  });
-  if (!response.ok) throw new Error('BOOKING_FAILED');
-  const payload = await response.json();
-  return payload.id;
-}
-
 export interface StoreOrder {
   id?: string;
   itemTitle: string;

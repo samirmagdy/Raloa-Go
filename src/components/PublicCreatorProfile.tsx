@@ -17,6 +17,7 @@ import { RaloaLogo } from './brand/RaloaLogo';
 import { recordLinkClick, recordPageView } from '../lib/firebase';
 import { usePageSEO } from '../hooks/usePageSEO';
 import { SafeImage } from './SafeImage';
+import { BookingSchedulerModal } from './modals/BookingSchedulerModal';
 
 interface PublicCreatorProfileProps {
   handle: string;
@@ -37,6 +38,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   const cleanHandle = handle.replace(/^@/, '').toLowerCase().trim();
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [bookingOpen, setBookingOpen] = useState(false);
 
   const fixtureCreator = templatesData.find(
     (t) => t.id.toLowerCase() === cleanHandle || t.name.toLowerCase() === cleanHandle
@@ -141,6 +143,10 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
 
   const handleLinkSelect = (link: typeof creator.sampleLinks[0]) => {
     recordLinkClick(link.id, link.url, cleanHandle);
+    if (link.type === 'booking' && !/^https?:\/\//i.test(link.url)) {
+      setBookingOpen(true);
+      return;
+    }
     if (link.url.startsWith('#')) {
       alert(isRtl ? `فتح: ${isRtl ? link.titleAr : link.title}` : `Opening: ${link.title}`);
     } else {
@@ -336,6 +342,14 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
       <footer className="relative z-10 w-full py-4 text-center text-xs opacity-60">
         <p>© {new Date().getFullYear()} RALOA · Powered by Next-Gen Edge Engine</p>
       </footer>
+
+      {bookingOpen && (
+        <BookingSchedulerModal
+          handle={cleanHandle}
+          locale={locale}
+          onClose={() => setBookingOpen(false)}
+        />
+      )}
     </div>
   );
 };

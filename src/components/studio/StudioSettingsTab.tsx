@@ -9,8 +9,9 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react';
-import { Locale } from '../../types';
+import { BookingConfig, Locale } from '../../types';
 import { auth } from '../../lib/firebase';
+import { StudioSchedulingSettings } from './StudioSchedulingSettings';
 
 interface StudioSettingsTabProps {
   handle: string;
@@ -31,6 +32,8 @@ interface StudioSettingsTabProps {
   onMetaPixelIdChange: (val: string) => void;
   webhookUrl: string;
   onWebhookUrlChange: (val: string) => void;
+  bookingConfig: BookingConfig;
+  onBookingConfigChange: (val: BookingConfig) => void;
   onExportJson: () => void;
   onResetDefaults: () => void;
   onUpgradePlan?: () => void;
@@ -56,6 +59,8 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   onMetaPixelIdChange,
   webhookUrl,
   onWebhookUrlChange,
+  bookingConfig,
+  onBookingConfigChange,
   onExportJson,
   onResetDefaults,
   onUpgradePlan,
@@ -364,6 +369,8 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
               <span className="text-emerald-600 dark:text-emerald-400 font-bold">Auto-SSL</span>
             </div>
           </div>
+
+          <StudioSchedulingSettings value={bookingConfig} onChange={onBookingConfigChange} locale={locale} />
 
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">

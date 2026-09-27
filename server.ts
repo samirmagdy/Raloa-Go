@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import type { DocumentData } from 'firebase-admin/firestore';
+import type { DocumentData, DocumentReference } from 'firebase-admin/firestore';
 import {
   APP_URL,
   adminDb,
@@ -31,6 +31,7 @@ import {
   type DomainRecord
 } from './server-services';
 import { templatesData } from './src/data/content';
+import { calendarProviderIsConfigured, type CalendarProvider } from './server-calendar';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -617,6 +618,188 @@ function isSafePublicUrl(value: unknown, allowAnchor = false): value is string {
   }
 }
 
+type BookingWindow = { enabled: boolean; start: string; end: string };
+type BookingService = { id: string; name: string; description?: string; durationMinutes: number; bufferMinutes?: number };
+type BookingConfig = {
+  enabled: boolean;
+  timezone: string;
+  services: BookingService[];
+  weeklyAvailability: Record<string, BookingWindow>;
+  blackoutDates: string[];
+  minNoticeMinutes: number;
+  bookingWindowDays: number;
+  bufferMinutes: number;
+  maxBookingsPerDay: number;
+  calendarProvider?: 'none' | 'google' | 'outlook';
+};
+
+const DEFAULT_BOOKING_CONFIG: BookingConfig = {
+  enabled: false,
+  timezone: 'UTC',
+  services: [],
+  weeklyAvailability: {
+    '0': { enabled: false, start: '09:00', end: '17:00' },
+    '1': { enabled: true, start: '09:00', end: '17:00' },
+    '2': { enabled: true, start: '09:00', end: '17:00' },
+    '3': { enabled: true, start: '09:00', end: '17:00' },
+    '4': { enabled: true, start: '09:00', end: '17:00' },
+    '5': { enabled: true, start: '09:00', end: '17:00' },
+    '6': { enabled: false, start: '09:00', end: '17:00' }
+  },
+  blackoutDates: [],
+  minNoticeMinutes: 120,
+  bookingWindowDays: 60,
+  bufferMinutes: 15,
+  maxBookingsPerDay: 20,
+  calendarProvider: 'none'
+};
+
+function normalizeBookingConfig(input: unknown): BookingConfig {
+  const source = input && typeof input === 'object' ? input as Record<string, unknown> : {};
+  const services = Array.isArray(source.services)
+    ? source.services.slice(0, 50).flatMap((service) => {
+        if (!service || typeof service !== 'object') return [];
+        const value = service as Record<string, unknown>;
+        const id = typeof value.id === 'string' ? value.id.trim().toLowerCase().slice(0, 64) : '';
+        const name = typeof value.name === 'string' ? value.name.trim().slice(0, 120) : '';
+        const durationMinutes = Number(value.durationMinutes);
+        if (!/^[a-z0-9_-]{1,64}$/.test(id) || !name || !Number.isInteger(durationMinutes) || durationMinutes < 15 || durationMinutes > 480) return [];
+        return [{
+          id,
+          name,
+          description: typeof value.description === 'string' ? value.description.trim().slice(0, 500) : undefined,
+          durationMinutes,
+          bufferMinutes: Number.isInteger(Number(value.bufferMinutes)) ? Math.min(120, Math.max(0, Number(value.bufferMinutes))) : 0
+        }];
+      })
+    : [];
+  const weeklyAvailability: Record<string, BookingWindow> = { ...DEFAULT_BOOKING_CONFIG.weeklyAvailability };
+  if (source.weeklyAvailability && typeof source.weeklyAvailability === 'object') {
+    for (const day of Object.keys(weeklyAvailability)) {
+      const value = (source.weeklyAvailability as Record<string, unknown>)[day];
+      if (!value || typeof value !== 'object') continue;
+      const window = value as Record<string, unknown>;
+      const start = typeof window.start === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(window.start) ? window.start : weeklyAvailability[day].start;
+      const end = typeof window.end === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(window.end) ? window.end : weeklyAvailability[day].end;
+      weeklyAvailability[day] = { enabled: window.enabled === true && start < end, start, end };
+    }
+  }
+  let timezone = typeof source.timezone === 'string' ? source.timezone.trim() : DEFAULT_BOOKING_CONFIG.timezone;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(); } catch { timezone = DEFAULT_BOOKING_CONFIG.timezone; }
+  const blackoutDates = Array.isArray(source.blackoutDates)
+    ? source.blackoutDates.filter((date): date is string => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)).slice(0, 366)
+    : [];
+  return {
+    ...DEFAULT_BOOKING_CONFIG,
+    enabled: source.enabled === true,
+    timezone,
+    services,
+    weeklyAvailability,
+    blackoutDates,
+    minNoticeMinutes: Number.isInteger(Number(source.minNoticeMinutes)) ? Math.min(10080, Math.max(0, Number(source.minNoticeMinutes))) : DEFAULT_BOOKING_CONFIG.minNoticeMinutes,
+    bookingWindowDays: Number.isInteger(Number(source.bookingWindowDays)) ? Math.min(365, Math.max(1, Number(source.bookingWindowDays))) : DEFAULT_BOOKING_CONFIG.bookingWindowDays,
+    bufferMinutes: Number.isInteger(Number(source.bufferMinutes)) ? Math.min(120, Math.max(0, Number(source.bufferMinutes))) : DEFAULT_BOOKING_CONFIG.bufferMinutes,
+    maxBookingsPerDay: Number.isInteger(Number(source.maxBookingsPerDay)) ? Math.min(100, Math.max(1, Number(source.maxBookingsPerDay))) : DEFAULT_BOOKING_CONFIG.maxBookingsPerDay,
+    calendarProvider: source.calendarProvider === 'google' || source.calendarProvider === 'outlook' ? source.calendarProvider : 'none'
+  };
+}
+
+function dateInTimeZone(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
+
+function timeZoneOffsetMs(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(date);
+  const values = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, Number(part.value)]));
+  return Date.UTC(values.year, values.month - 1, values.day, values.hour === 24 ? 0 : values.hour, values.minute, values.second) - date.getTime();
+}
+
+function zonedDateTimeToUtc(date: string, time: string, timeZone: string): Date {
+  const guess = new Date(`${date}T${time}:00.000Z`);
+  const first = new Date(guess.getTime() - timeZoneOffsetMs(guess, timeZone));
+  return new Date(guess.getTime() - timeZoneOffsetMs(first, timeZone));
+}
+
+function minutesFromTime(value: string): number {
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+async function bookingRecordsForHost(hostUserId: string): Promise<Array<Record<string, unknown>>> {
+  if (!isAdminConfigured()) return [];
+  const snapshot = await adminDb.collection('bookings').where('hostUserId', '==', hostUserId).limit(2000).get();
+  return snapshot.docs.map((document) => document.data());
+}
+
+function availableSlots(config: BookingConfig, service: BookingService, fromDate: string, toDate: string, existing: Array<Record<string, unknown>>): Array<{ start: string; end: string; localDate: string; localTime: string; serviceId: string }> {
+  const from = new Date(`${fromDate}T00:00:00.000Z`);
+  const to = new Date(`${toDate}T00:00:00.000Z`);
+  const now = Date.now();
+  const slots: Array<{ start: string; end: string; localDate: string; localTime: string; serviceId: string }> = [];
+  for (let cursor = from.getTime(); cursor <= to.getTime(); cursor += 86400000) {
+    const localDate = new Date(cursor).toISOString().slice(0, 10);
+    if (config.blackoutDates.includes(localDate)) continue;
+    const day = new Date(`${localDate}T12:00:00.000Z`).getUTCDay();
+    const window = config.weeklyAvailability[String(day)];
+    if (!window?.enabled) continue;
+    const startMinute = minutesFromTime(window.start);
+    const endMinute = minutesFromTime(window.end);
+    const step = Math.max(15, service.durationMinutes + (service.bufferMinutes || 0) + config.bufferMinutes);
+    for (let minute = startMinute; minute + service.durationMinutes <= endMinute; minute += step) {
+      const localTime = `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+      const start = zonedDateTimeToUtc(localDate, localTime, config.timezone);
+      const end = new Date(start.getTime() + service.durationMinutes * 60000);
+      if (start.getTime() < now + config.minNoticeMinutes * 60000) continue;
+      if (start.getTime() > now + config.bookingWindowDays * 86400000) continue;
+      const overlaps = existing.some((booking) => booking.status !== 'cancelled' && Number(booking.slotStartMs) < end.getTime() && Number(booking.slotEndMs) > start.getTime());
+      const dailyCount = existing.filter((booking) => booking.status !== 'cancelled' && booking.localDate === localDate).length;
+      if (!overlaps && dailyCount < config.maxBookingsPerDay) {
+        slots.push({ start: start.toISOString(), end: end.toISOString(), localDate, localTime, serviceId: service.id });
+      }
+    }
+  }
+  return slots;
+}
+
+function escapeEmailText(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] || character));
+}
+
+async function processPendingBookingNotifications(): Promise<void> {
+  if (!isAdminConfigured() || !process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) return;
+  const jobs = await adminDb.collection('notification_jobs').where('status', '==', 'pending').limit(20).get();
+  for (const jobSnapshot of jobs.docs) {
+    const job = jobSnapshot.data();
+    const bookingSnapshot = await adminDb.collection('bookings').doc(String(job.bookingId || '')).get();
+    if (!bookingSnapshot.exists) {
+      await jobSnapshot.ref.update({ status: 'failed', lastError: 'BOOKING_NOT_FOUND', updatedAt: new Date().toISOString() });
+      continue;
+    }
+    const booking = bookingSnapshot.data() || {};
+    const claim = await adminDb.runTransaction(async (transaction) => {
+      const current = await transaction.get(jobSnapshot.ref);
+      if (!current.exists || current.data()?.status !== 'pending') return false;
+      transaction.update(jobSnapshot.ref, { status: 'processing', attempts: Number(current.data()?.attempts || 0) + 1, updatedAt: new Date().toISOString() });
+      return true;
+    });
+    if (!claim) continue;
+    const recipient = typeof job.email === 'string' ? job.email : '';
+    const subject = job.type === 'booking_created' ? 'New booking received' : 'Booking confirmation';
+    const html = `<p>${subject}</p><p>Service: ${escapeEmailText(String(booking.serviceName || 'Appointment'))}</p><p>When: ${escapeEmailText(String(booking.localDate || ''))} ${escapeEmailText(String(booking.localTime || ''))} (${escapeEmailText(String(booking.timezone || 'UTC'))})</p>`;
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: process.env.RESEND_FROM_EMAIL, to: [recipient], subject, html })
+      });
+      if (!response.ok) throw new Error(`RESEND_${response.status}`);
+      await jobSnapshot.ref.update({ status: 'sent', sentAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    } catch (error) {
+      await jobSnapshot.ref.update({ status: 'failed', lastError: error instanceof Error ? error.message : 'DELIVERY_FAILED', updatedAt: new Date().toISOString() });
+    }
+  }
+}
+
 function hasPaidPlan(profile: DocumentData | undefined): boolean {
   if (!profile || !['pro', 'studio'].includes(profile.plan)) return false;
   return !(profile.plan === 'pro' && profile.referralProUntil && Date.parse(profile.referralProUntil) <= Date.now());
@@ -1121,44 +1304,128 @@ app.post('/api/v1/handles/reserve', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/v1/public/scheduling/:handle/config', async (req: Request, res: Response) => {
+  const handle = String(req.params.handle || '').trim().toLowerCase();
+  if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return apiError(res, 400, 'INVALID_HANDLE', 'Invalid creator handle.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'SCHEDULING_UNAVAILABLE', 'Scheduling is not configured.');
+  const site = await getPublishedSiteByHandle(handle).catch(() => null);
+  const config = normalizeBookingConfig(site?.bookingConfig);
+  if (!site || !config.enabled || config.services.length === 0) return apiError(res, 404, 'SCHEDULING_DISABLED', 'This creator has not enabled scheduling.');
+  return res.status(200).json({ handle, timezone: config.timezone, today: dateInTimeZone(new Date(), config.timezone), services: config.services, bookingWindowDays: config.bookingWindowDays });
+});
+
+app.get('/api/v1/public/scheduling/:handle/availability', async (req: Request, res: Response) => {
+  const handle = String(req.params.handle || '').trim().toLowerCase();
+  const from = typeof req.query.from === 'string' ? req.query.from : dateInTimeZone(new Date(), 'UTC');
+  const to = typeof req.query.to === 'string' ? req.query.to : from;
+  const serviceId = typeof req.query.serviceId === 'string' ? req.query.serviceId.trim().toLowerCase() : '';
+  if (!/^[a-z0-9_-]{3,30}$/.test(handle) || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || !/^[a-z0-9_-]{1,64}$/.test(serviceId)) {
+    return apiError(res, 400, 'INVALID_AVAILABILITY_REQUEST', 'Valid handle, date range, and service are required.');
+  }
+  if (Date.parse(`${to}T00:00:00Z`) < Date.parse(`${from}T00:00:00Z`) || Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`) > 31 * 86400000) {
+    return apiError(res, 400, 'INVALID_DATE_RANGE', 'Availability range must be between one and 31 days.');
+  }
+  if (!isAdminConfigured()) return apiError(res, 503, 'SCHEDULING_UNAVAILABLE', 'Scheduling is not configured.');
+  const site = await getPublishedSiteByHandle(handle).catch(() => null);
+  const config = normalizeBookingConfig(site?.bookingConfig);
+  const service = config.services.find((item) => item.id === serviceId);
+  if (!site || !config.enabled || !service) return apiError(res, 404, 'SERVICE_NOT_FOUND', 'The requested booking service is unavailable.');
+  const existing = await bookingRecordsForHost(String(site.userId));
+  return res.status(200).json({ timezone: config.timezone, service, slots: availableSlots(config, service, from, to, existing) });
+});
+
 app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
   const hostHandle = typeof req.body?.hostHandle === 'string' ? req.body.hostHandle.trim().toLowerCase() : '';
-  const date = typeof req.body?.date === 'string' ? req.body.date : '';
-  const timeSlot = typeof req.body?.timeSlot === 'string' ? req.body.timeSlot.trim() : '';
-  const clientEmail = typeof req.body?.clientEmail === 'string' ? req.body.clientEmail.trim().toLowerCase() : '';
-  if (!/^[a-z0-9_-]{3,30}$/.test(hostHandle) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{1,2}:\d{2}\s?(AM|PM)$/i.test(timeSlot) || !validEmail(clientEmail)) {
-    return res.status(400).json({ error: 'Valid host, date, time, and email are required' });
+  const serviceId = typeof req.body?.serviceId === 'string' ? req.body.serviceId.trim().toLowerCase() : '';
+  const slotStart = typeof req.body?.slotStart === 'string' ? req.body.slotStart : '';
+  const customerName = typeof req.body?.customerName === 'string' ? req.body.customerName.trim().slice(0, 120) : '';
+  const customerEmail = typeof req.body?.customerEmail === 'string' ? req.body.customerEmail.trim().toLowerCase() : '';
+  const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim().slice(0, 2000) : '';
+  if (!/^[a-z0-9_-]{3,30}$/.test(hostHandle) || !/^[a-z0-9_-]{1,64}$/.test(serviceId) || !customerName || !validEmail(customerEmail)) {
+    return apiError(res, 400, 'INVALID_BOOKING', 'A valid host, service, name, and email are required.');
   }
-  const parsedDate = Date.parse(`${date}T00:00:00Z`);
-  if (!Number.isFinite(parsedDate) || parsedDate < Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z')) {
-    return res.status(400).json({ error: 'Booking date must be in the future' });
-  }
-  if (!isAdminConfigured()) return res.status(503).json({ error: 'Booking service is not configured' });
+  const parsedStart = new Date(slotStart);
+  if (!Number.isFinite(parsedStart.getTime())) return apiError(res, 400, 'INVALID_SLOT', 'A valid availability slot is required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'SCHEDULING_UNAVAILABLE', 'Scheduling is not configured.');
   const hostSite = await getPublishedSiteByHandle(hostHandle).catch(() => null);
-  if (!hostSite) return res.status(404).json({ error: 'Published host not found' });
+  const config = normalizeBookingConfig(hostSite?.bookingConfig);
+  const service = config.services.find((item) => item.id === serviceId);
+  if (!hostSite || !config.enabled || !service) return apiError(res, 404, 'SCHEDULING_DISABLED', 'This booking service is unavailable.');
   const rate = await enforcePublicRateLimit(req, 'booking', 10, 60 * 60 * 1000);
   if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many booking requests', retry_after: rate.retryAfter });
   const idempotencyKey = req.headers['idempotency-key'];
-  if (typeof idempotencyKey !== 'string') return res.status(400).json({ error: 'Idempotency-Key header is required' });
+  if (typeof idempotencyKey !== 'string') return apiError(res, 400, 'IDEMPOTENCY_REQUIRED', 'Idempotency-Key header is required.');
   try {
     const claimed = await claimIdempotency('booking', idempotencyKey);
-    if (claimed.inProgress) return apiError(res, 409, 'IDEMPOTENCY_IN_PROGRESS', 'A request with this idempotency key is already being processed.');
+    if (claimed.inProgress) return apiError(res, 409, 'IDEMPOTENCY_IN_PROGRESS', 'A booking with this idempotency key is already being processed.');
     if (claimed.replay && claimed.response) return res.status(201).json(claimed.response);
-    const booking = { hostHandle, hostUserId: typeof hostSite === 'object' ? hostSite.userId : null, date, timeSlot, clientEmail, status: 'pending', createdAt: new Date().toISOString() };
-    const bookingId = crypto.createHash('sha256').update(`${hostHandle}:${date}:${timeSlot}`).digest('hex').slice(0, 32);
-    const reference = adminDb.collection('bookings').doc(bookingId);
+    const existing = await bookingRecordsForHost(String(hostSite.userId));
+    const localDate = dateInTimeZone(parsedStart, config.timezone);
+    const from = new Date(`${localDate}T00:00:00Z`);
+    const slots = availableSlots(config, service, localDate, localDate, existing);
+    const selected = slots.find((slot) => slot.start === parsedStart.toISOString());
+    if (!selected) return apiError(res, 409, 'SLOT_UNAVAILABLE', 'That slot is no longer available.');
+    const slotEnd = new Date(selected.end);
+    const bookingReference = adminDb.collection('bookings').doc();
+    const lockReferences: DocumentReference[] = [];
+    for (let cursor = Math.floor(parsedStart.getTime() / 900000) * 900000; cursor < slotEnd.getTime() + config.bufferMinutes * 60000; cursor += 900000) {
+      const lockId = crypto.createHash('sha256').update(`${hostSite.userId}:${cursor}`).digest('hex');
+      lockReferences.push(adminDb.collection('booking_locks').doc(lockId));
+    }
+    const now = new Date().toISOString();
+    const booking = {
+      id: bookingReference.id,
+      hostHandle,
+      hostUserId: String(hostSite.userId),
+      serviceId: service.id,
+      serviceName: service.name,
+      durationMinutes: service.durationMinutes,
+      timezone: config.timezone,
+      localDate,
+      localTime: selected.localTime,
+      slotStart: selected.start,
+      slotEnd: selected.end,
+      slotStartMs: parsedStart.getTime(),
+      slotEndMs: slotEnd.getTime(),
+      customerName,
+      customerEmail,
+      notes,
+      status: 'confirmed',
+      confirmationStatus: 'confirmed',
+      createdAt: now,
+      updatedAt: now
+    };
     await adminDb.runTransaction(async (transaction) => {
-      const existing = await transaction.get(reference);
-      if (existing.exists) throw new Error('BOOKING_SLOT_TAKEN');
-      transaction.create(reference, booking);
+      const locks = await Promise.all(lockReferences.map((reference) => transaction.get(reference)));
+      if (locks.some((lock) => lock.exists)) throw new Error('BOOKING_SLOT_TAKEN');
+      for (const reference of lockReferences) transaction.create(reference, { bookingId: bookingReference.id, hostUserId: hostSite.userId, createdAt: now });
+      transaction.create(bookingReference, booking);
     });
-    const response = { id: reference.id, status: booking.status };
+    const hostProfile = await adminDb.collection('users').doc(String(hostSite.userId)).get();
+    const hostEmail = typeof hostProfile.data()?.email === 'string' ? hostProfile.data()?.email : '';
+    const notifications = [
+      { audience: 'customer', email: customerEmail, type: 'booking_confirmation' },
+      ...(hostEmail ? [{ audience: 'creator', email: hostEmail, type: 'booking_created' }] : [])
+    ];
+    await Promise.all(notifications.map((notification) => adminDb.collection('notification_jobs').add({ ...notification, bookingId: bookingReference.id, status: 'pending', createdAt: now })));
+    const calendarProvider = config.calendarProvider || 'none';
+    const calendarReady = calendarProvider !== 'none' && calendarProviderIsConfigured(calendarProvider as CalendarProvider);
+    const calendarJob: Record<string, unknown> = {
+      bookingId: bookingReference.id,
+      provider: calendarProvider,
+      status: calendarProvider === 'none' ? 'skipped' : calendarReady ? 'pending' : 'blocked',
+      createdAt: now
+    };
+    if (calendarProvider !== 'none' && !calendarReady) calendarJob.lastError = 'CALENDAR_PROVIDER_NOT_CONFIGURED';
+    await adminDb.collection('calendar_jobs').add(calendarJob);
+    void processPendingBookingNotifications();
+    const response = { id: bookingReference.id, status: booking.status, confirmationStatus: booking.confirmationStatus, timezone: config.timezone, slotStart: booking.slotStart, slotEnd: booking.slotEnd };
     await completeIdempotency('booking', idempotencyKey, response);
     return res.status(201).json(response);
   } catch (error) {
-    if (error instanceof Error && error.message === 'BOOKING_SLOT_TAKEN') return res.status(409).json({ error: 'That time slot is no longer available' });
+    if (error instanceof Error && error.message === 'BOOKING_SLOT_TAKEN') return apiError(res, 409, 'SLOT_UNAVAILABLE', 'That slot is no longer available.');
     console.error('[Public booking]', error);
-    return res.status(503).json({ error: 'Booking service is temporarily unavailable' });
+    return apiError(res, 503, 'BOOKING_UNAVAILABLE', 'Booking service is temporarily unavailable.');
   }
 });
 
@@ -2354,7 +2621,8 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
     !social || typeof social.platform !== 'string' || social.platform.length > 40 || !isSafePublicUrl(social.url)))) {
     return apiError(res, 400, 'INVALID_SOCIAL_LINKS', 'Every social link must use a safe public URL.');
   }
-  const allowedKeys = new Set(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'socials', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'updatedAt']);
+  if (merged.bookingConfig !== undefined) merged.bookingConfig = normalizeBookingConfig(merged.bookingConfig);
+  const allowedKeys = new Set(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'socials', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'bookingConfig', 'updatedAt']);
   const sanitized = Object.fromEntries(Object.entries(merged).filter(([key]) => allowedKeys.has(key)));
   if (profileData?.plan === 'free' && (sanitized.customDomain || sanitized.hidePoweredBy === true || sanitized.ga4Id || sanitized.metaPixelId || sanitized.webhookUrl)) {
     return apiError(res, 403, 'FEATURE_NOT_AVAILABLE', 'Upgrade your plan to use this site feature.');
@@ -2886,6 +3154,8 @@ if (isDirectExecution && process.env.NODE_ENV !== 'test') {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[RALOA Edge Proxy] Listening on http://0.0.0.0:${PORT}`);
   });
+  const notificationWorker = setInterval(() => { void processPendingBookingNotifications(); }, 30_000);
+  notificationWorker.unref();
 }
 
 export default app;

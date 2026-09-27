@@ -9,7 +9,7 @@ import {
   ArrowRight,
   Sparkles
 } from 'lucide-react';
-import { Locale, TemplateItem, BackgroundStyle } from '../../types';
+import { Locale, TemplateItem, BackgroundStyle, BookingConfig } from '../../types';
 import { templatesData } from '../../data/content';
 import { useAuth } from '../../hooks/useAuth';
 import { useHistoryState } from '../../hooks/useHistoryState';
@@ -25,6 +25,7 @@ import { StudioSettingsTab } from '../studio/StudioSettingsTab';
 import { StudioMobileNav, StudioTab } from '../studio/StudioMobileNav';
 import { StudioQrModal } from '../studio/StudioQrModal';
 import { StudioLinktreeImporter } from '../studio/StudioLinktreeImporter';
+import { DEFAULT_BOOKING_CONFIG } from '../studio/StudioSchedulingSettings';
 import { StudioTemplatePreview } from '../studio/StudioTemplatePreview';
 import { StudioBlockItem } from '../studio/SortableBlockList';
 
@@ -57,6 +58,7 @@ export interface StudioSiteConfig {
   ga4Id?: string;
   metaPixelId?: string;
   webhookUrl?: string;
+  bookingConfig?: BookingConfig;
 }
 
 export interface StudioModalProps {
@@ -147,7 +149,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
     sensitiveWarning: false,
     ga4Id: '',
     metaPixelId: '',
-    webhookUrl: ''
+    webhookUrl: '',
+    bookingConfig: DEFAULT_BOOKING_CONFIG
   }));
 
   const {
@@ -173,7 +176,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
     sensitiveWarning = false,
     ga4Id = '',
     metaPixelId = '',
-    webhookUrl = ''
+    webhookUrl = '',
+    bookingConfig = DEFAULT_BOOKING_CONFIG
   } = siteConfig;
 
   const selectedTemplate =
@@ -260,7 +264,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             sensitiveWarning: (savedSite as any).sensitiveWarning ?? false,
             ga4Id: (savedSite as any).ga4Id || '',
             metaPixelId: (savedSite as any).metaPixelId || '',
-            webhookUrl: (savedSite as any).webhookUrl || ''
+            webhookUrl: (savedSite as any).webhookUrl || '',
+            bookingConfig: (savedSite as any).bookingConfig || DEFAULT_BOOKING_CONFIG
           };
 
           resetHistory(loadedConfig);
@@ -318,7 +323,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
               sensitiveWarning: configToSave.sensitiveWarning,
               ga4Id: configToSave.ga4Id,
               metaPixelId: configToSave.metaPixelId,
-              webhookUrl: configToSave.webhookUrl
+              webhookUrl: configToSave.webhookUrl,
+              bookingConfig: configToSave.bookingConfig
             } as any)
           });
         } else {
@@ -668,6 +674,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                 onMetaPixelIdChange={(val) => updateTextField('metaPixelId', val)}
                 webhookUrl={webhookUrl}
                 onWebhookUrlChange={(val) => updateTextField('webhookUrl', val)}
+                bookingConfig={bookingConfig}
+                onBookingConfigChange={(val) => updateSiteConfig({ bookingConfig: val })}
                 onUpgradePlan={onOpenPricing}
                 onExportJson={() => {
                   const blob = new Blob([JSON.stringify(siteConfig, null, 2)], {

@@ -2,6 +2,33 @@ export type Locale = 'en' | 'ar';
 
 export type BackgroundStyle = 'signature' | 'banner' | 'immersive' | 'gradient' | 'minimal';
 
+export interface BookingServiceConfig {
+  id: string;
+  name: string;
+  description?: string;
+  durationMinutes: number;
+  bufferMinutes?: number;
+}
+
+export interface WeeklyAvailabilityWindow {
+  enabled: boolean;
+  start: string;
+  end: string;
+}
+
+export interface BookingConfig {
+  enabled: boolean;
+  timezone: string;
+  services: BookingServiceConfig[];
+  weeklyAvailability: Record<string, WeeklyAvailabilityWindow>;
+  blackoutDates: string[];
+  minNoticeMinutes: number;
+  bookingWindowDays: number;
+  bufferMinutes: number;
+  maxBookingsPerDay: number;
+  calendarProvider?: 'none' | 'google' | 'outlook';
+}
+
 export interface TemplateBackgroundProperties {
   backgroundColor?: string;
   backgroundImage?: string;
@@ -169,6 +196,7 @@ export interface UserMiniSite {
   themeMode?: 'auto' | 'dark' | 'light';
   links: any[];
   isPublished: boolean;
+  bookingConfig?: BookingConfig;
   updatedAt?: string;
 }
 
