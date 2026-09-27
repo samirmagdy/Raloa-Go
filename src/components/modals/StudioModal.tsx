@@ -17,6 +17,7 @@ import { PremiumMark } from '../brand/PremiumMark';
 
 // Modular Studio Subcomponents
 import { StudioTopToolbar } from '../studio/StudioTopToolbar';
+import type { PublicationState } from '../studio/StudioTopToolbar';
 import { StudioContentTab } from '../studio/StudioContentTab';
 import { StudioDesignTab, VISUAL_PRESETS } from '../studio/StudioDesignTab';
 import { StudioAudienceTab } from '../studio/StudioAudienceTab';
@@ -29,6 +30,7 @@ import { DEFAULT_BOOKING_CONFIG } from '../studio/StudioSchedulingSettings';
 import { StudioTemplatePreview } from '../studio/StudioTemplatePreview';
 import { StudioBlockItem } from '../studio/SortableBlockList';
 import { getPlanCapabilities, isPremiumTemplate } from '../../lib/planCapabilities';
+import { auth } from '../../lib/firebase';
 
 export interface StudioSiteConfig {
   username: string;
@@ -100,13 +102,15 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   const [showQrModal, setShowQrModal] = useState(false);
   const [showLinktreeImporter, setShowLinktreeImporter] = useState(false);
 
-  // Real-time Save status: 'saving' | 'saved' | 'live' | 'error'
-  const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | 'live' | 'error'>('live');
+  // Persistence status is intentionally separate from publication status.
+  const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | 'error'>('saved');
+  const [publicationState, setPublicationState] = useState<PublicationState>('draft');
   const [entitlementMessage, setEntitlementMessage] = useState('');
 
   const isInitialLoadDone = useRef(false);
   const lastTextEditRef = useRef<number>(0);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const skipNextAutosaveRef = useRef(false);
 
   // Resolve user handle safely
   const resolvedHandle =
@@ -224,7 +228,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   useEffect(() => {
     if (!user) {
       isInitialLoadDone.current = true;
-      setSaveStatus('live');
+      setSaveStatus('saved');
       return;
     }
     let isCancelled = false;
@@ -279,7 +283,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
           resetHistory(loadedConfig);
         }
         if (!isCancelled) {
-          setSaveStatus('live');
+          setSaveStatus('saved');
+          setPublicationState(savedSite?.isPublished === true ? 'published' : 'draft');
         }
       } catch (e) {
         console.error('Failed to load user mini-site from Firestore:', e);
@@ -347,12 +352,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
           await new Promise((r) => setTimeout(r, 200));
         }
 
-        // Step 1: Transition to 'saved'
         setSaveStatus('saved');
-        // Step 2: Transition to 'live' after 600ms
-        setTimeout(() => {
-          setSaveStatus('live');
-        }, 600);
       } catch (err) {
         console.error('Failed to autosave live site configuration:', err);
         setSaveStatus('error');
@@ -362,9 +362,37 @@ export const StudioModal: React.FC<StudioModalProps> = ({
     [user, saveMiniSite, siteConfig]
   );
 
+  const publishToggle = useCallback(async () => {
+    if (publicationState === 'publishing' || publicationState === 'unpublishing') return;
+    if (!auth.currentUser) {
+      setPublicationState('failed');
+      setEntitlementMessage('A verified server session is required to publish this site.');
+      return;
+    }
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    const nextPublished = !siteConfig.isPublished;
+    setPublicationState(nextPublished ? 'publishing' : 'unpublishing');
+    try {
+      const nextConfig = { ...siteConfig, isPublished: nextPublished };
+      await persistSiteConfig(nextConfig);
+      skipNextAutosaveRef.current = true;
+      setSiteConfig(nextConfig, { overwrite: true });
+      setPublicationState(nextPublished ? 'published' : 'draft');
+      setEntitlementMessage('');
+    } catch (error) {
+      setPublicationState('failed');
+      setEntitlementMessage(error instanceof Error ? error.message : 'Publishing failed. Please try again.');
+    }
+  }, [publicationState, persistSiteConfig, setSiteConfig, siteConfig]);
+
   // Debounced Autosave (700ms debounce)
   useEffect(() => {
     if (!isInitialLoadDone.current) return;
+
+    if (skipNextAutosaveRef.current) {
+      skipNextAutosaveRef.current = false;
+      return;
+    }
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -501,6 +529,9 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         handle={username}
         plan={profile?.plan || 'free'}
         saveStatus={saveStatus}
+        publicationState={publicationState}
+        isPublished={siteConfig.isPublished}
+        onPublishToggle={publishToggle}
         onRetrySave={() => persistSiteConfig(siteConfig)}
         canUndo={canUndo}
         canRedo={canRedo}

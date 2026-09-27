@@ -18,7 +18,10 @@ import { PremiumMark } from '../brand/PremiumMark';
 export interface StudioTopToolbarProps {
   handle: string;
   plan: 'free' | 'pro' | 'studio' | string;
-  saveStatus: 'saving' | 'saved' | 'live' | 'error';
+  saveStatus: 'saving' | 'saved' | 'error';
+  publicationState: PublicationState;
+  isPublished: boolean;
+  onPublishToggle: () => void;
   onRetrySave?: () => void;
   canUndo: boolean;
   canRedo: boolean;
@@ -29,10 +32,15 @@ export interface StudioTopToolbarProps {
   locale: Locale;
 }
 
+export type PublicationState = 'draft' | 'publishing' | 'published' | 'unpublishing' | 'failed';
+
 export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
   handle,
   plan = 'free',
   saveStatus,
+  publicationState,
+  isPublished,
+  onPublishToggle,
   onRetrySave,
   canUndo,
   canRedo,
@@ -108,7 +116,7 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
                 </div>
               </div>
               <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
-                <a
+                {publicationState === 'published' ? <a
                   href={publicUrl}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -116,14 +124,19 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
                 >
                   <span>{isRtl ? 'زيارة الرابط العام' : 'View Public URL'}</span>
                   <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-                </a>
+                </a> : <span
+                  className="w-full px-3.5 py-1.5 text-xs font-semibold text-slate-400 dark:text-slate-500 flex items-center justify-between"
+                  title={isRtl ? 'انشر الموقع أولاً' : 'Publish the site first'}
+                >
+                  <span>{isRtl ? 'الرابط غير منشور' : 'Public URL unavailable'}</span>
+                </span>}
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Center: Save Status Indicators (4 States: Saving, Saved, Live, Save failed) */}
+      {/* Center: persistence and publication state are intentionally separate */}
       <div className="flex items-center gap-2">
         {saveStatus === 'saving' && (
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/80 dark:border-amber-900/60 text-xs font-medium animate-pulse">
@@ -136,13 +149,6 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 text-xs font-semibold">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
             <span className="hidden sm:inline">{isRtl ? 'تم الحفظ' : 'Saved'}</span>
-          </div>
-        )}
-
-        {saveStatus === 'live' && (
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-xs font-bold">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
-            <span>{isRtl ? 'مباشر' : 'Live'}</span>
           </div>
         )}
 
@@ -161,6 +167,19 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
             )}
           </div>
         )}
+
+        <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${
+          publicationState === 'published'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300'
+            : publicationState === 'failed'
+            ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300'
+            : publicationState === 'publishing' || publicationState === 'unpublishing'
+            ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300'
+            : 'border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+        }`}>
+          <span className={`h-2 w-2 rounded-full ${publicationState === 'published' ? 'bg-emerald-500' : publicationState === 'failed' ? 'bg-rose-500' : publicationState === 'draft' ? 'bg-slate-400' : 'animate-pulse bg-amber-500'}`} />
+          <span>{publicationState === 'published' ? (isRtl ? 'منشور' : 'Published') : publicationState === 'publishing' ? (isRtl ? 'جارٍ النشر...' : 'Publishing...') : publicationState === 'unpublishing' ? (isRtl ? 'جارٍ إلغاء النشر...' : 'Unpublishing...') : publicationState === 'failed' ? (isRtl ? 'فشل النشر' : 'Publish failed') : (isRtl ? 'مسودة' : 'Draft')}</span>
+        </div>
 
         {/* Undo / Redo Controls */}
         <div className="hidden md:flex items-center gap-0.5 p-0.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700">
@@ -185,8 +204,16 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
         </div>
       </div>
 
-      {/* Right: Quick Launch Actions (QR, Copy, View live page) */}
+      {/* Right: publication and quick launch actions */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <button
+          type="button"
+          onClick={onPublishToggle}
+          disabled={publicationState === 'publishing' || publicationState === 'unpublishing'}
+          className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer whitespace-nowrap disabled:cursor-wait disabled:opacity-60 ${isPublished ? 'border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+        >
+          <span>{isPublished ? (isRtl ? 'إلغاء النشر' : 'Unpublish') : publicationState === 'failed' ? (isRtl ? 'إعادة المحاولة' : 'Retry publish') : (isRtl ? 'نشر' : 'Publish')}</span>
+        </button>
         {/* QR Code Modal Trigger */}
         <button
           type="button"
@@ -212,15 +239,15 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
         </button>
 
         {/* View Live Page Button */}
-        <a
-          href={publicUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer whitespace-nowrap"
-        >
-          <span>{isRtl ? 'عرض الصفحة' : 'View live'}</span>
-          <ExternalLink className="w-3.5 h-3.5 rtl:rotate-180" />
-        </a>
+        {publicationState === 'published' ? <a
+            href={publicUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer whitespace-nowrap"
+          >
+            <span>{isRtl ? 'عرض الصفحة' : 'View live'}</span>
+            <ExternalLink className="w-3.5 h-3.5 rtl:rotate-180" />
+          </a> : <span className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 font-bold text-xs whitespace-nowrap" title={isRtl ? 'انشر الموقع أولاً' : 'Publish the site first'}>{isRtl ? 'غير منشور' : 'Not live'}</span>}
       </div>
     </header>
   );
