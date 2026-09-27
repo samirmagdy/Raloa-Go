@@ -1,5 +1,9 @@
-import app from './server';
 import http from 'node:http';
+
+// SEO contract tests intentionally use the explicit non-production fixture seam.
+// Production fallback behaviour remains covered separately by test-public-fallback.ts.
+process.env.ENABLE_DEMO_FIXTURES = 'true';
+const { default: app } = await import('./server');
 
 const server = http.createServer(app);
 await new Promise<void>((resolve) => server.listen(3102, '127.0.0.1', resolve));

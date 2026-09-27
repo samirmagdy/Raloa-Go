@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import {
   Layers,
   Palette,
@@ -22,7 +22,6 @@ import type { PublicationState } from '../studio/StudioTopToolbar';
 import { StudioContentTab } from '../studio/StudioContentTab';
 import { StudioDesignTab, VISUAL_PRESETS } from '../studio/StudioDesignTab';
 import { StudioAudienceTab } from '../studio/StudioAudienceTab';
-import { StudioAnalyticsTab } from '../studio/StudioAnalyticsTab';
 import { StudioSettingsTab } from '../studio/StudioSettingsTab';
 import { StudioMobileNav, StudioTab } from '../studio/StudioMobileNav';
 import { StudioQrModal } from '../studio/StudioQrModal';
@@ -33,6 +32,8 @@ import { getPlanCapabilities, isPremiumTemplate } from '../../lib/planCapabiliti
 import { auth, hasAuthenticatedSession } from '../../lib/firebase';
 import { normalizeSiteSlug } from '../../lib/siteSlug';
 import { normalizeSiteContent, validateSiteContent } from '../../lib/contentSchema';
+
+const StudioAnalyticsTab = lazy(() => import('../studio/StudioAnalyticsTab').then((module) => ({ default: module.StudioAnalyticsTab })));
 
 export interface StudioSiteConfig {
   username: string;
@@ -1090,7 +1091,9 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             )}
 
             {activeTab === 'analytics' && (
-              <StudioAnalyticsTab siteId={activeSiteId} links={links} locale={locale} analyticsEnabled={capabilities.analytics} />
+              <Suspense fallback={<div role="status" className="flex min-h-48 items-center justify-center text-sm text-slate-500">{isRtl ? 'جارٍ تحميل التحليلات...' : 'Loading analytics…'}</div>}>
+                <StudioAnalyticsTab siteId={activeSiteId} links={links} locale={locale} analyticsEnabled={capabilities.analytics} />
+              </Suspense>
             )}
 
             {activeTab === 'settings' && (

@@ -154,6 +154,8 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   const [domainId, setDomainId] = useState('');
   const [dnsRecords, setDnsRecords] = useState<Array<{ type: string; name: string; value: string }>>([]);
   const [domainError, setDomainError] = useState('');
+  const [domainLoading, setDomainLoading] = useState(false);
+  const [domainRefresh, setDomainRefresh] = useState(0);
   const [integrations, setIntegrations] = useState<SocialIntegrationStatus[]>([]);
   const [integrationError, setIntegrationError] = useState('');
   const [integrationBusy, setIntegrationBusy] = useState('');
@@ -169,10 +171,10 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   const loadIntegrations = async () => {
     try {
       const response = await fetch('/api/integrations', { headers: await getApiHeaders() });
-      if (!response.ok) return;
-      const payload = await response.json();
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.message || payload?.error?.message || payload?.error || 'Could not load integration status.');
       setIntegrations(Array.isArray(payload.integrations) ? payload.integrations : []);
-    } catch (_) { setIntegrationError(isRtl ? 'تعذر تحميل حالة الربط.' : 'Could not load integration status.'); }
+    } catch (error) { setIntegrationError(error instanceof Error ? error.message : (isRtl ? 'تعذر تحميل حالة الربط.' : 'Could not load integration status.')); }
   };
 
   useEffect(() => {
@@ -248,11 +250,13 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   useEffect(() => {
     if (activeSubSection !== 'domain' || !customDomain) return;
     let cancelled = false;
+    setDomainLoading(true);
+    setDomainError('');
     (async () => {
       try {
         const response = await fetch('/api/domains', { headers: await getApiHeaders() });
-        if (!response.ok) return;
-        const payload = await response.json();
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.message || payload?.error?.message || payload?.error || (isRtl ? 'تعذر تحميل حالة النطاق.' : 'Could not load domain status.'));
         const existing = (payload.domains || []).find((domain: any) => domain.hostname === customDomain && domain.siteId === siteId);
         if (!cancelled && existing) {
           setDomainId(existing.domainId);
@@ -261,10 +265,11 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
           setDomainSslStatus(existing.sslStatus || '');
           setDnsRecords(existing.dnsRecords || []);
         }
-      } catch (_) {}
+      } catch (error) { if (!cancelled) setDomainError(error instanceof Error ? error.message : (isRtl ? 'تعذر تحميل حالة النطاق.' : 'Could not load domain status.')); }
+      finally { if (!cancelled) setDomainLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [activeSubSection, customDomain, siteId]);
+  }, [activeSubSection, customDomain, domainRefresh, isRtl, siteId]);
 
   const handleVerifyDomain = async () => {
     setIsVerifying(true);
@@ -527,7 +532,8 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
             </div>
           )}
 
-          {domainError && <p role="alert" className="text-xs font-semibold text-rose-600 dark:text-rose-400">{domainError}</p>}
+          {domainLoading && <p role="status" className="text-xs font-semibold text-slate-500">{isRtl ? 'جارٍ تحميل حالة النطاق...' : 'Loading domain status...'}</p>}
+          {domainError && <div role="alert" className="flex items-center gap-2 text-xs font-semibold text-rose-600 dark:text-rose-400"><span>{domainError}</span><button type="button" onClick={() => { setDomainError(''); setDomainRefresh((value) => value + 1); }} className="underline">{isRtl ? 'إعادة المحاولة' : 'Retry'}</button></div>}
 
           {dnsRecords.length > 0 && (
             <div className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 dark:border-indigo-900 dark:bg-indigo-950/30">

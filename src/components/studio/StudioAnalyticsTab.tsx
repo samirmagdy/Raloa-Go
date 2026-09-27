@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Eye, MousePointerClick, Users, Compass, type LucideIcon } from 'lucide-react';
+import { AlertCircle, Eye, Loader2, MousePointerClick, Users, Compass, type LucideIcon } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Locale } from '../../types';
 import { StudioBlockItem } from './SortableBlockList';
@@ -18,6 +18,7 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({ siteId, 
   const [metrics, setMetrics] = useState<PlatformMetrics>(emptyMetrics);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,7 +40,7 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({ siteId, 
       finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [analyticsEnabled, siteId, range, from, to]);
+  }, [analyticsEnabled, siteId, range, from, to, retryToken]);
 
   const linkStats = useMemo(() => { const byId = new Map(metrics.links.map((link) => [link.linkId, link])); return links.map((link) => ({ ...link, stats: byId.get(link.id) })); }, [links, metrics.links]);
   const hasData = metrics.totalPageViews > 0 || metrics.totalClicks > 0;
@@ -49,6 +50,7 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({ siteId, 
   if (!analyticsEnabled) return <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6 text-center text-sm text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-200">{isRtl ? 'التحليلات متاحة في باقتي Pro وStudio.' : 'Analytics are available on Pro and Studio plans.'}</div>;
 
   return <div className="space-y-6 animate-in fade-in duration-150" dir={isRtl ? 'rtl' : 'ltr'}>
+    {error && <div role="alert" className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200"><AlertCircle className="h-4 w-4 shrink-0" /><span className="flex-1">{isRtl ? 'تعذر تحميل التحليلات.' : 'Analytics could not be loaded.'}</span><button type="button" onClick={() => setRetryToken((value) => value + 1)} disabled={loading} className="inline-flex items-center gap-1 rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-bold disabled:opacity-50"><Loader2 className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : 'hidden'}`} />{isRtl ? 'إعادة المحاولة' : 'Retry'}</button></div>}
     {metrics.capped && <div role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{isRtl ? 'تم اختصار بيانات التحليلات بسبب حد مؤقت. قد تكون الأرقام أقل من الإجمالي.' : 'Analytics data is truncated by a temporary safety limit. Totals may be incomplete.'}</div>}
     {metrics.truncated && !metrics.capped && <div role="status" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">{isRtl ? 'يتم عرض جزء من الأحداث الخام؛ الإحصاءات المجمعة متاحة عند اكتمال المعالجة.' : 'A raw-event view is being used while aggregate processing catches up.'}</div>}
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">{([['Page Views', metrics.totalPageViews, Eye, 'text-indigo-500'], ['Unique Visitors', metrics.uniqueVisitors, Users, 'text-blue-500'], ['Link Clicks', metrics.totalClicks, MousePointerClick, 'text-emerald-500'], ['CTR', metrics.ctr === null ? null : `${metrics.ctr.toFixed(1)}%`, Compass, 'text-amber-500']] as Array<[string, number | string | null, LucideIcon, string]>).map(([label, value, Icon, color]) => <div key={label} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs"><div className="flex items-center justify-between text-slate-400 mb-1"><span className="text-[11px] font-bold uppercase tracking-wider">{label}</span><Icon className={`w-4 h-4 ${color}`} /></div><p className="text-2xl font-black text-slate-900 dark:text-white">{value === null ? (isRtl ? 'لا توجد بيانات' : 'No data yet') : typeof value === 'number' ? value.toLocaleString() : value}</p><p className="text-[11px] text-slate-400 font-medium mt-1">{error ? (isRtl ? 'تعذر تحميل التحليلات' : 'Analytics unavailable') : hasData ? (isRtl ? 'بيانات الفترة المحددة' : 'Selected period') : (isRtl ? 'لم تسجل أحداث بعد' : 'No events recorded yet')}</p></div>)}</div>

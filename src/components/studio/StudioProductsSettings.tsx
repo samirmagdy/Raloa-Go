@@ -24,31 +24,35 @@ export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ 
   const [orderError, setOrderError] = useState('');
   const [orderBusy, setOrderBusy] = useState('');
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [ordersHasMore, setOrdersHasMore] = useState(false);
+  const [ordersCursor, setOrdersCursor] = useState<string | null>(null);
 
   const headers = useCallback(async (): Promise<Record<string, string>> => {
     const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
     return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
   }, []);
 
-  const load = useCallback(async (showLoading = true) => {
+  const load = useCallback(async (showLoading = true, appendOrders = false) => {
     if (showLoading) setLoading(true);
     setError(''); setOrderError('');
     try {
       const requestHeaders = await headers();
       const [response, ordersResponse] = await Promise.all([
         fetch(`/api/creator/products?siteId=${encodeURIComponent(siteId)}`, { headers: requestHeaders }),
-        fetch(`/api/creator/orders?siteId=${encodeURIComponent(siteId)}`, { headers: requestHeaders })
+        fetch(`/api/creator/orders?siteId=${encodeURIComponent(siteId)}&limit=50${appendOrders && ordersCursor ? `&cursor=${encodeURIComponent(ordersCursor)}` : ''}`, { headers: requestHeaders })
       ]);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error?.message || payload.error || 'Could not load products.');
       const ordersPayload = await ordersResponse.json().catch(() => ({}));
       if (!ordersResponse.ok) throw new Error(ordersPayload.error?.message || ordersPayload.error || 'Could not load orders.');
       setProducts(Array.isArray(payload.products) ? payload.products : []);
-      setOrders(Array.isArray(ordersPayload.orders) ? ordersPayload.orders : []);
+      setOrders((current) => appendOrders ? [...current, ...(Array.isArray(ordersPayload.orders) ? ordersPayload.orders : [])] : (Array.isArray(ordersPayload.orders) ? ordersPayload.orders : []));
+      setOrdersHasMore(Boolean(ordersPayload.hasMore));
+      setOrdersCursor(ordersPayload.nextCursor || null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Could not load products and orders.');
     } finally { if (showLoading) setLoading(false); }
-  }, [headers, siteId]);
+  }, [headers, ordersCursor, siteId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -126,6 +130,7 @@ export const StudioProductsSettings: React.FC<StudioProductsSettingsProps> = ({ 
             {order.fulfillmentHistory && order.fulfillmentHistory.length > 0 && <details className="mt-3 rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-800/60"><summary className="cursor-pointer font-bold text-slate-700 dark:text-slate-200">{isRtl ? 'سجل التنفيذ' : 'Fulfillment history'}</summary><ol className="mt-2 space-y-2 border-l border-slate-200 pl-3 dark:border-slate-700">{order.fulfillmentHistory.slice().reverse().map((entry, index) => <li key={`${entry.at}-${index}`} className="text-slate-500"><span className="font-semibold text-slate-700 dark:text-slate-300">{statusLabel(entry.from, isRtl)} → {statusLabel(entry.to, isRtl)}</span><br />{formatTimestamp(entry.at, locale)}</li>)}</ol></details>}
           </article>;
         })}</div>}
+        {ordersHasMore && <button type="button" disabled={Boolean(orderBusy)} onClick={() => void load(false, true)} className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-slate-300 text-xs font-bold disabled:opacity-50 dark:border-slate-700">{isRtl ? 'تحميل المزيد من الطلبات' : 'Load more orders'}</button>}
       </div>
     </>}
   </section>;

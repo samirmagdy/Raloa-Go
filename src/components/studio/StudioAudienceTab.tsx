@@ -10,7 +10,7 @@ type SubmissionStatus = 'new' | 'read' | 'archived';
 interface SubscriberItem { id: string; email: string; createdAt: string | null; source: string; status: SubscriberStatus; }
 interface SubmissionItem { id: string; name: string; email: string; subject: string; message: string; createdAt: string | null; status: SubmissionStatus; }
 interface AudienceMetrics { subscribers: number; activeSubscribers: number; newSubscribers: number; submissions: number; newSubmissions: number; uniqueVisitors: number; conversionRate: number | null; }
-interface AudienceResponse { data: SubscriberItem[] | SubmissionItem[]; total: number; hasMore: boolean; metrics: AudienceMetrics; }
+interface AudienceResponse { data: SubscriberItem[] | SubmissionItem[]; total: number; hasMore: boolean; nextCursor?: string | null; metrics: AudienceMetrics; metricsCapped?: boolean; }
 
 interface StudioAudienceTabProps { siteId: string; handle: string; locale: Locale; }
 
@@ -37,6 +37,8 @@ export const StudioAudienceTab: React.FC<StudioAudienceTabProps> = ({ siteId, ha
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [metricsCapped, setMetricsCapped] = useState(false);
 
   const request = useCallback(async (url: string, init?: RequestInit): Promise<Response> => {
     const currentUser = auth.currentUser;
@@ -54,7 +56,7 @@ export const StudioAudienceTab: React.FC<StudioAudienceTabProps> = ({ siteId, ha
   }, [isRtl]);
 
   const queryString = useMemo(() => {
-    const params = new URLSearchParams({ type: activeTab, siteId, siteHandle: handle, limit: '500' });
+    const params = new URLSearchParams({ type: activeTab, siteId, siteHandle: handle, limit: '50' });
     if (search.trim()) params.set('search', search.trim());
     if (status) params.set('status', status);
     if (from) params.set('from', from);
@@ -62,24 +64,29 @@ export const StudioAudienceTab: React.FC<StudioAudienceTabProps> = ({ siteId, ha
     return params.toString();
   }, [activeTab, from, handle, search, siteId, status, to]);
 
-  const loadAudience = useCallback(async () => {
+  const loadAudience = useCallback(async (append = false) => {
     setLoading(true);
     setError('');
     try {
-      const response = await request(`/api/creator/audience?${queryString}`);
+      const params = new URLSearchParams(queryString);
+      if (append && nextCursor) params.set('cursor', nextCursor);
+      const response = await request(`/api/creator/audience?${params.toString()}`);
       const payload = await response.json() as AudienceResponse;
       setMetrics(payload.metrics || null);
-      if (activeTab === 'subscribers') setSubscribers(payload.data as SubscriberItem[]);
-      else setSubmissions(payload.data as SubmissionItem[]);
+      setMetricsCapped(Boolean(payload.metricsCapped));
+      setNextCursor(payload.nextCursor || null);
+      if (activeTab === 'subscribers') setSubscribers((current) => append ? [...current, ...(payload.data as SubscriberItem[])] : payload.data as SubscriberItem[]);
+      else setSubmissions((current) => append ? [...current, ...(payload.data as SubmissionItem[])] : payload.data as SubmissionItem[]);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : (isRtl ? 'تعذر تحميل بيانات الجمهور.' : 'Could not load audience data.'));
     } finally { setLoading(false); }
-  }, [activeTab, isRtl, queryString, request]);
+  }, [activeTab, isRtl, nextCursor, queryString, request]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => { void loadAudience(); }, search ? 250 : 0);
+    setNextCursor(null);
+    const timer = window.setTimeout(() => { void loadAudience(false); }, search ? 250 : 0);
     return () => window.clearTimeout(timer);
-  }, [loadAudience, search]);
+  }, [activeTab, from, search, status, to, siteId, handle]);
 
   const deleteRecord = async (kind: AudienceTab, id: string) => {
     if (!window.confirm(isRtl ? 'هل تريد حذف هذا السجل نهائياً؟' : 'Delete this record permanently?')) return;
@@ -145,8 +152,10 @@ export const StudioAudienceTab: React.FC<StudioAudienceTabProps> = ({ siteId, ha
           <input type="date" value={to} onChange={(event) => setTo(event.target.value)} aria-label={isRtl ? 'إلى تاريخ' : 'To date'} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-xs" />
         </div>
 
-        {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"><AlertCircle className="w-4 h-4 shrink-0" /><span>{error}</span><button type="button" onClick={() => setError('')} className="ml-auto underline">{isRtl ? 'إغلاق' : 'Dismiss'}</button></div>}
-        {loading ? <div className="py-12 flex items-center justify-center text-xs text-slate-400"><Loader2 className="w-4 h-4 animate-spin mr-2" />{isRtl ? 'جار التحميل...' : 'Loading audience data...'}</div> : activeTab === 'subscribers' ? <SubscriberTable items={subscribers} locale={locale} busyId={busyId} onDelete={(id) => void deleteRecord('subscribers', id)} onStatus={(id, next) => void updateStatus('subscribers', id, next)} /> : <SubmissionList items={submissions} locale={locale} busyId={busyId} onDelete={(id) => void deleteRecord('submissions', id)} onStatus={(id, next) => void updateStatus('submissions', id, next)} />}
+        {metricsCapped && <div role="status" className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><AlertCircle className="w-4 h-4 shrink-0" /><span>{isRtl ? 'بعض المقاييس جزئية لأن معالجة البيانات الكبيرة لم تكتمل بعد.' : 'Some audience metrics are partial because the aggregate query reached its safety boundary.'}</span></div>}
+        {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"><AlertCircle className="w-4 h-4 shrink-0" /><span>{error}</span><button type="button" onClick={() => { setError(''); void loadAudience(false); }} className="ml-auto underline">{isRtl ? 'إعادة المحاولة' : 'Retry'}</button></div>}
+        {loading && (subscribers.length === 0 && submissions.length === 0) ? <div className="py-12 flex items-center justify-center text-xs text-slate-400"><Loader2 className="w-4 h-4 animate-spin mr-2" />{isRtl ? 'جار التحميل...' : 'Loading audience data...'}</div> : activeTab === 'subscribers' ? <SubscriberTable items={subscribers} locale={locale} busyId={busyId} onDelete={(id) => void deleteRecord('subscribers', id)} onStatus={(id, next) => void updateStatus('subscribers', id, next)} /> : <SubmissionList items={submissions} locale={locale} busyId={busyId} onDelete={(id) => void deleteRecord('submissions', id)} onStatus={(id, next) => void updateStatus('submissions', id, next)} />}
+        {nextCursor && <button type="button" disabled={loading} onClick={() => void loadAudience(true)} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"><Loader2 className={`h-4 w-4 ${loading ? 'animate-spin' : 'hidden'}`} />{loading ? (isRtl ? 'جار التحميل...' : 'Loading...') : (isRtl ? 'تحميل المزيد' : 'Load more')}</button>}
       </div>
 
       {showAddModal && <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60" role="dialog" aria-modal="true"><div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-5 space-y-4"><div className="flex items-center justify-between"><h3 className="text-sm font-bold">{isRtl ? 'إضافة مشترك' : 'Add subscriber'}</h3><button type="button" onClick={() => setShowAddModal(false)} aria-label={isRtl ? 'إغلاق' : 'Close'}><X className="w-4 h-4" /></button></div><form onSubmit={(event) => void addSubscriber(event)} className="space-y-3"><input type="email" required value={newEmail} onChange={(event) => setNewEmail(event.target.value)} placeholder="subscriber@example.com" className="w-full px-3 py-2 rounded-xl border text-sm" /><input value={newSource} onChange={(event) => setNewSource(event.target.value)} placeholder={isRtl ? 'المصدر' : 'Source'} className="w-full px-3 py-2 rounded-xl border text-sm" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setShowAddModal(false)} className="px-3 py-2 rounded-xl border text-xs">{isRtl ? 'إلغاء' : 'Cancel'}</button><button type="submit" disabled={busyId === 'new'} className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs disabled:opacity-50">{busyId === 'new' ? (isRtl ? 'جار الحفظ...' : 'Saving...') : (isRtl ? 'حفظ' : 'Save')}</button></div></form></div></div>}

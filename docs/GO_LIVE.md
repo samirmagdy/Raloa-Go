@@ -161,6 +161,37 @@ production inventory. Successful OAuth token exchange still requires a real
 provider account and callback authorization; the smoke check validates provider
 authorization URL generation and safe callback failure handling.
 
+## Mandatory staging integration gate
+
+`npm run release:verify` does not skip external dependencies. It runs
+`npm run test:integration:staging`, which performs real authenticated staging
+flows against Firestore, object storage, Stripe, Cloudflare, one configured
+Google/Outlook Calendar provider, notification delivery, publishing, analytics,
+booking, and public resolution. Use a disposable staging creator/site and
+disposable product/domain data only:
+
+```text
+STAGING_BASE_URL=https://staging.example.com
+STAGING_BEARER_TOKEN=<Firebase ID token for the disposable creator>
+STAGING_SITE_ID=<owned disposable site ID>
+STAGING_PUBLIC_HANDLE=<published disposable handle>
+STAGING_BOOKING_DATE=2030-01-15
+STAGING_BOOKING_SERVICE_ID=<configured service ID>
+STAGING_TEST_EMAIL=<test inbox address>
+STAGING_STRIPE_WEBHOOK_BODY=<signed disposable Stripe event body>
+STAGING_STRIPE_WEBHOOK_SIGNATURE=<matching Stripe-Signature header>
+STAGING_PRODUCT_ID=<active disposable product ID>
+STAGING_DOMAIN_HOSTNAME=<disposable hostname delegated to Cloudflare>
+STAGING_EXPECT_CALENDAR_PROVIDER=google|outlook
+STAGING_DISPOSABLE_DATA_CONFIRMATION=I_UNDERSTAND
+```
+
+The command fails before making requests when any value is missing, and fails
+when a provider job, email notification, webhook, storage operation, domain
+operation, or public resolution is not completed. The release gate also
+requires `PRODUCTION_SMOKE_BASE_URL` plus the strict smoke inputs documented
+above; no critical integration check is converted into a skip in release mode.
+
 ## Rollback
 
 If checkout, authentication, publishing, or domain routing fails, route Cloud Run traffic back to the previous healthy revision. Do not disable webhook signature verification or Firestore rules to recover. Fix forward with a new revision after preserving the failing revision logs and request IDs.

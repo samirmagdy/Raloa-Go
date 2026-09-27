@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue } from 'firebase-admin/firestore';
 import type { DocumentData, DocumentReference, DocumentSnapshot, Query, QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import multer from 'multer';
 import sharp from 'sharp';
@@ -1945,9 +1945,20 @@ app.get('/api/creator/bookings', async (req: Request, res: Response) => {
   if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
   const site = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
   if (!site.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
-  const snapshot = await adminDb.collection('bookings').where('hostUserId', '==', user.uid).limit(500).get();
+  const requestedLimit = Number(req.query.limit || 50);
+  const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
+  const cursor = req.query.cursor ? decodePageCursor(req.query.cursor) : null;
+  if (req.query.cursor && !cursor) return apiError(res, 400, 'INVALID_CURSOR', 'The bookings page cursor is invalid or expired.');
+  let query: Query = adminDb.collection('bookings').where('hostUserId', '==', user.uid).orderBy('createdAt', 'desc').orderBy(FieldPath.documentId(), 'desc').limit(limit + 1);
+  if (cursor) query = query.startAfter(cursor.createdAt, cursor.id);
+  const snapshot = await query.get();
   const bookings = snapshot.docs.filter((document) => String(document.data()?.siteId || '') === siteId).map((document) => ({ id: document.id, ...document.data() })) as Array<Record<string, any>>;
-  return res.json({ bookings: bookings.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
+  const lastScanned = snapshot.docs[snapshot.docs.length - 1];
+  return res.json({
+    bookings: bookings.slice(0, limit),
+    hasMore: snapshot.docs.length > limit,
+    nextCursor: snapshot.docs.length > limit && lastScanned ? encodePageCursor({ createdAt: String(lastScanned.data()?.createdAt || ''), id: lastScanned.id }) : null
+  });
 });
 
 app.post('/api/creator/bookings/:bookingId/confirm', async (req: Request, res: Response) => {
@@ -2042,6 +2053,20 @@ function validAudienceDate(value: unknown): value is string {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
+function encodePageCursor(value: { createdAt: string; id: string }): string {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+}
+
+function decodePageCursor(value: unknown): { createdAt: string; id: string } | null {
+  if (typeof value !== 'string' || value.length > 512) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Record<string, unknown>;
+    return typeof parsed.createdAt === 'string' && typeof parsed.id === 'string' ? { createdAt: parsed.createdAt, id: parsed.id } : null;
+  } catch {
+    return null;
+  }
+}
+
 async function getOwnedAudienceSite(user: AuthenticatedUser, requestedHandle?: string, requestedSiteId?: string): Promise<{ id: string; handle: string } | null> {
   if (!isAdminConfigured()) return null;
   const profileRef = adminDb.collection('users').doc(user.uid);
@@ -2100,8 +2125,14 @@ function audienceRecordForResponse(kind: AudienceRecordKind, data: Record<string
   };
 }
 
-async function listAudienceRecords(kind: AudienceRecordKind, site: { id: string; handle: string }, userId: string, search: string, status: string, from: string | null, to: string | null, limit: number) {
-  const snapshot = await audienceCollection(kind).where('creatorUserId', '==', userId).limit(5000).get();
+async function listAudienceRecords(kind: AudienceRecordKind, site: { id: string; handle: string }, userId: string, search: string, status: string, from: string | null, to: string | null, limit: number, cursor: { createdAt: string; id: string } | null) {
+  let query: Query = audienceCollection(kind)
+    .where('creatorUserId', '==', userId)
+    .orderBy('createdAt', 'desc')
+    .orderBy(FieldPath.documentId(), 'desc')
+    .limit(limit + 1);
+  if (cursor) query = query.startAfter(cursor.createdAt, cursor.id);
+  const snapshot = await query.get();
   const fromTime = from ? Date.parse(`${from}T00:00:00.000Z`) : 0;
   const toTime = to ? Date.parse(`${to}T00:00:00.000Z`) + 86400000 : Number.POSITIVE_INFINITY;
   const normalizedSearch = search.toLowerCase();
@@ -2120,7 +2151,14 @@ async function listAudienceRecords(kind: AudienceRecordKind, site: { id: string;
       return haystack.toLowerCase().includes(normalizedSearch);
     })
     .sort((a, b) => String(b.data()?.createdAt || '').localeCompare(String(a.data()?.createdAt || '')));
-  return { total: records.length, records: records.slice(0, limit).map((document) => audienceRecordForResponse(kind, document.data() as Record<string, unknown>, document.id)), hasMore: records.length > limit };
+  const page = records.slice(0, limit);
+  const last = page[page.length - 1];
+  return {
+    total: records.length,
+    records: page.map((document) => audienceRecordForResponse(kind, document.data() as Record<string, unknown>, document.id)),
+    hasMore: records.length > limit,
+    nextCursor: records.length > limit && last ? encodePageCursor({ createdAt: String(last.data()?.createdAt || ''), id: last.id }) : null
+  };
 }
 
 app.get('/api/creator/audience', async (req: Request, res: Response) => {
@@ -2137,15 +2175,17 @@ app.get('/api/creator/audience', async (req: Request, res: Response) => {
   const to = req.query.to ? (validAudienceDate(req.query.to) ? req.query.to : null) : null;
   if ((req.query.from && !from) || (req.query.to && !to) || (from && to && from > to)) return apiError(res, 400, 'INVALID_AUDIENCE_RANGE', 'Use a valid inclusive date range.');
   const requestedLimit = Number(req.query.limit || 100);
-  const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 100;
+  const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 100;
+  const cursor = req.query.cursor ? decodePageCursor(req.query.cursor) : null;
+  if (req.query.cursor && !cursor) return apiError(res, 400, 'INVALID_CURSOR', 'The audience page cursor is invalid or expired.');
   try {
     const site = await getOwnedAudienceSite(user, requestedHandle, requestedSiteId);
     if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
     const [list, subscriberSnapshot, submissionSnapshot, viewsSnapshot] = await Promise.all([
-      listAudienceRecords(kind, site, user.uid, search, status, from, to, limit),
-      audienceCollection('subscribers').where('creatorUserId', '==', user.uid).limit(5000).get(),
-      audienceCollection('submissions').where('creatorUserId', '==', user.uid).limit(5000).get(),
-      readAnalyticsEvents('page_views', user.uid)
+      listAudienceRecords(kind, site, user.uid, search, status, from, to, limit, cursor),
+      audienceCollection('subscribers').where('creatorUserId', '==', user.uid).limit(5001).get(),
+      audienceCollection('submissions').where('creatorUserId', '==', user.uid).limit(5001).get(),
+      readAnalyticsEvents('page_views', user.uid, 10000)
     ]);
     const fromTime = from ? Date.parse(`${from}T00:00:00.000Z`) : 0;
     const toTime = to ? Date.parse(`${to}T00:00:00.000Z`) + 86400000 : Number.POSITIVE_INFINITY;
@@ -2156,8 +2196,9 @@ app.get('/api/creator/audience', async (req: Request, res: Response) => {
     };
     const subscribers = subscriberSnapshot.docs.filter(inSiteRange);
     const submissions = submissionSnapshot.docs.filter(inSiteRange);
+    const metricsCapped = subscriberSnapshot.size > 5000 || submissionSnapshot.size > 5000;
     const activeSubscribers = subscribers.filter((document) => document.data().status !== 'unsubscribed').length;
-    const uniqueVisitors = new Set(viewsSnapshot.filter((document) => {
+    const uniqueVisitors = new Set(viewsSnapshot.events.filter((document) => {
       const data = document.data();
       const timestamp = Date.parse(String(data.timestamp || ''));
       return String(data.siteHandle || '') === site.handle && Number.isFinite(timestamp) && timestamp >= fromTime && timestamp < toTime;
@@ -2168,6 +2209,8 @@ app.get('/api/creator/audience', async (req: Request, res: Response) => {
       data: list.records,
       total: list.total,
       hasMore: list.hasMore,
+      nextCursor: list.nextCursor,
+      metricsCapped,
       metrics: {
         subscribers: subscribers.length,
         activeSubscribers,
@@ -2175,7 +2218,9 @@ app.get('/api/creator/audience', async (req: Request, res: Response) => {
         submissions: submissions.length,
         newSubmissions: submissions.filter((document) => Date.parse(String(document.data().createdAt || '')) >= Date.now() - 30 * 86400000).length,
         uniqueVisitors: uniqueVisitors.size,
-        conversionRate
+        conversionRate,
+        capped: metricsCapped || viewsSnapshot.capped,
+        truncated: metricsCapped || viewsSnapshot.capped
       },
       dateRange: { from, to }
     });
@@ -2265,7 +2310,7 @@ app.get('/api/creator/audience/export', async (req: Request, res: Response) => {
     const status = typeof req.query.status === 'string' ? req.query.status.trim().slice(0, 30) : '';
     const from = req.query.from && validAudienceDate(req.query.from) ? req.query.from : null;
     const to = req.query.to && validAudienceDate(req.query.to) ? req.query.to : null;
-    const result = await listAudienceRecords(kind, site, user.uid, search, status, from, to, 5000);
+    const result = await listAudienceRecords(kind, site, user.uid, search, status, from, to, 10000, null);
     const format = req.query.format === 'csv' ? 'csv' : 'json';
     const stamp = new Date().toISOString().slice(0, 10);
     if (format === 'json') {
@@ -3389,16 +3434,17 @@ async function analyticsFromRollups(userId: string, sites: Array<QueryDocumentSn
   };
 }
 
-async function readAnalyticsEvents(collection: 'page_views' | 'link_clicks', userId: string): Promise<QueryDocumentSnapshot[]> {
+async function readAnalyticsEvents(collection: 'page_views' | 'link_clicks', userId: string, maxEvents = 10000): Promise<{ events: QueryDocumentSnapshot[]; capped: boolean }> {
   const events: QueryDocumentSnapshot[] = [];
   let query: Query = adminDb.collection(collection).where('siteOwnerId', '==', userId).orderBy('timestamp', 'asc').limit(1000);
   while (true) {
     const page = await query.get();
-    events.push(...page.docs);
-    if (page.docs.length < 1000) break;
+    const remaining = Math.max(0, maxEvents - events.length);
+    events.push(...page.docs.slice(0, remaining));
+    if (page.docs.length < 1000) return { events, capped: false };
+    if (events.length >= maxEvents) return { events, capped: true };
     query = query.startAfter(page.docs[page.docs.length - 1]);
   }
-  return events;
 }
 
 app.get('/api/analytics/platform', async (req: Request, res: Response) => {
@@ -3428,10 +3474,13 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
     if (requestedSiteId && !(await getOwnedSite(user.uid, requestedSiteId))) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
     const rollupMetrics = await analyticsFromRollups(user.uid, sitesSnapshot.docs, requestedSiteId, fromDate, toDate);
     if (rollupMetrics) return res.status(200).json(rollupMetrics);
-    const [viewsSnapshot, clicksSnapshot] = await Promise.all([
+    const [viewsResult, clicksResult] = await Promise.all([
       readAnalyticsEvents('page_views', user.uid),
       readAnalyticsEvents('link_clicks', user.uid)
     ]);
+    const viewsSnapshot = viewsResult.events;
+    const clicksSnapshot = clicksResult.events;
+    const rawEventsCapped = viewsResult.capped || clicksResult.capped;
     const views = viewsSnapshot.filter((document) => !requestedSiteId || String(document.data()?.siteId || '') === requestedSiteId);
     const clicks = clicksSnapshot.filter((document) => !requestedSiteId || String(document.data()?.siteId || '') === requestedSiteId);
     const sites = selectedSite ? [selectedSite] : sitesSnapshot.docs;
@@ -3512,8 +3561,8 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
       ctr: totalPageViews ? Number(((totalClicks / totalPageViews) * 100).toFixed(2)) : null,
       activeSitesCount: sites.length,
       dateRange: { from: fromDate, to: toDate },
-      capped: false,
-      truncated: false,
+      capped: rawEventsCapped,
+      truncated: rawEventsCapped,
       dataSource: 'legacy_events',
       timeline: timelineData,
       links: [...linkCounts.values()].sort((a, b) => b.clicks - a.clicks).map((link) => ({ ...link, share: totalClicks ? Number(((link.clicks / totalClicks) * 100).toFixed(1)) : 0 })),
@@ -4184,7 +4233,13 @@ app.get('/api/creator/orders', async (req: Request, res: Response) => {
     return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
   }
   try {
-    const snapshot = await adminDb.collection('orders').where('creatorId', '==', user.uid).limit(200).get();
+    const requestedLimit = Number(req.query.limit || 50);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
+    const cursor = req.query.cursor ? decodePageCursor(req.query.cursor) : null;
+    if (req.query.cursor && !cursor) return apiError(res, 400, 'INVALID_CURSOR', 'The orders page cursor is invalid or expired.');
+    let query: Query = adminDb.collection('orders').where('creatorId', '==', user.uid).orderBy('createdAt', 'desc').orderBy(FieldPath.documentId(), 'desc').limit(limit + 1);
+    if (cursor) query = query.startAfter(cursor.createdAt, cursor.id);
+    const snapshot = await query.get();
     const rawOrders = snapshot.docs.map((document) => ({ id: document.id, ...document.data() })) as Array<Record<string, unknown>>;
     const missingSiteOrders = rawOrders.filter((order) => !order.siteId && typeof order.productId === 'string');
     const productSnapshots = missingSiteOrders.length
@@ -4195,7 +4250,12 @@ app.get('/api/creator/orders', async (req: Request, res: Response) => {
       .map((order): Record<string, unknown> => ({ ...order, siteId: String(order.siteId || productSiteById.get(String(order.productId || '')) || '') }))
       .filter((order) => !requestedSiteId || String(order.siteId || '') === requestedSiteId)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-    return res.status(200).json({ orders });
+    const lastScanned = snapshot.docs[snapshot.docs.length - 1];
+    return res.status(200).json({
+      orders: orders.slice(0, limit),
+      hasMore: snapshot.docs.length > limit,
+      nextCursor: snapshot.docs.length > limit && lastScanned ? encodePageCursor({ createdAt: String(lastScanned.data()?.createdAt || ''), id: lastScanned.id }) : null
+    });
   } catch (error) {
     console.error('[Creator orders list]', error);
     return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Orders are temporarily unavailable.');
@@ -4586,7 +4646,7 @@ app.delete('/api/calendar/:provider', async (req: Request, res: Response) => {
 app.get('/api/domains', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
-  if (!isAdminConfigured()) return res.status(200).json({ domains: [] });
+  if (!isAdminConfigured()) return apiError(res, 503, 'DOMAINS_UNAVAILABLE', 'Custom domain persistence is temporarily unavailable.');
 
   const snapshot = await adminDb.collection('custom_domains').where('userId', '==', user.uid).get();
   const domains = (await Promise.all(snapshot.docs.map(async (document) => {

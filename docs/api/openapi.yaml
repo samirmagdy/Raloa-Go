@@ -711,6 +711,94 @@ paths:
           description: Invalid request
         '401':
           description: Authentication required
+  /api/media/upload:
+    post:
+      operationId: post_post_api_media_upload
+      responses:
+        '201': { description: Optimized media asset created }
+        '400': { description: Invalid upload request }
+        '401': { description: Authentication required }
+        '403': { description: Plan entitlement denied }
+        '415': { description: Unsupported media type }
+        '503': { description: Media storage unavailable }
+  /api/media:
+    get:
+      operationId: get_get_api_media
+      parameters: [{ name: siteId, in: query, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Owned ready media assets }
+        '400': { description: Site ID required }
+        '401': { description: Authentication required }
+        '404': { description: Site not found }
+        '503': { description: Media storage unavailable }
+  /api/media/{mediaId}/url:
+    get:
+      operationId: get_get_api_media_mediaid_url
+      parameters:
+        - { name: mediaId, in: path, required: true, schema: { type: string } }
+        - { name: variant, in: query, required: false, schema: { type: string, enum: [original, thumbnail] } }
+      responses:
+        '200': { description: Short-lived signed media URL }
+        '401': { description: Authentication required }
+        '404': { description: Media asset not owned or ready }
+        '503': { description: Media storage unavailable }
+  /api/media/{mediaId}:
+    delete:
+      operationId: delete_delete_api_media_mediaid
+      parameters:
+        - { name: mediaId, in: path, required: true, schema: { type: string } }
+        - { name: siteId, in: query, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Media asset deleted }
+        '401': { description: Authentication required }
+        '404': { description: Site or media not found }
+        '409': { description: Media is still referenced }
+        '503': { description: Media storage unavailable }
+  /api/media/cleanup:
+    post:
+      operationId: post_post_api_media_cleanup
+      responses:
+        '200': { description: Orphan media cleanup result }
+        '400': { description: Site ID required }
+        '401': { description: Authentication required }
+        '404': { description: Site not found }
+        '503': { description: Media storage unavailable }
+  /api/media/public/{mediaId}:
+    get:
+      operationId: get_get_api_media_public_mediaid
+      parameters:
+        - { name: mediaId, in: path, required: true, schema: { type: string } }
+        - { name: variant, in: query, required: false, schema: { type: string, enum: [original, thumbnail] } }
+      responses:
+        '302': { description: Redirect to a signed public media URL }
+        '404': { description: Media is unavailable or unpublished }
+        '503': { description: Media storage unavailable }
+  /api/sites:
+    get:
+      operationId: get_get_api_sites
+      responses:
+        '200': { description: Authenticated creator site summaries }
+        '401': { description: Authentication required }
+        '503': { description: Site persistence unavailable }
+    post:
+      operationId: post_post_api_sites
+      responses:
+        '201': { description: Draft site created }
+        '400': { description: Invalid site content }
+        '401': { description: Authentication required }
+        '403': { description: Entitlement denied }
+        '409': { description: Site handle conflict }
+        '503': { description: Site persistence unavailable }
+  /api/sites/{siteId}:
+    delete:
+      operationId: delete_delete_api_sites_siteid
+      parameters: [{ name: siteId, in: path, required: true, schema: { type: string } }]
+      responses:
+        '204': { description: Draft site deleted }
+        '401': { description: Authentication required }
+        '404': { description: Site not found or not owned }
+        '409': { description: Published site cannot be deleted }
+        '503': { description: Site persistence unavailable }
   /llms.txt:
     get:
       operationId: get_get_llms_txt
