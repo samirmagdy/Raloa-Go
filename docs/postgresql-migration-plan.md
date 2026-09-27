@@ -11,6 +11,8 @@ and does not run against the current Firebase project.
   relational domains default to PostgreSQL; existing Firestore repositories for those domains are
   migration adapters, not a permanent second authority. See
   [`docs/firestore-role.md`](firestore-role.md).
+- Custom-domain ownership, verification, certificate state, DNS instructions, and routing metadata
+  are relational domain state; Cloudflare remains an adapter behind a retryable provisioning service.
 - Services depend on repository ports, not SQL or Firestore document shapes.
 - External provider identifiers remain in provider columns, while provider credentials remain
   encrypted and outside API response models.

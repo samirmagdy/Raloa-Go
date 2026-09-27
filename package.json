@@ -47,6 +47,7 @@
     "test:analytics-pipeline": "tsx test-analytics-pipeline.ts",
     "test:media-service": "tsx test-media-service.ts",
     "test:media-processing": "tsx test-media-processing.ts",
+    "test:domain-provisioning": "tsx test-domain-provisioning.ts",
     "check:persistence-boundary": "node scripts/check-persistence-boundary.mjs",
     "test:content-schema": "tsx test-content-schema.ts",
     "test:integration:staging": "node scripts/staging-integration-checks.mjs",

@@ -516,10 +516,16 @@ CREATE TABLE custom_domains (
   ssl_status text NOT NULL CHECK (ssl_status IN ('pending', 'active', 'failed')),
   provider_hostname_id text,
   verification_token text NOT NULL,
+  provisioning_state text NOT NULL DEFAULT 'pending' CHECK (provisioning_state IN ('pending', 'provisioning', 'verified', 'failed', 'deleted')),
+  dns_instructions jsonb NOT NULL DEFAULT '[]'::jsonb,
+  routing_config jsonb NOT NULL DEFAULT '{}'::jsonb,
+  idempotency_key text NOT NULL,
+  last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (hostname),
-  UNIQUE (site_id)
+  UNIQUE (site_id),
+  UNIQUE (idempotency_key)
 );
 CREATE INDEX custom_domains_ready_idx ON custom_domains (hostname) WHERE verification_status = 'verified' AND ssl_status = 'active';
 
