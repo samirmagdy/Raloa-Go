@@ -95,7 +95,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="relative w-full max-w-4xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col md:flex-row max-h-[92vh] transition-colors duration-200">
+      <div className="relative flex h-auto max-h-[calc(100dvh-2rem)] w-full max-w-6xl min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl transition-colors duration-200 dark:border-slate-800 dark:bg-slate-900 sm:max-h-[calc(100dvh-3rem)] md:grid md:grid-cols-[minmax(340px,0.9fr)_minmax(0,1.1fr)]">
         
         {/* Floating Success Notification Toast */}
         {copied && (
@@ -111,23 +111,24 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
 
         {/* Left Side: Mobile Phone Device Preview */}
         <div
-          className="md:w-1/2 p-4 sm:p-6 flex flex-col items-center justify-center overflow-y-auto transition-all duration-500"
+          className="min-h-0 overflow-y-auto p-4 transition-all duration-500 sm:p-6 md:p-8 flex flex-col items-center justify-center"
           style={bgContainerProps.stageContainerStyle}
         >
-          <div className="w-full max-w-[280px] sm:max-w-[300px]">
+          <div className="w-full max-w-[310px] sm:max-w-[330px]">
             <PhoneMockup
               template={template}
               isRtl={isRtl}
               backgroundStyle={activeBgStyle}
+              previewMode
             />
           </div>
 
           {/* Quick Background Theme Switcher */}
-          <div className="mt-3.5 flex items-center gap-1 p-1 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs text-[11px]">
+          <div className="mt-4 flex max-w-full items-center justify-center gap-1 overflow-x-auto rounded-xl border border-slate-200/90 bg-white/90 p-1 text-[11px] shadow-2xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/90">
             <button
               type="button"
               onClick={() => setActiveBgStyle('signature')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
                 activeBgStyle === 'signature'
                   ? 'bg-indigo-600 text-white shadow-2xs font-semibold'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -138,7 +139,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
             <button
               type="button"
               onClick={() => setActiveBgStyle('immersive')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
                 activeBgStyle === 'immersive'
                   ? 'bg-indigo-600 text-white shadow-2xs font-semibold'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -149,7 +150,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
             <button
               type="button"
               onClick={() => setActiveBgStyle('gradient')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
                 activeBgStyle === 'gradient'
                   ? 'bg-indigo-600 text-white shadow-2xs font-semibold'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -161,7 +162,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
         </div>
 
         {/* Right Side: Template Details & Action */}
-        <div className="md:w-1/2 p-6 sm:p-8 flex flex-col justify-between overflow-y-auto bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+        <div className="flex min-h-0 flex-col overflow-y-auto bg-white p-5 text-slate-900 dark:bg-slate-900 dark:text-white sm:p-8 md:p-10">
           <div>
             {/* Top Modal Header */}
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
@@ -270,7 +271,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
           </div>
 
           {/* Action Buttons Section with 'Copy Template URL' button */}
-          <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center gap-3">
+          <div className="mt-8 flex shrink-0 flex-col items-stretch gap-3 border-t border-slate-100 pt-5 dark:border-slate-800 sm:flex-row sm:items-center sm:pt-6">
             {/* Primary 'Use this template' CTA */}
             <button
               type="button"

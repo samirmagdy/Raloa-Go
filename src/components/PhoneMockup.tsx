@@ -23,6 +23,7 @@ interface PhoneMockupProps {
   themeModeOverride?: 'auto' | 'dark' | 'light';
   accentColor?: string;
   surfaceColor?: string;
+  previewMode?: boolean;
   cardRadius?: 'sharp' | 'subtle' | 'rounded' | 'pill';
   cardShadow?: 'none' | 'subtle' | 'soft' | 'hard';
   borderStyle?: 'none' | 'thin' | 'bold' | 'dashed';
@@ -40,6 +41,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
   themeModeOverride = 'auto',
   accentColor,
   surfaceColor,
+  previewMode = false,
   cardRadius = 'rounded',
   cardShadow = 'subtle',
   borderStyle = 'thin',
@@ -201,13 +203,13 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
 
   return (
     <div
-      className={`relative mx-auto w-full max-w-[340px] rounded-[48px] p-3 border-[6px] select-none transition-all duration-300 hover:scale-[1.01] raloa-phone-mockup ${className}`}
+      className={`relative mx-auto w-full max-w-[340px] sm:max-w-[350px] aspect-[9/19.5] rounded-[52px] p-2.5 sm:p-3 border-[5px] sm:border-[6px] select-none transition-all duration-300 hover:scale-[1.01] raloa-phone-mockup flex flex-col ${className}`}
       style={bgContainerProps.phoneShellStyle}
     >
-      {/* Screen Frame with Dynamic Template Background Container Properties */}
+      {/* Screen Frame with Dynamic Template Background Container Properties (iPhone Pro Max 19.5:9 display) */}
       <div
-        className="relative rounded-[38px] overflow-hidden flex flex-col min-h-[540px] sm:min-h-[580px] max-h-[640px] shadow-inner raloa-phone-screen transition-all duration-300"
-      style={{ ...bgContainerProps.screenContainerStyle, fontFamily: designFontFamily(designTokens) }}
+        className="relative w-full h-full rounded-[42px] overflow-hidden flex flex-col shadow-inner raloa-phone-screen transition-all duration-300"
+        style={{ ...bgContainerProps.screenContainerStyle, fontFamily: designFontFamily(designTokens) }}
       >
         {/* Ambient Glow for Template (Signature / Gradient mode) */}
         {themeConfig.ambientGlow && currentBgStyle !== 'minimal' && (
@@ -224,8 +226,8 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
           }`}
         >
           <span>9:41</span>
-          <div className="w-24 h-5 bg-black rounded-full flex items-center justify-center shadow-xs">
-            <div className="w-2 h-2 rounded-full bg-slate-800 ml-auto mr-2" />
+          <div className="absolute left-1/2 -translate-x-1/2 top-3 w-22 h-4.5 bg-black rounded-full flex items-center justify-center shadow-xs">
+            <div className="w-1.5 h-1.5 rounded-full bg-slate-800 ml-auto mr-2" />
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-[10px]">5G</span>
@@ -283,13 +285,14 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                 />
               </div>
               <div
-                className="absolute -bottom-1 -right-1 rounded-full p-0.5 shadow-sm"
-                style={{ backgroundColor: surfaceColor || '#FFFFFF' }}
+                className="absolute -bottom-1 -right-1 rounded-full p-0.5 shadow-sm bg-white dark:bg-slate-900 flex items-center justify-center"
               >
-                <CheckCircle2
-                  className="w-5 h-5"
-                  style={{ color: effectiveThemeColor, fill: effectiveThemeColor }}
-                />
+                <div
+                  className="w-4 h-4 rounded-full flex items-center justify-center text-white"
+                  style={{ backgroundColor: effectiveThemeColor }}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                </div>
               </div>
             </div>
 
@@ -299,9 +302,11 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
             </h3>
             <p
               className={`text-[12px] font-semibold mt-1 transition-colors`}
-              style={{ color: effectiveThemeColor }}
+              style={{ color: isDark ? (themeConfig.roleColor ? undefined : '#60A5FA') : effectiveThemeColor }}
             >
-              {template.role}
+              <span className={isDark && themeConfig.roleColor ? themeConfig.roleColor : undefined}>
+                {template.role}
+              </span>
             </p>
             <p className={`text-[11px] mt-1.5 px-3 leading-relaxed max-w-[270px] ${themeConfig.bioColor}`}>
               {isRtl ? template.bioAr : template.bio}
@@ -340,6 +345,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                 const shadowClass = getShadowClass();
 
                 const contrast = getCardContrast();
+                const linkVariant = link.type === 'booking' ? 'booking' : link.type === 'shop' ? 'voucher' : link.type === 'gallery' ? 'launch' : 'links';
 
                 return (
                   <button
@@ -360,7 +366,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                         className={`relative w-11 h-11 ${cardRadius === 'sharp' ? 'rounded-none' : cardRadius === 'pill' ? 'rounded-full' : 'rounded-xl'} overflow-hidden shrink-0 border border-black/10 dark:border-white/10 ${contrast.iconBgClass} ${themeConfig.cardIconColor}`}
                       >
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <PremiumMark className="w-5 h-5" style={{ color: effectiveThemeColor }} />
+                          <PremiumMark variant={linkVariant} className="w-5 h-5" style={{ color: effectiveThemeColor }} />
                         </div>
                         <SafeImage
                           src={link.thumbnail}
@@ -373,27 +379,29 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                         className={`w-11 h-11 ${cardRadius === 'sharp' ? 'rounded-none' : cardRadius === 'pill' ? 'rounded-full' : 'rounded-xl'} flex items-center justify-center shrink-0 ${contrast.iconBgClass} ${themeConfig.cardIconColor}`}
                         style={contrast.iconColorStyle}
                       >
-                        <PremiumMark className="w-5 h-5" />
+                        <PremiumMark variant={linkVariant} className="w-5 h-5" />
                       </div>
                     )}
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span
-                          className={`font-bold text-[13px] truncate transition-colors ${
+                          className={`font-bold text-[13px] leading-snug line-clamp-2 transition-colors ${
                             !surfaceColor ? themeConfig.cardText : ''
                           }`}
                           style={contrast.textColor ? { color: contrast.textColor } : undefined}
+                          title={isRtl ? link.titleAr : link.title}
                         >
                           {isRtl ? link.titleAr : link.title}
                         </span>
                       </div>
                       {(link.subtitle || link.subtitleAr) && (
                         <p
-                          className={`text-[10px] truncate mt-0.5 ${
+                          className={`text-[10px] leading-tight line-clamp-1 mt-0.5 ${
                             !surfaceColor ? themeConfig.cardSubtext : ''
                           }`}
                           style={contrast.subtextColor ? { color: contrast.subtextColor } : undefined}
+                          title={isRtl ? link.subtitleAr : link.subtitle}
                         >
                           {isRtl ? link.subtitleAr : link.subtitle}
                         </p>
@@ -416,7 +424,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
             {template.sampleLinks.filter((link) => link.type === 'gallery' && link.galleryItems?.length).map((link) => (
               <MediaGallery key={`${link.id}-gallery`} items={link.galleryItems || []} title={isRtl ? link.titleAr : link.title} isRtl={isRtl} compact />
             ))}
-            {template.sampleLinks.some((link) => link.type === 'gallery' && !link.galleryItems?.length) && <p className="rounded-xl border border-black/10 px-3 py-2 text-center text-[10px] opacity-60">{isRtl ? 'لا توجد وسائط في المعرض بعد.' : 'This gallery has no media yet.'}</p>}
+            {!previewMode && template.sampleLinks.some((link) => link.type === 'gallery' && !link.galleryItems?.length) && <p className="rounded-xl border border-black/10 px-3 py-2 text-center text-[10px] opacity-60">{isRtl ? 'لا توجد وسائط في المعرض بعد.' : 'This gallery has no media yet.'}</p>}
           </div>
 
             {/* Interactive Hint */}

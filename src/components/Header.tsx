@@ -113,15 +113,24 @@ export const Header: React.FC<HeaderProps> = ({
     setScrolled(value > 20);
   });
 
-  // Track active dashboard section for authenticated user
+  // Track active section for both authenticated and guest users
   useEffect(() => {
-    if (!user) return;
-    const sectionIds: Array<{ id: string; key: string }> = [
+    const authSectionIds: Array<{ id: string; key: string }> = [
       { id: 'personal-dashboard', key: 'dashboard' },
       { id: 'site-overview', key: 'site-overview' },
       { id: 'analytics-summary', key: 'analytics' },
       { id: 'quick-actions', key: 'quick-actions' }
     ];
+
+    const guestSectionIds: Array<{ id: string; key: string }> = [
+      { id: 'templates', key: 'templates' },
+      { id: 'how-it-works', key: 'how-it-works' },
+      { id: 'features', key: 'features' },
+      { id: 'pricing', key: 'pricing' },
+      { id: 'faq', key: 'faq' }
+    ];
+
+    const sectionIds = user ? authSectionIds : guestSectionIds;
 
     if (typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver(
@@ -236,10 +245,16 @@ export const Header: React.FC<HeaderProps> = ({
     }
   ];
 
+  // Guest nav links matching exact chronological order of landing page sections:
+  // 1. Templates (#templates)
+  // 2. How It Works (#how-it-works)
+  // 3. Features (#features)
+  // 4. Pricing (#pricing)
+  // 5. FAQ / Resources (#faq)
   const guestNavLinks = [
     { id: 'templates', label: t.templates, href: '#templates', icon: Palette, onClick: undefined },
-    { id: 'features', label: t.features, href: '#features', icon: Sparkles, onClick: undefined },
     { id: 'how-it-works', label: t.howItWorks, href: '#how-it-works', icon: Zap, onClick: undefined },
+    { id: 'features', label: t.features, href: '#features', icon: Sparkles, onClick: undefined },
     { id: 'pricing', label: t.pricing, href: '#pricing', icon: PremiumMark, onClick: undefined },
     { id: 'faq', label: t.resources, href: '#faq', icon: UserIcon, onClick: undefined }
   ];
@@ -307,7 +322,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Desktop Navigation Links */}
             <nav className="hidden xl:flex items-center gap-1 min-w-0" aria-label="Main Navigation">
               {navLinks.map((link) => {
-                const isActive = user ? activeSection === link.id : false;
+                const isActive = activeSection === link.id;
                 const IconComponent = (link as any).icon;
                 // Allow tertiary items like Quick Actions & Templates to hide gracefully on tighter desktop screens if needed
                 const isSecondary = link.id === 'quick-actions' || link.id === 'templates';
@@ -553,7 +568,7 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Navigation Links in Mobile Drawer */}
               <nav className="mt-5 flex flex-col space-y-1.5" aria-label="Mobile Navigation">
                 {navLinks.map((link) => {
-                  const isActive = user ? activeSection === link.id : false;
+                  const isActive = activeSection === link.id;
                   const IconComp = (link as any).icon;
                   return (
                     <a
