@@ -20,6 +20,10 @@ and does not run against the current Firebase project.
 
 ## Transaction boundaries
 
+The normative consistency contract, including external-provider boundaries and worker retry rules,
+is documented in [`docs/transaction-strategy.md`](transaction-strategy.md). The domain-specific
+boundaries below describe the PostgreSQL implementation details.
+
 1. Booking creation: claim `(site_id, idempotency_key)`, lock the requested `booking_slots` row
    with `FOR UPDATE`, verify `status`, `booked_count`, and the service/site relationship, insert
    the booking and attendees, update the slot counters, and enqueue calendar/notification jobs in
