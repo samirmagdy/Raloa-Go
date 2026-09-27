@@ -1,0 +1,318 @@
+-- RALOA PostgreSQL target schema.
+-- Additive only: this migration does not modify Firestore or Firebase Auth.
+-- Firebase UID is retained in app_users.external_auth_id during the migration.
+
+BEGIN;
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+CREATE TYPE booking_status AS ENUM ('pending', 'confirmed', 'cancelled', 'completed', 'no_show');
+CREATE TYPE order_status AS ENUM ('pending_payment', 'paid', 'payment_failed', 'cancelled', 'refunded');
+CREATE TYPE fulfillment_status AS ENUM ('unfulfilled', 'processing', 'fulfilled', 'cancelled');
+CREATE TYPE subscription_status AS ENUM ('trialing', 'active', 'past_due', 'cancelled', 'incomplete', 'paused');
+CREATE TYPE integration_status AS ENUM ('connected', 'disconnected', 'error');
+CREATE TYPE idempotency_status AS ENUM ('processing', 'completed', 'failed');
+
+CREATE TABLE app_users (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  external_auth_id text NOT NULL UNIQUE,
+  email text,
+  display_name text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE sites (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id uuid NOT NULL REFERENCES app_users(id),
+  handle text NOT NULL UNIQUE CHECK (handle ~ '^[a-z0-9_-]{3,30}$'),
+  display_name text NOT NULL,
+  content jsonb NOT NULL DEFAULT '{}'::jsonb,
+  is_published boolean NOT NULL DEFAULT false,
+  published_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT sites_content_object CHECK (jsonb_typeof(content) = 'object')
+);
+CREATE INDEX sites_owner_updated_idx ON sites (owner_user_id, updated_at DESC);
+CREATE INDEX sites_published_handle_idx ON sites (handle) WHERE is_published;
+
+CREATE TABLE booking_services (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  site_id uuid NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  slug text NOT NULL CHECK (slug ~ '^[a-z0-9_-]{1,64}$'),
+  name text NOT NULL,
+  description text,
+  duration_minutes integer NOT NULL CHECK (duration_minutes BETWEEN 15 AND 480),
+  buffer_minutes integer NOT NULL DEFAULT 0 CHECK (buffer_minutes BETWEEN 0 AND 120),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (site_id, slug)
+);
+
+CREATE TABLE availability_rules (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  site_id uuid NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  weekday smallint NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+  starts_at time NOT NULL,
+  ends_at time NOT NULL,
+  timezone text NOT NULL,
+  CHECK (starts_at < ends_at)
+);
+CREATE INDEX availability_rules_site_weekday_idx ON availability_rules (site_id, weekday, starts_at);
+
+CREATE TABLE availability_exceptions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  site_id uuid NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  starts_at timestamptz NOT NULL,
+  ends_at timestamptz NOT NULL,
+  reason text,
+  CHECK (starts_at < ends_at)
+);
+CREATE INDEX availability_exceptions_site_time_idx ON availability_exceptions (site_id, starts_at, ends_at);
+
+CREATE TABLE bookings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  site_id uuid NOT NULL REFERENCES sites(id),
+  host_user_id uuid NOT NULL REFERENCES app_users(id),
+  service_id uuid NOT NULL REFERENCES booking_services(id),
+  customer_name text NOT NULL,
+  customer_email text NOT NULL,
+  starts_at timestamptz NOT NULL,
+  ends_at timestamptz NOT NULL,
+  timezone text NOT NULL,
+  status booking_status NOT NULL DEFAULT 'pending',
+  external_event_id text,
+  notes text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (starts_at < ends_at)
+);
+CREATE INDEX bookings_host_created_idx ON bookings (host_user_id, created_at DESC, id DESC);
+CREATE INDEX bookings_site_time_idx ON bookings (site_id, starts_at, ends_at);
+CREATE INDEX bookings_customer_email_idx ON bookings (customer_email, created_at DESC);
+ALTER TABLE bookings ADD CONSTRAINT bookings_no_overlap
+  EXCLUDE USING gist (
+    site_id WITH =,
+    tstzrange(starts_at, ends_at, '[)') WITH &&
+  ) WHERE (status IN ('pending', 'confirmed'));
+
+CREATE TABLE products (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  site_id uuid NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  creator_user_id uuid NOT NULL REFERENCES app_users(id),
+  slug text NOT NULL,
+  name text NOT NULL,
+  description text,
+  currency char(3) NOT NULL CHECK (currency IN ('USD', 'EUR', 'GBP', 'SAR', 'AED', 'CAD', 'AUD')),
+  price_minor bigint NOT NULL CHECK (price_minor >= 50),
+  active boolean NOT NULL DEFAULT true,
+  provider_product_id text,
+  provider_price_id text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (site_id, slug),
+  UNIQUE (provider_product_id),
+  UNIQUE (provider_price_id)
+);
+CREATE INDEX products_creator_active_idx ON products (creator_user_id, active, created_at DESC);
+
+CREATE TABLE inventory (
+  product_id uuid PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+  on_hand integer CHECK (on_hand IS NULL OR on_hand >= 0),
+  reserved integer NOT NULL DEFAULT 0 CHECK (reserved >= 0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (on_hand IS NULL OR reserved <= on_hand)
+);
+
+CREATE TABLE orders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  creator_user_id uuid NOT NULL REFERENCES app_users(id),
+  site_id uuid NOT NULL REFERENCES sites(id),
+  customer_email text NOT NULL,
+  status order_status NOT NULL DEFAULT 'pending_payment',
+  fulfillment_status fulfillment_status NOT NULL DEFAULT 'unfulfilled',
+  provider_checkout_id text UNIQUE,
+  total_minor bigint NOT NULL CHECK (total_minor >= 0),
+  currency char(3) NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX orders_creator_created_idx ON orders (creator_user_id, created_at DESC, id DESC);
+CREATE INDEX orders_customer_created_idx ON orders (customer_email, created_at DESC);
+
+CREATE TABLE order_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id uuid NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  product_id uuid NOT NULL REFERENCES products(id),
+  product_name text NOT NULL,
+  quantity integer NOT NULL CHECK (quantity > 0),
+  unit_price_minor bigint NOT NULL CHECK (unit_price_minor >= 0),
+  total_minor bigint NOT NULL CHECK (total_minor = quantity * unit_price_minor),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX order_items_order_idx ON order_items (order_id);
+
+CREATE TABLE inventory_reservations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id uuid NOT NULL REFERENCES products(id),
+  order_id uuid NOT NULL REFERENCES orders(id),
+  quantity integer NOT NULL CHECK (quantity > 0),
+  released_at timestamptz,
+  consumed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (released_at IS NULL OR consumed_at IS NULL),
+  UNIQUE (product_id, order_id)
+);
+CREATE INDEX inventory_reservations_open_idx ON inventory_reservations (product_id) WHERE released_at IS NULL AND consumed_at IS NULL;
+
+CREATE TABLE subscriptions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES app_users(id),
+  provider text NOT NULL DEFAULT 'stripe',
+  provider_customer_id text,
+  provider_subscription_id text,
+  plan text NOT NULL CHECK (plan IN ('free', 'pro', 'studio')),
+  status subscription_status NOT NULL,
+  interval text CHECK (interval IN ('monthly', 'yearly')),
+  current_period_end timestamptz,
+  trial_end timestamptz,
+  cancel_at timestamptz,
+  cancel_at_period_end boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, provider),
+  UNIQUE (provider, provider_subscription_id),
+  UNIQUE (provider, provider_customer_id)
+);
+CREATE INDEX subscriptions_status_idx ON subscriptions (status, current_period_end);
+
+CREATE TABLE integrations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  provider text NOT NULL,
+  status integration_status NOT NULL DEFAULT 'disconnected',
+  scopes text[] NOT NULL DEFAULT '{}',
+  encrypted_credentials bytea,
+  expires_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, provider)
+);
+CREATE INDEX integrations_provider_status_idx ON integrations (provider, status);
+
+CREATE TABLE custom_domains (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  site_id uuid NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  hostname text NOT NULL,
+  verification_status text NOT NULL CHECK (verification_status IN ('pending', 'verified', 'failed')),
+  ssl_status text NOT NULL CHECK (ssl_status IN ('pending', 'active', 'failed')),
+  provider_hostname_id text,
+  verification_token text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (hostname),
+  UNIQUE (site_id)
+);
+CREATE INDEX custom_domains_ready_idx ON custom_domains (hostname) WHERE verification_status = 'verified' AND ssl_status = 'active';
+
+CREATE TABLE analytics_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  site_id uuid REFERENCES sites(id),
+  site_owner_id uuid REFERENCES app_users(id),
+  event_type text NOT NULL CHECK (event_type IN ('page_view', 'link_click')),
+  occurred_at timestamptz NOT NULL,
+  visitor_hash text,
+  dimensions jsonb NOT NULL DEFAULT '{}'::jsonb,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX analytics_events_site_time_idx ON analytics_events (site_id, occurred_at);
+CREATE INDEX analytics_events_owner_time_idx ON analytics_events (site_owner_id, occurred_at);
+
+CREATE TABLE analytics_daily_rollups (
+  site_id uuid NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  site_owner_id uuid NOT NULL REFERENCES app_users(id),
+  day date NOT NULL,
+  page_views bigint NOT NULL DEFAULT 0 CHECK (page_views >= 0),
+  link_clicks bigint NOT NULL DEFAULT 0 CHECK (link_clicks >= 0),
+  unique_visitors bigint NOT NULL DEFAULT 0 CHECK (unique_visitors >= 0),
+  dimensions jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (site_id, day)
+);
+CREATE INDEX analytics_rollups_owner_day_idx ON analytics_daily_rollups (site_owner_id, day);
+
+CREATE TABLE analytics_visitor_days (
+  site_id uuid NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  site_owner_id uuid NOT NULL REFERENCES app_users(id),
+  day date NOT NULL,
+  visitor_hash text NOT NULL,
+  dimensions jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (site_id, day, visitor_hash)
+);
+
+CREATE TABLE idempotency_keys (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id uuid REFERENCES app_users(id),
+  scope text NOT NULL,
+  idempotency_key text NOT NULL,
+  request_hash text NOT NULL,
+  status idempotency_status NOT NULL DEFAULT 'processing',
+  response_status integer,
+  response_body jsonb,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (scope, idempotency_key)
+);
+CREATE INDEX idempotency_expiry_idx ON idempotency_keys (expires_at);
+
+CREATE TABLE operational_jobs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  kind text NOT NULL CHECK (kind IN ('notification', 'calendar', 'media_cleanup')),
+  aggregate_type text,
+  aggregate_id uuid,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  status text NOT NULL CHECK (status IN ('pending', 'processing', 'completed', 'retry', 'failed')),
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  available_at timestamptz NOT NULL DEFAULT now(),
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX operational_jobs_claim_idx ON operational_jobs (status, available_at, created_at);
+
+CREATE TABLE audit_log (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  actor_user_id uuid REFERENCES app_users(id),
+  action text NOT NULL,
+  entity_type text NOT NULL,
+  entity_id uuid,
+  before_data jsonb,
+  after_data jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX audit_log_entity_idx ON audit_log (entity_type, entity_id, created_at DESC);
+
+CREATE OR REPLACE FUNCTION set_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+DO $$
+DECLARE table_name text;
+BEGIN
+  FOREACH table_name IN ARRAY ARRAY['app_users', 'sites', 'booking_services', 'bookings', 'products', 'inventory', 'orders', 'subscriptions', 'integrations', 'custom_domains', 'analytics_daily_rollups', 'idempotency_keys', 'operational_jobs'] LOOP
+    EXECUTE format('CREATE TRIGGER %I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION set_updated_at()', table_name, table_name);
+  END LOOP;
+END;
+$$;
+
+COMMIT;
