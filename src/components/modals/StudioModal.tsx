@@ -10,6 +10,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { Locale, TemplateItem, BackgroundStyle, BookingConfig, ProfileSocialLink } from '../../types';
+import { DEFAULT_DESIGN_TOKENS, DesignTokens, normalizeDesignTokens } from '../../utils/designTokens';
 import { templatesData } from '../../data/content';
 import { useAuth } from '../../hooks/useAuth';
 import { useHistoryState } from '../../hooks/useHistoryState';
@@ -51,6 +52,7 @@ export interface StudioSiteConfig {
   cardRadius?: 'sharp' | 'subtle' | 'rounded' | 'pill';
   cardShadow?: 'none' | 'subtle' | 'soft' | 'hard';
   borderStyle?: 'none' | 'thin' | 'bold' | 'dashed';
+  designTokens: DesignTokens;
 
   // Site Settings, SEO & Integrations
   customDomain?: string;
@@ -151,6 +153,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
     cardRadius: 'rounded',
     cardShadow: 'subtle',
     borderStyle: 'thin',
+    designTokens: normalizeDesignTokens({ ...DEFAULT_DESIGN_TOKENS, background: { ...DEFAULT_DESIGN_TOKENS.background, style: defaultTemplate.backgroundStyle || 'signature', coverImage: defaultTemplate.coverImage } }),
     customDomain: '',
     metaTitle: '',
     metaDescription: '',
@@ -178,6 +181,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
     cardRadius = 'rounded',
     cardShadow = 'subtle',
     borderStyle = 'thin',
+    designTokens = DEFAULT_DESIGN_TOKENS,
     customDomain = '',
     metaTitle = '',
     metaDescription = '',
@@ -267,6 +271,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             cardRadius: (savedSite as any).cardRadius || 'rounded',
             cardShadow: (savedSite as any).cardShadow || 'subtle',
             borderStyle: (savedSite as any).borderStyle || 'thin',
+            designTokens: normalizeDesignTokens((savedSite as any).designTokens, savedSite as any),
             customDomain: (savedSite as any).customDomain || '',
             metaTitle: (savedSite as any).metaTitle || '',
             metaDescription: (savedSite as any).metaDescription || '',
@@ -323,6 +328,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             socials: configToSave.socials.filter((social) => social.url.trim()),
             isPublished: configToSave.isPublished,
             ...({
+              designTokens: configToSave.designTokens,
               accentColor: configToSave.accentColor,
               surfaceColor: configToSave.surfaceColor,
               cardRadius: configToSave.cardRadius,
@@ -447,6 +453,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
     avatar: avatar,
     coverImage: coverImage,
     backgroundStyle: bgStyle,
+    designTokens,
     sampleLinks: links.map((l) => ({
       id: l.id,
       title: l.title,
@@ -661,41 +668,43 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                   updateSiteConfig({ templateId: tId });
                 }}
                 bgStyle={bgStyle}
-                onBgStyleChange={(style) => updateSiteConfig({ bgStyle: style })}
+                onBgStyleChange={(style) => updateSiteConfig((prev) => ({ ...prev, bgStyle: style, designTokens: normalizeDesignTokens({ ...prev.designTokens, background: { ...prev.designTokens.background, style } }) }))}
                 themeMode={themeMode}
-                onThemeModeChange={(mode) => updateSiteConfig({ themeMode: mode })}
+                onThemeModeChange={(mode) => updateSiteConfig((prev) => ({ ...prev, themeMode: mode, designTokens: normalizeDesignTokens({ ...prev.designTokens, themeMode: mode }) }))}
                 accentColor={accentColor}
-                onAccentColorChange={(col) => updateSiteConfig({ accentColor: col })}
+                onAccentColorChange={(col) => updateSiteConfig((prev) => ({ ...prev, accentColor: col, designTokens: normalizeDesignTokens({ ...prev.designTokens, accentColor: col }) }))}
                 surfaceColor={surfaceColor}
-                onSurfaceColorChange={(surf) => updateSiteConfig({ surfaceColor: surf })}
+                onSurfaceColorChange={(surf) => updateSiteConfig((prev) => ({ ...prev, surfaceColor: surf, designTokens: normalizeDesignTokens({ ...prev.designTokens, surfaceColor: surf }) }))}
                 cardRadius={cardRadius}
-                onCardRadiusChange={(rad) => updateSiteConfig({ cardRadius: rad })}
+                onCardRadiusChange={(rad) => updateSiteConfig((prev) => ({ ...prev, cardRadius: rad, designTokens: normalizeDesignTokens({ ...prev.designTokens, cardRadius: rad }) }))}
                 cardShadow={cardShadow}
-                onCardShadowChange={(shd) => updateSiteConfig({ cardShadow: shd })}
+                onCardShadowChange={(shd) => updateSiteConfig((prev) => ({ ...prev, cardShadow: shd, designTokens: normalizeDesignTokens({ ...prev.designTokens, cardShadow: shd }) }))}
                 borderStyle={borderStyle}
-                onBorderStyleChange={(bs) => updateSiteConfig({ borderStyle: bs })}
+                onBorderStyleChange={(bs) => updateSiteConfig((prev) => ({ ...prev, borderStyle: bs, designTokens: normalizeDesignTokens({ ...prev.designTokens, borderStyle: bs }) }))}
                 onApplyPreset={(p) => {
-                  updateSiteConfig({
+                  updateSiteConfig((prev) => ({ ...prev,
                     accentColor: p.accentColor,
                     surfaceColor: p.surfaceColor,
                     cardRadius: p.radius,
                     cardShadow: p.shadow,
                     borderStyle: p.borderStyle,
                     bgStyle: p.bgStyle,
-                    themeMode: p.themeMode
-                  });
+                    themeMode: p.themeMode,
+                    designTokens: normalizeDesignTokens({ ...prev.designTokens, accentColor: p.accentColor, surfaceColor: p.surfaceColor, cardRadius: p.radius, cardShadow: p.shadow, borderStyle: p.borderStyle, themeMode: p.themeMode, background: { ...prev.designTokens.background, style: p.bgStyle } })
+                  }));
                 }}
                 onResetDefault={() => {
                   const preset = VISUAL_PRESETS[0];
-                  updateSiteConfig({
+                  updateSiteConfig((prev) => ({ ...prev,
                     accentColor: preset.accentColor,
                     surfaceColor: preset.surfaceColor,
                     cardRadius: preset.radius,
                     cardShadow: preset.shadow,
                     borderStyle: preset.borderStyle,
                     bgStyle: preset.bgStyle,
-                    themeMode: preset.themeMode
-                  });
+                    themeMode: preset.themeMode,
+                    designTokens: normalizeDesignTokens({ ...prev.designTokens, accentColor: preset.accentColor, surfaceColor: preset.surfaceColor, cardRadius: preset.radius, cardShadow: preset.shadow, borderStyle: preset.borderStyle, themeMode: preset.themeMode, background: { ...prev.designTokens.background, style: preset.bgStyle } })
+                  }));
                 }}
                 allowedBackgroundStyles={capabilities.allowedBackgroundStyles}
                 allowedDesignOptions={capabilities.allowedDesignOptions}
@@ -795,6 +804,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
               cardRadius={cardRadius}
               cardShadow={cardShadow}
               borderStyle={borderStyle}
+              designTokens={designTokens}
               onOpenPhoneAction={(_action, data) => {
                 if (data?.url) {
                   window.open(data.url, '_blank', 'noopener,noreferrer');

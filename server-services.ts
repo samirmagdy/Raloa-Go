@@ -2,6 +2,7 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth as getAdminAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import Stripe from 'stripe';
+import { normalizeDesignTokens } from './src/utils/designTokens';
 
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0319129908';
 const DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || 'ai-studio-raloadesignfirst-8ccbe7ea-5af1-4106-809a-71252bddde6f';
@@ -98,6 +99,7 @@ function publicSiteData(
   const { webhookUrl: _webhookUrl, ga4Id: _ga4Id, metaPixelId: _metaPixelId, ...publicSiteData } = siteData;
   return {
     ...publicSiteData,
+    designTokens: normalizeDesignTokens(siteData.designTokens, siteData),
     userId: profileDocument.id,
     handle: cleanHandle,
     searchIndexing: profileDocument.data()?.privacyPreferences?.searchIndexing !== false,

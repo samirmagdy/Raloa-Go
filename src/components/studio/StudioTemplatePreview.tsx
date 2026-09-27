@@ -4,6 +4,7 @@ import { Locale, TemplateItem, BackgroundStyle } from '../../types';
 import { PhoneMockup } from '../PhoneMockup';
 import { SocialPreviewGenerator } from './SocialPreviewGenerator';
 import { getTemplateBackgroundContainerProperties } from '../../utils/templateThemes';
+import { designTokensFromSite, type DesignTokens } from '../../utils/designTokens';
 
 export interface StudioTemplatePreviewProps {
   template: TemplateItem;
@@ -26,6 +27,7 @@ export interface StudioTemplatePreviewProps {
   cardRadius?: 'sharp' | 'subtle' | 'rounded' | 'pill';
   cardShadow?: 'none' | 'subtle' | 'soft' | 'hard';
   borderStyle?: 'none' | 'thin' | 'bold' | 'dashed';
+  designTokens?: DesignTokens;
 }
 
 /**
@@ -54,15 +56,26 @@ export const StudioTemplatePreview: React.FC<StudioTemplatePreviewProps> = ({
   surfaceColor,
   cardRadius,
   cardShadow,
-  borderStyle
+  borderStyle,
+  designTokens
 }) => {
   // Dynamically compute the template's background container properties with accent color applied
-  const effectiveTemplate = accentColor ? { ...template, themeColor: accentColor } : template;
+  const resolvedDesignTokens = designTokens || designTokensFromSite({
+    accentColor,
+    surfaceColor,
+    cardRadius,
+    cardShadow,
+    borderStyle,
+    themeMode,
+    bgStyle,
+    coverImage
+  });
+  const effectiveTemplate = { ...template, themeColor: resolvedDesignTokens.accentColor };
   const bgContainerProps = getTemplateBackgroundContainerProperties(
     effectiveTemplate,
-    bgStyle,
-    themeMode,
-    coverImage
+    resolvedDesignTokens.background.style,
+    resolvedDesignTokens.themeMode,
+    resolvedDesignTokens.background.coverImage
   );
 
   return (
@@ -122,6 +135,7 @@ export const StudioTemplatePreview: React.FC<StudioTemplatePreviewProps> = ({
             cardRadius={cardRadius}
             cardShadow={cardShadow}
             borderStyle={borderStyle}
+            designTokens={designTokens}
           />
         </div>
       ) : (

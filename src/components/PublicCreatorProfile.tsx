@@ -19,6 +19,7 @@ import { SafeImage } from './SafeImage';
 import { BookingSchedulerModal } from './modals/BookingSchedulerModal';
 import { ProductStoreModal } from './modals/ProductStoreModal';
 import { MediaGallery } from './MediaGallery';
+import { designCardGap, designCardStyle, designContentWidth, designFontFamily, designLayoutStyle, designTokensFromSite, designTypographyStyle } from '../utils/designTokens';
 
 interface PublicCreatorProfileProps {
   handle: string;
@@ -61,6 +62,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
         const payload = await response.json();
         const site = payload.site;
         const links = Array.isArray(site.links) ? site.links : [];
+        const designTokens = designTokensFromSite(site);
         return {
           id: cleanHandle,
           name: site.displayName || cleanHandle,
@@ -70,11 +72,12 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
           coverImage: site.coverImage || '',
           bio: site.bio || '',
           bioAr: site.bioAr || site.bio || '',
-          themeColor: site.accentColor || '#4F46E5',
+          themeColor: designTokens.accentColor,
           accentGradient: 'linear-gradient(135deg, #4F46E5, #7C3AED)',
           metaTitle: typeof site.metaTitle === 'string' ? site.metaTitle : undefined,
           metaDescription: typeof site.metaDescription === 'string' ? site.metaDescription : undefined,
-          backgroundStyle: site.bgStyle || 'signature',
+          backgroundStyle: designTokens.background.style,
+          designTokens,
           sampleLinks: links.map((link: any, index: number) => ({
             id: link.id || `${cleanHandle}-${index}`,
             title: link.title || '',
@@ -137,13 +140,14 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
     return null;
   }
 
-  const bgStyle = creator.backgroundStyle || 'signature';
-  const themeConfig = resolveTemplateTheme(creator, bgStyle, 'auto');
+  const designTokens = creator.designTokens || designTokensFromSite(creator);
+  const bgStyle = designTokens.background.style;
+  const themeConfig = resolveTemplateTheme(creator, bgStyle, designTokens.themeMode);
   const bgContainerProps = getTemplateBackgroundContainerProperties(
     creator,
     bgStyle,
-    'auto',
-    creator.coverImage
+    designTokens.themeMode,
+    designTokens.background.coverImage || creator.coverImage
   );
 
   const handleShare = () => {
@@ -201,7 +205,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   return (
     <div
       className="min-h-[100dvh] flex flex-col justify-between selection:bg-indigo-500/20 selection:text-indigo-600 transition-colors duration-200 relative overflow-x-hidden"
-      style={bgContainerProps.screenContainerStyle}
+      style={{ ...bgContainerProps.screenContainerStyle, ...designLayoutStyle(designTokens), fontFamily: designFontFamily(designTokens) }}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
       {/* Ambient Glow Background Effect */}
@@ -233,12 +237,12 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
       </header>
 
       {/* Main Profile Body */}
-      <main className="relative z-10 w-full max-w-md mx-auto px-4 py-8 flex-1 flex flex-col items-center">
+      <main className="relative z-10 w-full mx-auto px-4 py-8 flex-1 flex flex-col items-center" style={{ maxWidth: designContentWidth(designTokens) }}>
         {/* Cover Banner if present */}
-        {creator.coverImage && (
+        {(designTokens.background.coverImage || creator.coverImage) && (
           <div className="w-full h-32 sm:h-40 rounded-3xl overflow-hidden mb-[-48px] shadow-sm relative z-0">
             <SafeImage
-              src={creator.coverImage}
+              src={designTokens.background.coverImage || creator.coverImage}
               alt=""
               className="w-full h-full object-cover"
             />
@@ -265,7 +269,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
         {/* Display Name & Handle */}
         <div className="text-center mb-4">
           <div className="flex items-center justify-center gap-1.5">
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight" style={{ color: themeConfig.textColor }}>
+            <h1 className="font-black tracking-tight" style={{ ...designTypographyStyle(designTokens, 'heading'), color: themeConfig.textColor }}>
               {creator.name}
             </h1>
             <CheckCircle2 className="w-4 h-4 text-indigo-500 fill-indigo-500/20" />
@@ -296,10 +300,10 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
                 target="_blank"
                 rel="ugc nofollow noopener noreferrer"
                 onClick={() => recordLinkClick(`soc_${soc.platform}`, soc.url, cleanHandle)}
-                className="w-10 h-10 rounded-2xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95 shadow-2xs backdrop-blur-md"
+                className="w-10 h-10 flex items-center justify-center transition-transform hover:scale-105 active:scale-95 backdrop-blur-md"
                 style={{
-                  backgroundColor: themeConfig.socialBg || 'rgba(255,255,255,0.1)',
-                  border: `1px solid ${themeConfig.socialBorder || 'rgba(255,255,255,0.2)'}`,
+                  ...designCardStyle(designTokens, themeConfig.mode === 'dark', designTokens.accentColor),
+                  backgroundColor: designTokens.surfaceColor,
                   color: themeConfig.socialText || 'inherit',
                 }}
                 aria-label={soc.platform}
@@ -316,7 +320,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
         )}
 
         {/* Links Stack */}
-        <div className="w-full space-y-3 mb-8">
+        <div className="w-full mb-8" style={{ display: 'flex', flexDirection: 'column', gap: designCardGap(designTokens) }}>
           {creator.sampleLinks.map((link, idx) => (
             <motion.button
               key={link.id}
@@ -325,10 +329,10 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: idx * 0.05 }}
               onClick={() => handleLinkSelect(link)}
-              className="w-full group p-3.5 sm:p-4 rounded-2xl flex items-center gap-3.5 text-left transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] shadow-xs backdrop-blur-md cursor-pointer border"
+              className="w-full group p-3.5 sm:p-4 flex items-center gap-3.5 text-left transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] backdrop-blur-md cursor-pointer"
               style={{
-                backgroundColor: themeConfig.cardBg || 'rgba(255,255,255,0.15)',
-                borderColor: themeConfig.cardBorder || 'rgba(255,255,255,0.2)',
+                ...designCardStyle(designTokens, themeConfig.mode === 'dark', designTokens.accentColor),
+                backgroundColor: designTokens.surfaceColor,
                 color: themeConfig.cardText || 'inherit',
               }}
             >
@@ -341,7 +345,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
               )}
 
               <div className="flex-1 min-w-0">
-                <div className="font-bold text-sm sm:text-base leading-snug truncate" style={{ color: themeConfig.cardText }}>
+                <div className="font-bold leading-snug truncate" style={{ ...designTypographyStyle(designTokens, 'body'), color: themeConfig.cardText }}>
                   {isRtl ? link.titleAr : link.title}
                 </div>
                 {(link.subtitle || link.subtitleAr) && (

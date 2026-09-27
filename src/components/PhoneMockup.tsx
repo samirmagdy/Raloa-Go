@@ -11,6 +11,7 @@ import { TemplateItem, BackgroundStyle } from '../types';
 import { MediaGallery } from './MediaGallery';
 import { RaloaMark } from './brand/RaloaLogo';
 import { resolveTemplateTheme, getTemplateBackgroundContainerProperties } from '../utils/templateThemes';
+import { designCardGap, designCardStyle, designFontFamily, designTokensFromSite, designTypographyStyle, type DesignTokens } from '../utils/designTokens';
 
 interface PhoneMockupProps {
   template: TemplateItem;
@@ -26,6 +27,7 @@ interface PhoneMockupProps {
   cardRadius?: 'sharp' | 'subtle' | 'rounded' | 'pill';
   cardShadow?: 'none' | 'subtle' | 'soft' | 'hard';
   borderStyle?: 'none' | 'thin' | 'bold' | 'dashed';
+  designTokens?: DesignTokens;
 }
 
 export const PhoneMockup: React.FC<PhoneMockupProps> = ({
@@ -41,29 +43,41 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
   surfaceColor,
   cardRadius = 'rounded',
   cardShadow = 'subtle',
-  borderStyle = 'thin'
+  borderStyle = 'thin',
+  designTokens: designTokensProp
 }) => {
   const [clickedItem, setClickedItem] = useState<string | null>(null);
 
+  const designTokens = designTokensProp || designTokensFromSite({
+    accentColor,
+    surfaceColor,
+    cardRadius,
+    cardShadow,
+    borderStyle,
+    themeMode: themeModeOverride,
+    bgStyle: backgroundStyle,
+    coverImage: customCoverImage
+  });
+
   // Resolve template theme configuration and actual background container properties
-  const currentBgStyle = backgroundStyle || template.backgroundStyle || 'immersive';
-  const effectiveThemeColor = accentColor || template.themeColor || '#6366F1';
+  const currentBgStyle = designTokens.background.style || template.backgroundStyle || 'immersive';
+  const effectiveThemeColor = designTokens.accentColor || template.themeColor || '#6366F1';
   const effectiveTemplate = { ...template, themeColor: effectiveThemeColor };
 
-  const themeConfig = resolveTemplateTheme(effectiveTemplate, currentBgStyle, themeModeOverride);
+  const themeConfig = resolveTemplateTheme(effectiveTemplate, currentBgStyle, designTokens.themeMode);
   const bgContainerProps = getTemplateBackgroundContainerProperties(
     effectiveTemplate,
     currentBgStyle,
-    themeModeOverride,
-    customCoverImage
+    designTokens.themeMode,
+    designTokens.background.coverImage
   );
-  const coverImg = customCoverImage || template.coverImage;
+  const coverImg = designTokens.background.coverImage || template.coverImage;
   const isLightStatusBar = themeConfig.statusBarColor === 'light';
   const isDark = themeConfig.mode === 'dark';
 
   // Compute card geometry tokens
   const getRadiusClass = () => {
-    switch (cardRadius) {
+    switch (designTokens.cardRadius) {
       case 'sharp':
         return 'rounded-none';
       case 'subtle':
@@ -77,7 +91,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
   };
 
   const getShadowClass = () => {
-    switch (cardShadow) {
+    switch (designTokens.cardShadow) {
       case 'none':
         return 'shadow-none';
       case 'soft':
@@ -91,14 +105,14 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
   };
 
   const getBorderStyles = (): React.CSSProperties => {
-    if (borderStyle === 'none') {
+    if (designTokens.borderStyle === 'none') {
       return { border: 'none' };
     }
-    const strokeWidth = borderStyle === 'bold' ? '2px' : '1px';
-    const strokeType = borderStyle === 'dashed' ? 'dashed' : 'solid';
+    const strokeWidth = designTokens.borderStyle === 'bold' ? '2px' : '1px';
+    const strokeType = designTokens.borderStyle === 'dashed' ? 'dashed' : 'solid';
     const borderColor = isDark
-      ? (borderStyle === 'bold' ? `${effectiveThemeColor}80` : 'rgba(255,255,255,0.15)')
-      : (borderStyle === 'bold' ? effectiveThemeColor : 'rgba(0,0,0,0.12)');
+      ? (designTokens.borderStyle === 'bold' ? `${effectiveThemeColor}80` : 'rgba(255,255,255,0.15)')
+      : (designTokens.borderStyle === 'bold' ? effectiveThemeColor : 'rgba(0,0,0,0.12)');
 
     return {
       borderWidth: strokeWidth,
@@ -108,7 +122,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
   };
 
   const getCardContrast = () => {
-    if (!surfaceColor) {
+    if (!designTokens.surfaceColor) {
       return {
         isCustom: false,
         textColor: undefined,
@@ -120,8 +134,8 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
     }
 
     let isLightSurface = !isDark;
-    if (surfaceColor.startsWith('#')) {
-      const hex = surfaceColor.replace('#', '');
+    if (designTokens.surfaceColor.startsWith('#')) {
+      const hex = designTokens.surfaceColor.replace('#', '');
       if (hex.length === 6) {
         const r = parseInt(hex.substring(0, 2), 16);
         const g = parseInt(hex.substring(2, 4), 16);
@@ -129,8 +143,8 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
         const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
         isLightSurface = luminance >= 0.5;
       }
-    } else if (surfaceColor.startsWith('rgba')) {
-      const parts = surfaceColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    } else if (designTokens.surfaceColor.startsWith('rgba')) {
+      const parts = designTokens.surfaceColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
       if (parts) {
         const r = parseInt(parts[1], 10);
         const g = parseInt(parts[2], 10);
@@ -156,9 +170,9 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
       ...customBorder
     };
 
-    if (surfaceColor) {
-      style.backgroundColor = surfaceColor;
-      if (surfaceColor.includes('rgba')) {
+    if (designTokens.surfaceColor) {
+      style.backgroundColor = designTokens.surfaceColor;
+      if (designTokens.surfaceColor.includes('rgba')) {
         style.backdropFilter = 'blur(16px)';
         (style as any).WebkitBackdropFilter = 'blur(16px)';
       }
@@ -193,7 +207,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
       {/* Screen Frame with Dynamic Template Background Container Properties */}
       <div
         className="relative rounded-[38px] overflow-hidden flex flex-col min-h-[540px] sm:min-h-[580px] max-h-[640px] shadow-inner raloa-phone-screen transition-all duration-300"
-        style={bgContainerProps.screenContainerStyle}
+      style={{ ...bgContainerProps.screenContainerStyle, fontFamily: designFontFamily(designTokens) }}
       >
         {/* Ambient Glow for Template (Signature / Gradient mode) */}
         {themeConfig.ambientGlow && currentBgStyle !== 'minimal' && (
@@ -280,7 +294,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
             </div>
 
             {/* Name & Role */}
-            <h3 className={`font-extrabold text-[18px] tracking-tight leading-tight ${themeConfig.textColor}`}>
+            <h3 className={`font-extrabold tracking-tight leading-tight ${themeConfig.textColor}`} style={designTypographyStyle(designTokens, 'heading')}>
               {template.name}
             </h3>
             <p
@@ -318,10 +332,10 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
             </div>
 
             {/* Mini-site interactive links */}
-            <div className="w-full space-y-2.5 mt-1">
+          <div className="w-full mt-1" style={{ display: 'flex', flexDirection: 'column', gap: designCardGap(designTokens) }}>
             {template.sampleLinks.map((link) => {
                 const isClicked = clickedItem === link.id;
-                const cardDynamicStyle = getCardStyle();
+                const cardDynamicStyle = { ...getCardStyle(), ...designCardStyle(designTokens, isDark, effectiveThemeColor) };
                 const radiusClass = getRadiusClass();
                 const shadowClass = getShadowClass();
 
@@ -336,7 +350,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                     className={`w-full p-2.5 border flex items-center gap-3 transition-all duration-200 text-left rtl:text-right group cursor-pointer ${
                       radiusClass
                     } ${shadowClass} ${
-                      !surfaceColor ? `${themeConfig.cardBg} ${themeConfig.cardBorder}` : ''
+                      !designTokens.surfaceColor ? `${themeConfig.cardBg} ${themeConfig.cardBorder}` : ''
                     } ${themeConfig.cardHoverBorder} ${
                       isClicked ? 'scale-[0.98] ring-2 ring-indigo-500' : 'hover:scale-[1.01]'
                     }`}

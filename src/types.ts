@@ -1,3 +1,5 @@
+import type { DesignTokens } from './utils/designTokens';
+
 export type Locale = 'en' | 'ar';
 
 export type BackgroundStyle = 'signature' | 'banner' | 'immersive' | 'gradient' | 'minimal';
@@ -147,6 +149,7 @@ export interface TemplateItem {
   themeColor: string;
   accentGradient: string;
   backgroundStyle?: BackgroundStyle;
+  designTokens?: DesignTokens;
   backgroundProperties?: TemplateBackgroundProperties;
   themeConfig?: Partial<TemplateThemeConfig>;
   metaTitle?: string;
@@ -262,6 +265,7 @@ export interface UserMiniSite {
   coverImage?: string;
   bgStyle?: BackgroundStyle;
   themeMode?: 'auto' | 'dark' | 'light';
+  designTokens?: DesignTokens;
   links: any[];
   isPublished: boolean;
   bookingConfig?: BookingConfig;

@@ -33,6 +33,7 @@ import {
 import { templatesData } from './src/data/content';
 import { getPlanCapabilities, getPlanTier, isPremiumTemplate } from './src/lib/planCapabilities';
 import { calendarAdapter, calendarOAuthConfiguration, calendarProviderIsConfigured, decryptCalendarTokens, encryptCalendarTokens, type CalendarProvider, type CalendarBookingEvent, type CalendarTokenBundle } from './server-calendar';
+import { normalizeDesignTokens } from './src/utils/designTokens';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -3388,7 +3389,8 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
     return apiError(res, 400, 'INVALID_SOCIAL_LINKS', 'Every social link must use a safe public URL.');
   }
   if (merged.bookingConfig !== undefined) merged.bookingConfig = normalizeBookingConfig(merged.bookingConfig);
-  const allowedKeys = new Set(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'socials', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'bookingConfig', 'updatedAt']);
+  merged.designTokens = normalizeDesignTokens(merged.designTokens, merged);
+  const allowedKeys = new Set(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'socials', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'designTokens', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'bookingConfig', 'updatedAt']);
   const sanitized = Object.fromEntries(Object.entries(merged).filter(([key]) => allowedKeys.has(key)));
   const entitlement = validateSiteEntitlements(sanitized, profileData);
   if (entitlement) return entitlementError(res, entitlement.feature, entitlement.message, entitlement.details);
