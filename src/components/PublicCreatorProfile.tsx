@@ -69,6 +69,8 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
           bioAr: site.bioAr || site.bio || '',
           themeColor: site.accentColor || '#4F46E5',
           accentGradient: 'linear-gradient(135deg, #4F46E5, #7C3AED)',
+          metaTitle: typeof site.metaTitle === 'string' ? site.metaTitle : undefined,
+          metaDescription: typeof site.metaDescription === 'string' ? site.metaDescription : undefined,
           backgroundStyle: site.bgStyle || 'signature',
           sampleLinks: links.map((link: any, index: number) => ({
             id: link.id || `${cleanHandle}-${index}`,
@@ -109,15 +111,17 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   usePageSEO({
     sectionId: `creator-${cleanHandle}`,
     title: creator
-      ? `${creator.name} (@${cleanHandle}) - RALOA Mini-Site`
+      ? creator.metaTitle || `${creator.name} (@${cleanHandle}) - RALOA Mini-Site`
       : `RALOA Profile`,
     description: creator
-      ? (isRtl ? creator.bioAr : creator.bio) || `Check out @${cleanHandle}'s official links and mini-site on RALOA.`
+      ? creator.metaDescription || (isRtl ? creator.bioAr : creator.bio) || `Check out @${cleanHandle}'s official links and mini-site on RALOA.`
       : 'Official creator profile on RALOA.',
-    ogTitle: creator ? `${creator.name} (@${cleanHandle}) | RALOA` : undefined,
-    ogDescription: creator ? (isRtl ? creator.bioAr : creator.bio) : undefined,
-    ogImage: creator?.avatar,
-    canonicalUrl: `https://raloa.app/@${cleanHandle}`,
+    ogTitle: creator ? creator.metaTitle || `${creator.name} (@${cleanHandle}) | RALOA` : undefined,
+    ogDescription: creator ? creator.metaDescription || (isRtl ? creator.bioAr : creator.bio) : undefined,
+    ogImage: creator?.avatar || 'https://raloa.app/social/og-image-1200x630.jpg',
+    canonicalUrl: typeof window !== 'undefined' && !['raloa.app', 'www.raloa.app', 'localhost', '127.0.0.1'].includes(window.location.hostname) && !window.location.hostname.endsWith('.raloa.app')
+      ? `${window.location.origin}/`
+      : `https://raloa.app/@${cleanHandle}`,
     locale
   });
 

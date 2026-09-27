@@ -149,6 +149,8 @@ export interface TemplateItem {
   backgroundStyle?: BackgroundStyle;
   backgroundProperties?: TemplateBackgroundProperties;
   themeConfig?: Partial<TemplateThemeConfig>;
+  metaTitle?: string;
+  metaDescription?: string;
   sampleLinks: {
     id: string;
     title: string;

@@ -15,7 +15,8 @@
     "lint": "tsc --noEmit",
     "test:analytics": "tsx test-analytics.ts",
     "test:entitlements": "tsx test-plan-entitlements.ts",
-    "test:integrations": "tsx test-social-integrations.ts"
+    "test:integrations": "tsx test-social-integrations.ts",
+    "test:seo": "tsx test-seo.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

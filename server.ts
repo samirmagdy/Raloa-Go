@@ -3635,20 +3635,24 @@ app.get('*', async (req: Request, res: Response) => {
           name: String(publishedSite.displayName || handle),
           avatar: String(publishedSite.avatar || ''),
           bio: String(publishedSite.bio || ''),
-          role: String(publishedSite.role || '')
+          role: String(publishedSite.role || ''),
+          metaTitle: typeof publishedSite.metaTitle === 'string' ? publishedSite.metaTitle.trim().slice(0, 160) : '',
+          metaDescription: typeof publishedSite.metaDescription === 'string' ? publishedSite.metaDescription.trim().slice(0, 320) : ''
         }
       : fixtureCreator;
 
     if (creator) {
       isPublicProfile = true;
       // Dynamic OpenGraph & Twitter hydration (FR-3.2)
-      const ogTitle = escapeHtml(`${creator.name} (@${handle}) - RALOA Mini-Site`);
-      const ogDesc = escapeHtml(creator.bio);
-      const ogImage = escapeHtml(creator.avatar);
+      const profileTitle = 'metaTitle' in creator && creator.metaTitle ? creator.metaTitle : `${creator.name} (@${handle}) - RALOA Mini-Site`;
+      const profileDescription = 'metaDescription' in creator && creator.metaDescription ? creator.metaDescription : creator.bio || `Explore ${creator.name}'s official links and work on RALOA.`;
+      const ogTitle = escapeHtml(profileTitle);
+      const ogDesc = escapeHtml(profileDescription);
+      const ogImage = escapeHtml(creator.avatar || 'https://raloa.app/social/og-image-1200x630.jpg');
       const profileCanonical = customOrigin === 'https://raloa.app' ? `https://raloa.app/@${handle}` : `${customOrigin}/`;
-      const profileDescription = creator.bio || `Explore ${creator.name}'s official links and work on RALOA.`;
 
       html = html
+        .replace(/<link rel="alternate" hreflang=".*?" href=".*?" \/>\s*/g, '')
         .replace(/<title>.*?<\/title>/, `<title>${ogTitle}</title>`)
         .replace(/<meta name="description" content=".*?" \/>/, `<meta name="description" content="${escapeHtml(profileDescription)}" />`)
         .replace(/<meta property="og:title" content=".*?" \/>/, `<meta property="og:title" content="${ogTitle}" />`)
@@ -3761,6 +3765,7 @@ app.get('*', async (req: Request, res: Response) => {
       ? selectedSeo.canonical
       : `${customOrigin}/`;
     html = html
+      .replace(/<link rel="alternate" hreflang=".*?" href=".*?" \/>\s*/g, '')
       .replace(/<meta name="description" content=".*?" \/>/, `<meta name="description" content="${escapeHtml(selectedSeo.description)}" />`)
       .replace(/<meta property="og:description" content=".*?" \/>/, `<meta property="og:description" content="${escapeHtml(selectedSeo.description)}" />`)
       .replace(/<meta property="og:url" content=".*?" \/>/, `<meta property="og:url" content="${escapeHtml(canonical)}" />`)
@@ -3769,7 +3774,7 @@ app.get('*', async (req: Request, res: Response) => {
     if (seoPage) html = injectSeoPageContent(html, seoPage, requestPath);
     html = injectJsonLd(html, {
       '@context': 'https://schema.org',
-      '@type': requestPath === '/' ? 'WebSite' : 'WebPage',
+      '@type': 'WebPage',
       name: seoPage?.title || 'RALOA',
       description: selectedSeo.description,
       url: canonical,
