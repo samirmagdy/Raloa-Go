@@ -13,6 +13,7 @@ const required = [
   'npm run check:adrs',
   'npm run check:capacity-plan',
   'npm run check:cost-architecture',
+  'npm run check:system-architecture',
   'npm run validate:production',
   'npm run db:migrate',
   'npm run db:migrate:verify',
