@@ -74,6 +74,7 @@ export interface StudioModalProps {
   onClose: () => void;
   onOpenAuth?: (mode?: 'signin' | 'signup') => void;
   onOpenPricing?: () => void;
+  onOpenAccountSettings?: () => void;
 }
 
 function studioConfigFromSite(savedSite: UserMiniSite, fallback: TemplateItem, resolvedHandle: string, isRtl: boolean): StudioSiteConfig {
@@ -114,7 +115,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   locale,
   onClose,
   onOpenAuth,
-  onOpenPricing
+  onOpenPricing,
+  onOpenAccountSettings
 }) => {
   const { user, profile, loading: authLoading, saveMiniSite, loadMiniSite, listMiniSites, createMiniSite, deleteMiniSite } = useAuth();
   const isRtl = locale === 'ar';
@@ -833,6 +835,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                 bookingConfig={bookingConfig}
                 onBookingConfigChange={(val) => updateSiteConfig({ bookingConfig: val })}
                 onUpgradePlan={onOpenPricing}
+                onOpenAccountSettings={onOpenAccountSettings}
                 onExportJson={() => {
                   const blob = new Blob([JSON.stringify(siteConfig, null, 2)], {
                     type: 'application/json'

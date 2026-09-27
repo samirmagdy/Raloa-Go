@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Layers,
   Palette,
@@ -32,6 +32,15 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
   const isRtl = locale === 'ar';
   const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
 
+  useEffect(() => {
+    if (!moreDrawerOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreDrawerOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [moreDrawerOpen]);
+
   const handleTabClick = (tab: StudioTab) => {
     onSelectTab(tab);
     setMoreDrawerOpen(false);
@@ -62,6 +71,7 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
 
       {/* Bottom Sticky Navigation Bar */}
       <nav
+        aria-label={isRtl ? 'تنقل الاستوديو' : 'Studio navigation'}
         className="fixed bottom-0 left-0 right-0 z-30 lg:hidden min-h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 flex items-center justify-around px-2 pb-[env(safe-area-inset-bottom)] select-none"
         dir={isRtl ? 'rtl' : 'ltr'}
       >
@@ -73,7 +83,8 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
             activeTab === 'content'
               ? 'text-indigo-600 dark:text-indigo-400 font-bold'
               : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
-          }`}
+          } focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500`}
+          aria-current={activeTab === 'content' ? 'page' : undefined}
         >
           <Layers className="w-4 h-4" />
           <span className="text-[10px]">{isRtl ? 'المحتوى' : 'Content'}</span>
@@ -87,7 +98,8 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
             activeTab === 'design'
               ? 'text-indigo-600 dark:text-indigo-400 font-bold'
               : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
-          }`}
+          } focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500`}
+          aria-current={activeTab === 'design' ? 'page' : undefined}
         >
           <Palette className="w-4 h-4" />
           <span className="text-[10px]">{isRtl ? 'التصميم' : 'Design'}</span>
@@ -101,7 +113,8 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
             activeTab === 'analytics'
               ? 'text-indigo-600 dark:text-indigo-400 font-bold'
               : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
-          }`}
+          } focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500`}
+          aria-current={activeTab === 'analytics' ? 'page' : undefined}
         >
           <BarChart3 className="w-4 h-4" />
           <span className="text-[10px]">{isRtl ? 'الإحصائيات' : 'Stats'}</span>
@@ -115,7 +128,8 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
             activeTab === 'audience' || activeTab === 'settings'
               ? 'text-indigo-600 dark:text-indigo-400 font-bold'
               : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
-          }`}
+          } focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500`}
+          aria-expanded={moreDrawerOpen}
         >
           <MoreHorizontal className="w-4 h-4" />
           <span className="text-[10px]">{isRtl ? 'المزيد' : 'More'}</span>
@@ -125,6 +139,9 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
       {/* Inside More: Bottom Drawer for Audience & Settings */}
       {moreDrawerOpen && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={isRtl ? 'المزيد من أدوات الاستوديو' : 'More Studio tools'}
           className="fixed inset-0 z-50 lg:hidden bg-slate-950/60 backdrop-blur-xs flex flex-col justify-end animate-in fade-in duration-200"
           onClick={() => setMoreDrawerOpen(false)}
         >
@@ -140,7 +157,8 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
               <button
                 type="button"
                 onClick={() => setMoreDrawerOpen(false)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                aria-label={isRtl ? 'إغلاق' : 'Close'}
+                className="min-h-11 min-w-11 p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -154,7 +172,7 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
                   activeTab === 'audience'
                     ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold'
                     : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                }`}
+                } focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500`}
               >
                 <div className="flex items-center gap-3">
                   <Users className="w-5 h-5 text-indigo-500" />
@@ -172,13 +190,13 @@ export const StudioMobileNav: React.FC<StudioMobileNavProps> = ({
                   activeTab === 'settings'
                     ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold'
                     : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                }`}
+                } focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500`}
               >
                 <div className="flex items-center gap-3">
                   <Settings className="w-5 h-5 text-slate-500" />
                   <div>
-                    <p className="text-xs font-bold">{isRtl ? 'إعدادات الموقع والنطاق' : 'Site Settings & Domain'}</p>
-                    <p className="text-[10px] text-slate-400">{isRtl ? 'النطاق المخصص، SEO، والربط' : 'Custom domain, SEO tags, analytics integrations'}</p>
+                    <p className="text-xs font-bold">{isRtl ? 'إعدادات الاستوديو' : 'Studio settings'}</p>
+                    <p className="text-[10px] text-slate-400">{isRtl ? 'الحساب، النطاق، المنتجات، والحجوزات' : 'Account, domain, products, bookings, and integrations'}</p>
                   </div>
                 </div>
               </button>

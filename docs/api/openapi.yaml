@@ -159,6 +159,14 @@ paths:
         '200': { description: Order history }
         '401': { description: Authentication required }
         '503': { description: Orders unavailable }
+  /api/creator/orders:
+    get:
+      operationId: get_get_api_creator_orders
+      responses:
+        '200': { description: Creator-owned orders with fulfillment history }
+        '401': { description: Authentication required }
+        '404': { description: Site not found }
+        '503': { description: Orders unavailable }
   /api/creator/products:
     get:
       operationId: get_get_api_creator_products
@@ -200,6 +208,7 @@ paths:
         '200': { description: Fulfillment updated }
         '400': { description: Invalid fulfillment status }
         '401': { description: Authentication required }
+        '409': { description: Invalid transition or unpaid order }
         '404': { description: Order not found }
   /api/v1/public/products/{handle}:
     get:

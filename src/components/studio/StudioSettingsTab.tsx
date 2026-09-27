@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Settings,
   Globe,
+  ShoppingBag,
+  CalendarDays,
+  UserRound,
   CreditCard,
-  Sliders,
   CheckCircle2,
   Download,
   Trash2,
@@ -42,8 +43,27 @@ interface StudioSettingsTabProps {
   onExportJson: () => void;
   onResetDefaults: () => void;
   onUpgradePlan?: () => void;
+  onOpenAccountSettings?: () => void;
   locale: Locale;
 }
+
+type SettingsSection = 'account' | 'domain' | 'products' | 'scheduling' | 'integrations' | 'billing';
+
+const normalizeSettingsSection = (value: string | null): SettingsSection => {
+  switch (value) {
+    case 'domain': return 'domain';
+    case 'products': return 'products';
+    case 'scheduling':
+    case 'bookings': return 'scheduling';
+    case 'integrations': return 'integrations';
+    case 'billing': return 'billing';
+    // Preserve the old settings URLs while moving their content into Account.
+    case 'site':
+    case 'advanced':
+    case 'account':
+    default: return 'account';
+  }
+};
 
 export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   siteId,
@@ -72,11 +92,23 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   onExportJson,
   onResetDefaults,
   onUpgradePlan,
+  onOpenAccountSettings,
   locale
 }) => {
   const isRtl = locale === 'ar';
   const capabilities = getPlanCapabilities({ plan: plan === 'pro' || plan === 'studio' ? plan : 'free' });
-  const [activeSubSection, setActiveSubSection] = useState<'site' | 'domain' | 'integrations' | 'billing' | 'advanced'>('site');
+  const settingsSections: Array<{ id: SettingsSection; label: string; icon: typeof UserRound }> = [
+    { id: 'account', label: isRtl ? 'الحساب' : 'Account', icon: UserRound },
+    { id: 'domain', label: isRtl ? 'النطاق و SEO' : 'Domain & SEO', icon: Globe },
+    { id: 'products', label: isRtl ? 'المنتجات' : 'Products', icon: ShoppingBag },
+    { id: 'scheduling', label: isRtl ? 'الحجوزات' : 'Scheduling', icon: CalendarDays },
+    { id: 'integrations', label: isRtl ? 'التكاملات' : 'Integrations', icon: Zap },
+    { id: 'billing', label: isRtl ? 'الفوترة' : 'Billing', icon: CreditCard }
+  ];
+  const [activeSubSection, setActiveSubSection] = useState<SettingsSection>(() => {
+    if (typeof window === 'undefined') return 'account';
+    return normalizeSettingsSection(new URLSearchParams(window.location.search).get('settings'));
+  });
   const [domainVerified, setDomainVerified] = useState(false);
   const [domainStatus, setDomainStatus] = useState<'idle' | 'pending' | 'verified' | 'failed'>('idle');
   const [domainSslStatus, setDomainSslStatus] = useState<'pending' | 'active' | 'failed' | ''>('');
@@ -104,12 +136,34 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   };
 
   useEffect(() => {
-    if (activeSubSection === 'integrations') loadIntegrations();
+    if (activeSubSection === 'integrations' || new URLSearchParams(window.location.search).get('integration') === 'github') loadIntegrations();
   }, [activeSubSection]);
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('integration') === 'github') loadIntegrations();
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('integration') === 'github') setActiveSubSection('integrations');
   }, []);
+
+  const selectSettingsSection = (section: SettingsSection) => {
+    setActiveSubSection(section);
+    const query = new URLSearchParams(window.location.search);
+    query.set('settings', section);
+    window.history.replaceState({}, '', `${window.location.pathname}?${query.toString()}${window.location.hash}`);
+  };
+
+  const handleSettingsNavKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const currentIndex = settingsSections.findIndex((section) => section.id === activeSubSection);
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % settingsSections.length;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + settingsSections.length) % settingsSections.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = settingsSections.length - 1;
+    if (nextIndex === currentIndex) return;
+    event.preventDefault();
+    const nextSection = settingsSections[nextIndex];
+    selectSettingsSection(nextSection.id);
+    document.getElementById(`studio-settings-tab-${nextSection.id}`)?.focus();
+  };
 
   const connectGithub = async () => {
     setIntegrationBusy('github');
@@ -238,22 +292,22 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
   return (
     <div className="space-y-6 animate-in fade-in duration-150" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Settings Navigation Bar */}
-      <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700">
-        {[
-          { id: 'site', label: isRtl ? 'الموقع' : 'Site', icon: Settings },
-          { id: 'domain', label: isRtl ? 'النطاق و SEO' : 'Domain & SEO', icon: Globe },
-          { id: 'integrations', label: isRtl ? 'الربط والتكامل' : 'Integrations', icon: Zap },
-          { id: 'billing', label: isRtl ? 'الاشتراك' : 'Billing', icon: CreditCard },
-          { id: 'advanced', label: isRtl ? 'متقدم' : 'Advanced', icon: Sliders }
-        ].map((tab) => {
+      <div role="tablist" aria-label={isRtl ? 'أقسام الإعدادات' : 'Settings sections'} className="flex max-w-full items-center gap-1.5 overflow-x-auto rounded-2xl border border-slate-200/80 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-800">
+        {settingsSections.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSubSection === tab.id;
           return (
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveSubSection(tab.id as any)}
-              className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              id={`studio-settings-tab-${tab.id}`}
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={`studio-settings-panel-${tab.id}`}
+              tabIndex={isActive ? 0 : -1}
+              onClick={() => selectSettingsSection(tab.id)}
+              onKeyDown={handleSettingsNavKeyDown}
+              className={`min-h-11 shrink-0 rounded-xl px-3 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                 isActive
                   ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -266,14 +320,23 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
         })}
       </div>
 
-      {/* 1. Site Settings */}
-      {activeSubSection === 'site' && (
-        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
+      {/* Account */}
+      {activeSubSection === 'account' && (
+        <div id="studio-settings-panel-account" role="tabpanel" aria-labelledby="studio-settings-tab-account" tabIndex={0} className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            {isRtl ? 'إعدادات الموقع العامة' : 'General Site Settings'}
+            {isRtl ? 'الحساب وإدارة الموقع' : 'Account & site management'}
           </h3>
 
           <div className="space-y-3.5">
+            <div className="flex flex-col gap-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4 dark:border-indigo-900 dark:bg-indigo-950/30 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-900 dark:text-white">{isRtl ? 'إعدادات الحساب' : 'Account settings'}</p>
+                <p className="mt-1 text-[11px] text-slate-500">{isRtl ? 'الملف الشخصي، البريد، وكلمة المرور' : 'Profile, email, password, and account security'}</p>
+              </div>
+              <button type="button" onClick={onOpenAccountSettings} disabled={!onOpenAccountSettings} className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+                {isRtl ? 'فتح إعدادات الحساب' : 'Open account settings'}
+              </button>
+            </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                 {isRtl ? 'عنوان الموقع (Site Title)' : 'Site Title'}
@@ -322,13 +385,24 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
                 className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
               />
             </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button type="button" onClick={onExportJson} className="min-h-11 rounded-xl border border-slate-200 p-3.5 text-left transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800 rtl:text-right">
+                <div className="mb-1 flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400"><Download className="h-4 w-4" /><span>{isRtl ? 'تصدير نسخة احتياطية' : 'Export site backup'}</span></div>
+                <p className="text-[11px] text-slate-500">{isRtl ? 'تحميل إعدادات الموقع كملف JSON' : 'Download your site configuration as JSON'}</p>
+              </button>
+              <button type="button" onClick={onResetDefaults} className="min-h-11 rounded-xl border border-rose-200 p-3.5 text-left transition-colors hover:bg-rose-50 dark:border-rose-900/60 dark:hover:bg-rose-950/30 rtl:text-right">
+                <div className="mb-1 flex items-center gap-2 text-xs font-bold text-rose-600"><Trash2 className="h-4 w-4" /><span>{isRtl ? 'استعادة إعدادات القالب' : 'Reset template defaults'}</span></div>
+                <p className="text-[11px] text-slate-500">{isRtl ? 'إعادة ضبط الروابط والتصميم' : 'Restore the starting template settings'}</p>
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* 2. Domain & SEO */}
       {activeSubSection === 'domain' && (
-        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
+        <div id="studio-settings-panel-domain" role="tabpanel" aria-labelledby="studio-settings-tab-domain" tabIndex={0} className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
             {isRtl ? 'النطاق المخصص وتهيئة محركات البحث (SEO)' : 'Custom Domain & SEO Metadata'}
           </h3>
@@ -423,9 +497,6 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
             </div>
           </div>
 
-          <StudioSchedulingSettings siteId={siteId} value={bookingConfig} onChange={onBookingConfigChange} locale={locale} allowCalendarIntegration={capabilities.studioControls} />
-          <StudioProductsSettings siteId={siteId} locale={locale} />
-
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
               {isRtl ? 'وصف محركات البحث (Meta Description)' : 'Meta Description'}
@@ -441,9 +512,31 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
         </div>
       )}
 
+      {/* Products */}
+      {activeSubSection === 'products' && (
+        <div id="studio-settings-panel-products" role="tabpanel" aria-labelledby="studio-settings-tab-products" tabIndex={0} className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">{isRtl ? 'إدارة المنتجات' : 'Product management'}</h3>
+            <p className="mt-1 text-xs text-slate-500">{isRtl ? 'إدارة ما تبيعه وأسعاره ومخزونه.' : 'Manage what you sell, including prices, inventory, and checkout settings.'}</p>
+          </div>
+          <StudioProductsSettings siteId={siteId} locale={locale} />
+        </div>
+      )}
+
+      {/* Scheduling & Bookings */}
+      {activeSubSection === 'scheduling' && (
+        <div id="studio-settings-panel-scheduling" role="tabpanel" aria-labelledby="studio-settings-tab-scheduling" tabIndex={0} className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">{isRtl ? 'الحجوزات والمواعيد' : 'Scheduling & bookings'}</h3>
+            <p className="mt-1 text-xs text-slate-500">{isRtl ? 'حدد الخدمات والأوقات والتقويم المتصل.' : 'Configure services, availability, booking rules, and calendar connections.'}</p>
+          </div>
+          <StudioSchedulingSettings siteId={siteId} value={bookingConfig} onChange={onBookingConfigChange} locale={locale} allowCalendarIntegration={capabilities.studioControls} />
+        </div>
+      )}
+
       {/* 3. Integrations */}
       {activeSubSection === 'integrations' && (
-        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
+        <div id="studio-settings-panel-integrations" role="tabpanel" aria-labelledby="studio-settings-tab-integrations" tabIndex={0} className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
             {isRtl ? 'الربط مع بكسل التتبع والتحليلات' : 'Analytics & Pixel Integrations'}
           </h3>
@@ -521,7 +614,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
 
       {/* 4. Billing */}
       {activeSubSection === 'billing' && (
-        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
+        <div id="studio-settings-panel-billing" role="tabpanel" aria-labelledby="studio-settings-tab-billing" tabIndex={0} className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
@@ -558,44 +651,6 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
         </div>
       )}
 
-      {/* 5. Advanced */}
-      {activeSubSection === 'advanced' && (
-        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            {isRtl ? 'الخيارات المتقدمة وإدارة البيانات' : 'Advanced Operations & Data Management'}
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={onExportJson}
-              className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-left rtl:text-right transition-colors cursor-pointer"
-            >
-              <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-xs mb-1">
-                <Download className="w-4 h-4" />
-                <span>{isRtl ? 'تصدير نسخة احتياطية (JSON)' : 'Export Site Backup (JSON)'}</span>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                {isRtl ? 'تحميل كامل محتويات وإعدادات موقعك في ملف' : 'Download complete site configuration file'}
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={onResetDefaults}
-              className="p-3.5 rounded-xl border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-left rtl:text-right transition-colors cursor-pointer"
-            >
-              <div className="flex items-center gap-2 text-rose-600 font-bold text-xs mb-1">
-                <Trash2 className="w-4 h-4" />
-                <span>{isRtl ? 'استعادة إعدادات القالب الأصلية' : 'Reset to Template Defaults'}</span>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                {isRtl ? 'إعادة ضبط الروابط والتصميم للوضع الأصلي' : 'Clear custom changes and restore starting template'}
-              </p>
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

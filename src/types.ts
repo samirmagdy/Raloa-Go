@@ -95,6 +95,10 @@ export interface CreatorOrder {
   customerEmail: string;
   status: OrderStatus;
   fulfillmentStatus: FulfillmentStatus;
+  fulfillmentHistory?: Array<{ from: FulfillmentStatus | 'unfulfilled'; to: FulfillmentStatus; at: string; actorId?: string }>;
+  inventoryReservation?: number;
+  inventoryReconciledAt?: string;
+  inventoryReconciledQuantity?: number;
   stripeCheckoutSessionId?: string;
   createdAt: string;
   updatedAt: string;

@@ -17,15 +17,15 @@ The path contains the order ID and the body contains `fulfillmentStatus`; creato
 
 ## Summary
 
-Allows only the owning creator to transition a paid order to `processing`, `fulfilled`, or `cancelled`.
+Allows only the owning creator to transition an order to `processing`, `fulfilled`, or `cancelled` using the server-side transition graph. Paid orders can be processed and fulfilled; cancellation releases pending reservations or reconciles paid inventory exactly once.
 
 ## Response
 
-`200 OK` returns the order ID and new fulfillment status.
+`200 OK` returns the refreshed order, including `fulfillmentHistory`, `updatedAt`, and any inventory reconciliation timestamps.
 
 ## Errors
 
-`400 INVALID_FULFILLMENT_STATUS`, `401 AUTH_REQUIRED`, `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAID`, or `503 ORDERS_UNAVAILABLE`.
+`400 INVALID_FULFILLMENT_STATUS`, `401 AUTH_REQUIRED`, `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAID` or `INVALID_FULFILLMENT_TRANSITION`, or `503 ORDERS_UNAVAILABLE`.
 
 ## Evidence
 

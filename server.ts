@@ -4164,7 +4164,7 @@ app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: R
       const available = product.inventory === null || product.inventory === undefined ? null : Number(product.inventory) - Number(product.inventoryReserved || 0);
       if (available !== null && available < quantity) throw new Error('OUT_OF_STOCK');
       const unitPriceMinor = Number(product.priceMinor);
-      const orderData = { id: orderRef.id, creatorId: String(site.userId), creatorHandle: handle, productId, productName: String(product.name), quantity, unitPriceMinor, currency: String(product.currency), totalMinor: unitPriceMinor * quantity, customerEmail, status: 'pending_payment', fulfillmentStatus: 'unfulfilled', inventoryReservation: quantity, createdAt: now, updatedAt: now };
+      const orderData = { id: orderRef.id, creatorId: String(site.userId), siteId: String(site.id || ''), creatorHandle: handle, productId, productName: String(product.name), quantity, unitPriceMinor, currency: String(product.currency), totalMinor: unitPriceMinor * quantity, customerEmail, status: 'pending_payment', fulfillmentStatus: 'unfulfilled', inventoryReservation: quantity, createdAt: now, updatedAt: now };
       transaction.update(productRef, { inventoryReserved: Number(product.inventoryReserved || 0) + quantity, updatedAt: now });
       transaction.create(orderRef, orderData);
       return { orderData, stripePriceId: String(product.stripePriceId) };
@@ -4204,19 +4204,106 @@ app.get('/api/account/orders', async (req: Request, res: Response) => {
   return res.status(200).json({ orders: [...unique.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
 });
 
+app.get('/api/creator/orders', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Order management is not configured.');
+  const requestedSiteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
+  if (requestedSiteId && !(await adminDb.collection('users').doc(user.uid).collection('sites').doc(requestedSiteId).get()).exists) {
+    return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+  }
+  try {
+    const snapshot = await adminDb.collection('orders').where('creatorId', '==', user.uid).limit(200).get();
+    const rawOrders = snapshot.docs.map((document) => ({ id: document.id, ...document.data() })) as Array<Record<string, unknown>>;
+    const missingSiteOrders = rawOrders.filter((order) => !order.siteId && typeof order.productId === 'string');
+    const productSnapshots = missingSiteOrders.length
+      ? await adminDb.getAll(...missingSiteOrders.map((order) => adminDb.collection('creator_products').doc(String(order.productId))))
+      : [];
+    const productSiteById = new Map(productSnapshots.map((product) => [product.id, String(product.data()?.siteId || '')]));
+    const orders = rawOrders
+      .map((order): Record<string, unknown> => ({ ...order, siteId: String(order.siteId || productSiteById.get(String(order.productId || '')) || '') }))
+      .filter((order) => !requestedSiteId || String(order.siteId || '') === requestedSiteId)
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    return res.status(200).json({ orders });
+  } catch (error) {
+    console.error('[Creator orders list]', error);
+    return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Orders are temporarily unavailable.');
+  }
+});
+
 app.patch('/api/creator/orders/:orderId/fulfillment', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured()) return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Order management is not configured.');
-  const fulfillmentStatus = req.body?.fulfillmentStatus;
+  const fulfillmentStatus = String(req.body?.fulfillmentStatus || '').trim();
   if (!['processing', 'fulfilled', 'cancelled'].includes(fulfillmentStatus)) return apiError(res, 400, 'INVALID_FULFILLMENT_STATUS', 'Invalid fulfillment status.');
-  const reference = adminDb.collection('orders').doc(String(req.params.orderId || ''));
-  const snapshot = await reference.get();
-  if (!snapshot.exists || snapshot.data()?.creatorId !== user.uid) return apiError(res, 404, 'ORDER_NOT_FOUND', 'Order not found.');
-  const order = snapshot.data() || {};
-  if (order.status !== 'paid' && fulfillmentStatus !== 'cancelled') return apiError(res, 409, 'ORDER_NOT_PAID', 'Only paid orders can be fulfilled.');
-  await reference.set({ fulfillmentStatus, updatedAt: new Date().toISOString() }, { merge: true });
-  return res.status(200).json({ id: reference.id, fulfillmentStatus });
+  const orderId = String(req.params.orderId || '').trim();
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(orderId)) return apiError(res, 400, 'INVALID_ORDER_ID', 'Invalid order ID.');
+  const requestedSiteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
+  const reference = adminDb.collection('orders').doc(orderId);
+  try {
+    const result = await adminDb.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(reference);
+      if (!snapshot.exists || snapshot.data()?.creatorId !== user.uid) throw new Error('ORDER_NOT_FOUND');
+      const order = snapshot.data() || {};
+      if (requestedSiteId && String(order.siteId || '') !== requestedSiteId) {
+        if (order.siteId || !order.productId) throw new Error('ORDER_NOT_FOUND');
+        const productSnapshot = await transaction.get(adminDb.collection('creator_products').doc(String(order.productId)));
+        if (!productSnapshot.exists || productSnapshot.data()?.creatorId !== user.uid || String(productSnapshot.data()?.siteId || '') !== requestedSiteId) throw new Error('ORDER_NOT_FOUND');
+      }
+
+      const current = String(order.fulfillmentStatus || 'unfulfilled');
+      const allowedTransitions: Record<string, string[]> = {
+        unfulfilled: ['processing', 'cancelled'],
+        processing: ['fulfilled', 'cancelled'],
+        fulfilled: [],
+        cancelled: []
+      };
+      if (!allowedTransitions[current]?.includes(fulfillmentStatus)) throw new Error(`INVALID_FULFILLMENT_TRANSITION:${current}`);
+      if (fulfillmentStatus !== 'cancelled' && order.status !== 'paid') throw new Error('ORDER_NOT_PAID');
+      if (fulfillmentStatus === 'fulfilled' && Number(order.quantity || 0) < 1) throw new Error('INVALID_ORDER_QUANTITY');
+
+      const now = new Date().toISOString();
+      const history = Array.isArray(order.fulfillmentHistory) ? order.fulfillmentHistory : [];
+      const nextHistory = [...history, { from: current, to: fulfillmentStatus, at: now, actorId: user.uid }].slice(-50);
+      const updates: Record<string, unknown> = { fulfillmentStatus, fulfillmentHistory: nextHistory, updatedAt: now };
+
+      // Pending-payment cancellations release the reservation. Once payment has
+      // consumed the reservation, a paid cancellation returns the units to stock.
+      // inventoryReservation prevents double reconciliation.
+      const reservation = Math.max(0, Number(order.inventoryReservation || 0));
+      if (fulfillmentStatus === 'cancelled') {
+        const productId = String(order.productId || '');
+        if (productId) {
+          const productRef = adminDb.collection('creator_products').doc(productId);
+          const productSnapshot = await transaction.get(productRef);
+          if (!productSnapshot.exists || productSnapshot.data()?.creatorId !== user.uid) throw new Error('PRODUCT_NOT_FOUND');
+          const product = productSnapshot.data() || {};
+          if (reservation > 0) {
+            transaction.update(productRef, { inventoryReserved: Math.max(0, Number(product.inventoryReserved || 0) - reservation), updatedAt: now });
+            updates.inventoryReservation = 0;
+            updates.inventoryReconciledAt = now;
+            updates.inventoryReconciledQuantity = reservation;
+          } else if (order.status === 'paid' && product.inventory !== null && product.inventory !== undefined) {
+            transaction.update(productRef, { inventory: Math.max(0, Number(product.inventory || 0) + Number(order.quantity || 0)), updatedAt: now });
+            updates.inventoryReconciledAt = now;
+            updates.inventoryReconciledQuantity = Number(order.quantity || 0);
+          }
+        }
+      }
+      transaction.update(reference, updates);
+      return { id: reference.id, ...order, ...updates };
+    });
+    return res.status(200).json({ order: result });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'ORDER_NOT_FOUND' || code === 'PRODUCT_NOT_FOUND') return apiError(res, 404, 'ORDER_NOT_FOUND', 'Order not found.');
+    if (code === 'ORDER_NOT_PAID') return apiError(res, 409, 'ORDER_NOT_PAID', 'Only paid orders can be fulfilled.');
+    if (code.startsWith('INVALID_FULFILLMENT_TRANSITION:')) return apiError(res, 409, 'INVALID_FULFILLMENT_TRANSITION', `Order is already ${code.split(':')[1]}.`);
+    if (code === 'INVALID_ORDER_QUANTITY') return apiError(res, 409, 'INVALID_ORDER_QUANTITY', 'The order quantity is invalid.');
+    console.error('[Creator order fulfillment]', error);
+    return apiError(res, 503, 'FULFILLMENT_UPDATE_FAILED', 'Order fulfillment could not be updated.');
+  }
 });
 
 app.post('/api/billing/activate-free', async (req: Request, res: Response) => {
