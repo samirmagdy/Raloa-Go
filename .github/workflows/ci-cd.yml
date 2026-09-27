@@ -27,6 +27,8 @@ jobs:
       - run: npm run check:deployment-topology
       - run: npm run check:persistence-boundary
       - run: npm run check:modular-monolith
+      - run: npm run check:adrs
+      - run: npm run check:capacity-plan
       - run: npm run check:migrations
       - run: npm run check:ci-cd
       - run: npm audit --audit-level=high

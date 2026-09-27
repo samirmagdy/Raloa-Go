@@ -10,6 +10,8 @@ const required = [
   'npm run test:strangler-migration',
   'npm run check:secrets',
   'npm run check:modular-monolith',
+  'npm run check:adrs',
+  'npm run check:capacity-plan',
   'npm run validate:production',
   'npm run db:migrate',
   'npm run db:migrate:verify',
