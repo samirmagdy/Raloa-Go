@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { AccountContext, AuthDataSource, AuthenticatedUser, Role, SiteContext } from '@raloa/auth';
+import type { AccountContext, AuthDataSource, AuthenticatedUser, AuthorizationResource, OwnedResource, Role, SiteContext } from '@raloa/auth';
 
 export function createPostgresAuthDataSource(pool: Pool): AuthDataSource {
   return {
@@ -48,6 +48,35 @@ export function createPostgresAuthDataSource(pool: Pool): AuthDataSource {
     async resolveEntitlements(account) {
       const enabled = account.plan !== 'free';
       return { analytics: enabled, customDomains: enabled, studioControls: enabled };
+    },
+    async findResource(resource: AuthorizationResource, resourceId: string): Promise<OwnedResource | null> {
+      // Keep this allowlisted: resource names never become SQL identifiers.
+      const queries: Partial<Record<AuthorizationResource, string>> = {
+        site: 'SELECT id::text AS id, account_id::text AS account_id, owner_user_id::text AS owner_user_id FROM sites WHERE id::text = $1 OR legacy_site_id = $1 LIMIT 1',
+        audience: 'SELECT id::text AS id, account_id::text AS account_id, site_id::text AS site_id FROM audience_subscribers WHERE id::text = $1 LIMIT 1',
+        booking: 'SELECT id::text AS id, site_id::text AS site_id, host_user_id::text AS owner_user_id FROM bookings WHERE id::text = $1 LIMIT 1',
+        product: 'SELECT id::text AS id, site_id::text AS site_id, creator_user_id::text AS owner_user_id FROM products WHERE id::text = $1 LIMIT 1',
+        order: 'SELECT id::text AS id, site_id::text AS site_id, creator_user_id::text AS owner_user_id FROM orders WHERE id::text = $1 LIMIT 1',
+        domain: 'SELECT id::text AS id, site_id::text AS site_id, owner_user_id::text AS owner_user_id FROM custom_domains WHERE id::text = $1 LIMIT 1',
+        media: 'SELECT id::text AS id, site_id::text AS site_id, owner_user_id::text AS owner_user_id FROM media_assets WHERE id::text = $1 LIMIT 1',
+        integration: 'SELECT id::text AS id, site_id::text AS site_id, user_id::text AS owner_user_id FROM integrations WHERE id::text = $1 LIMIT 1',
+        analytics: 'SELECT site_id::text AS id, site_id::text AS site_id, site_owner_id::text AS owner_user_id FROM analytics_daily_rollups WHERE site_id::text = $1 LIMIT 1',
+        publishing: 'SELECT id::text AS id, account_id::text AS account_id, owner_user_id::text AS owner_user_id FROM sites WHERE (id::text = $1 OR legacy_site_id = $1) LIMIT 1',
+        billing: 'SELECT id::text AS id, id::text AS account_id FROM accounts WHERE id::text = $1 LIMIT 1',
+        account: 'SELECT id::text AS id, id::text AS account_id FROM accounts WHERE id::text = $1 LIMIT 1'
+      };
+      const query = resource === 'destructive' ? queries.site : queries[resource];
+      if (!query) return null;
+      const result = await pool.query<{ id: string; account_id?: string | null; site_id?: string | null; owner_user_id?: string | null }>(query, [resourceId]);
+      const row = result.rows[0];
+      if (!row) return null;
+      return {
+        resource,
+        id: row.id,
+        accountId: row.account_id || undefined,
+        siteId: row.site_id || (resource === 'site' || resource === 'publishing' ? row.id : undefined),
+        ownerUserId: row.owner_user_id || undefined
+      };
     }
   };
 }

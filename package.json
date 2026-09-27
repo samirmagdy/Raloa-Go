@@ -53,6 +53,7 @@
     "test:tenant-boundaries": "tsx test-tenant-boundaries.ts",
   "test:authorization-policy": "tsx test-authorization-policy.ts",
   "test:auth-boundary": "tsx test-auth-boundary.ts",
+  "test:authorization-resources": "tsx test-authorization-resources.ts",
   "test:entitlement-service": "tsx test-entitlement-service.ts",
   "test:feature-flags": "tsx test-feature-flags.ts",
   "test:strangler-migration": "tsx test-strangler-migration.ts",

@@ -1,6 +1,6 @@
 import { cookies, headers } from 'next/headers';
 import { getPlanCapabilities } from '../../../../src/lib/planCapabilities';
-import { createServerAuth, type AuthCredentials, type AuthorizationContext, type AuthenticatedUser, type AuthDataSource } from '@raloa/auth';
+import { createServerAuth, type AuthCredentials, type AuthorizationContext, type AuthenticatedUser, type AuthDataSource, type AuthorizationAction, type AuthorizationResource } from '@raloa/auth';
 import { getFirebaseServerVerifier } from './firebase-admin';
 import { getWebAuthDataSource } from './database';
 
@@ -17,6 +17,9 @@ const authDataSource: AuthDataSource = {
         studioControls: capabilities.studioControls,
         media: capabilities.maxMedia !== 0
       };
+  },
+  async findResource(resource, resourceId) {
+    return getWebAuthDataSource().findResource?.(resource, resourceId) || null;
   }
 };
 
@@ -49,4 +52,14 @@ export async function requireAccount(accountId?: string): Promise<AuthorizationC
 
 export async function requireSiteAccess(siteId: string, action: string, entitlement?: string): Promise<AuthorizationContext> {
   return serverAuth.requireSiteAccess(await requestCredentials(), siteId, action, entitlement);
+}
+
+/** The only resource authorization entry point exposed to Next route handlers. */
+export async function requireResourceAccess(
+  resource: AuthorizationResource,
+  resourceId: string,
+  action: AuthorizationAction,
+  entitlement?: string
+): Promise<AuthorizationContext> {
+  return serverAuth.requireResource(await requestCredentials(), resource, resourceId, action, entitlement);
 }

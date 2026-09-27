@@ -1,4 +1,5 @@
 import type { AuthenticatedUser } from '../../server-services';
+import { isRoleActionAllowed } from '@raloa/auth';
 import { getPlanCapabilities, type PlanCapabilities, type PlanTier } from '../../src/lib/planCapabilities';
 
 export type ApplicationRole = 'owner' | 'admin' | 'editor' | 'viewer';
@@ -37,13 +38,6 @@ export interface AuthorizationDataSource {
   loadMembership(userId: string, workspaceId: string, siteId: string): Promise<ApplicationRole | null>;
 }
 
-const rolePermissions: Record<ApplicationRole, readonly PolicyAction[]> = {
-  owner: ['site:read', 'site:write', 'site:publish', 'members:manage', 'analytics:read', 'bookings:manage', 'orders:manage', 'media:write', 'domains:manage', 'billing:manage', 'integrations:manage'],
-  admin: ['site:read', 'site:write', 'site:publish', 'members:manage', 'analytics:read', 'bookings:manage', 'orders:manage', 'media:write', 'domains:manage', 'billing:manage', 'integrations:manage'],
-  editor: ['site:read', 'site:write', 'site:publish', 'analytics:read', 'bookings:manage', 'orders:manage', 'media:write'],
-  viewer: ['site:read', 'analytics:read']
-};
-
 export async function resolveAuthorizationContext(identity: AuthenticatedUser, siteId: string, source: AuthorizationDataSource): Promise<AuthorizationContext> {
   const [account, site] = await Promise.all([source.loadAccount(identity.uid), source.loadSite(siteId)]);
   if (!account || !site) throw new Error('RESOURCE_NOT_FOUND');
@@ -56,7 +50,7 @@ export async function resolveAuthorizationContext(identity: AuthenticatedUser, s
 }
 
 export function can(context: AuthorizationContext, action: PolicyAction): boolean {
-  return rolePermissions[context.role].includes(action);
+  return isRoleActionAllowed(context.role, action);
 }
 
 export function assertCan(context: AuthorizationContext, action: PolicyAction): void {
