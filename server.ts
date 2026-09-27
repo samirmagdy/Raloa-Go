@@ -43,11 +43,21 @@ import { isSupportedBlockType, isSupportedEmbedUrl } from './src/lib/blockTypes'
 import { canonicalSiteToLegacy, normalizeBookingConfig, normalizeProductInput, normalizeSiteContent, validateProductInput, validateSiteContent } from './src/lib/contentSchema';
 import type { BookingConfig, BookingServiceConfig } from './src/types';
 import { normalizeSiteSlug, RESERVED_SITE_SLUGS, validateSiteSlug } from './src/lib/siteSlug';
+import { createDomainModules } from './server/modules';
+import { calendarProviders } from './server/adapters/calendar';
+import { stripeAdapter } from './server/adapters/stripe';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+// Composition root for bounded contexts. The legacy handlers below remain the
+// compatibility shell while routes are migrated to module controllers.
+export const domainModules = createDomainModules(adminDb, {
+  resolvePublicSite: (handle) => getPublishedSiteByHandle(handle),
+  billing: stripeAdapter,
+  providers: calendarProviders()
+});
 const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS || 1);
 app.set('trust proxy', Number.isInteger(trustedProxyHops) && trustedProxyHops >= 0 ? trustedProxyHops : 1);
 const PORT = Number(process.env.PORT) || 3000;
