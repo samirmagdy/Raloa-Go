@@ -1,10 +1,12 @@
 import type { Request, Response } from 'express';
 import type { AuthenticatedUser } from '../../../server-services';
 import type { BillingService } from './service';
+import type { AuditService } from '../../audit/service';
 
 export function createBillingController(
   service: BillingService,
-  authenticate: (request: Request) => Promise<AuthenticatedUser | null>
+  authenticate: (request: Request) => Promise<AuthenticatedUser | null>,
+  audit?: AuditService
 ) {
   return {
     async checkout(request: Request, response: Response) {
@@ -16,6 +18,7 @@ export function createBillingController(
       const idempotencyKey = typeof request.headers['idempotency-key'] === 'string' ? request.headers['idempotency-key'] : undefined;
       try {
         const url = await service.checkout(user, plan, isYearly, idempotencyKey);
+        await audit?.recordBestEffort({ actorUserId: user.uid, resourceType: 'billing', resourceId: user.uid, action: 'billing.checkout_created', requestId: typeof request.headers['x-request-id'] === 'string' ? request.headers['x-request-id'] : undefined, metadata: { plan, isYearly } });
         return response.status(200).json({ url });
       } catch (error) {
         console.error('[Billing checkout]', error);
@@ -29,11 +32,14 @@ export function createBillingController(
       const user = await authenticate(request);
       if (!user) return response.status(401).json({ error: 'Authentication required' });
       try {
-        return response.status(200).json({ url: await service.portal(user.uid) });
+        const url = await service.portal(user.uid);
+        await audit?.recordBestEffort({ actorUserId: user.uid, resourceType: 'billing', resourceId: user.uid, action: 'billing.portal_opened', requestId: typeof request.headers['x-request-id'] === 'string' ? request.headers['x-request-id'] : undefined });
+        return response.status(200).json({ url });
       } catch (error) {
         console.error('[Billing portal]', error);
         const message = error instanceof Error ? error.message : 'Billing portal unavailable';
-        return response.status(message.includes('NOT_FOUND') ? 404 : 503).json({ error: message });
+        const notFound = message.includes('NOT_FOUND');
+        return response.status(notFound ? 404 : 503).json({ error: notFound ? 'Billing customer was not found' : 'Billing portal is temporarily unavailable' });
       }
     }
   };

@@ -2,10 +2,10 @@ node_modules/
 build/
 dist/
 coverage/
+reports/
 .DS_Store
 *.log
 .env*
 !.env.example
 !.env.test.example
 .local_users_cache.json
-

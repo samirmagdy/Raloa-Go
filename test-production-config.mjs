@@ -3,6 +3,8 @@ import { inspectProductionEnvironment } from './server-config.mjs';
 
 const valid = {
   NODE_ENV: 'production',
+  SECRET_MANAGER_ENABLED: 'true',
+  INTEGRATION_KMS_KEY_NAME: 'projects/raloa/locations/global/keyRings/app/cryptoKeys/integrations',
   APP_URL: 'https://raloa.app',
   AUTH_SESSION_SECRET: 'a'.repeat(48),
   INTEGRATION_ENCRYPTION_KEY: 'b'.repeat(48),
@@ -28,7 +30,7 @@ assert.deepEqual(validResult.invalid, []);
 
 const missingResult = inspectProductionEnvironment({ NODE_ENV: 'production' });
 assert.ok(missingResult.missing.includes('APP_URL'));
-assert.ok(missingResult.missing.includes('STRIPE_SECRET_KEY'));
+assert.ok(missingResult.invalid.some((message) => message.includes('SECRET_MANAGER_ENABLED')));
 assert.ok(missingResult.invalid.some((message) => message.includes('Firebase Admin credentials')));
 
 const unsafeResult = inspectProductionEnvironment({

@@ -1,11 +1,17 @@
 import fs from 'node:fs';
 
 export const REQUIRED_PRODUCTION_VARIABLES = Object.freeze([
-  'APP_URL', 'AUTH_SESSION_SECRET', 'INTEGRATION_ENCRYPTION_KEY',
+  'APP_URL', 'AUTH_SESSION_SECRET', 'INTEGRATION_KMS_KEY_NAME',
   'FIREBASE_PROJECT_ID', 'FIRESTORE_DATABASE_ID', 'FIREBASE_STORAGE_BUCKET', 'FIREBASE_ADMIN_ENABLED',
   'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PRICE_PRO_MONTHLY', 'STRIPE_PRICE_PRO_YEARLY',
   'STRIPE_PRICE_STUDIO_MONTHLY', 'STRIPE_PRICE_STUDIO_YEARLY', 'CLOUDFLARE_API_TOKEN',
   'CLOUDFLARE_ZONE_ID', 'TRUSTED_PROXY_HOPS'
+]);
+
+export const MANAGED_PRODUCTION_SECRETS = Object.freeze([
+  'AUTH_SESSION_SECRET', 'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET', 'CLOUDFLARE_API_TOKEN', 'GOOGLE_CALENDAR_CLIENT_SECRET',
+  'MICROSOFT_CALENDAR_CLIENT_SECRET', 'GITHUB_CLIENT_SECRET', 'RESEND_API_KEY'
 ]);
 
 export const OPTIONAL_PRODUCTION_VARIABLES = Object.freeze([
@@ -19,11 +25,13 @@ const isPresent = (value) => typeof value === 'string' && value.trim().length > 
 const isPlaceholder = (value) => /^(MY_|GENERATE_|CHANGE_ME|replace[-_]|your[-_]|price_\.\.\.|sk_(test|live)_\.\.\.|whsec_\.\.\.)/i.test(String(value || '').trim());
 
 export function inspectProductionEnvironment(env = process.env) {
-  const missing = REQUIRED_PRODUCTION_VARIABLES.filter((name) => !isPresent(env[name]));
+  const secretManagerEnabled = env.SECRET_MANAGER_ENABLED === 'true';
+  const missing = REQUIRED_PRODUCTION_VARIABLES.filter((name) => !(secretManagerEnabled && MANAGED_PRODUCTION_SECRETS.includes(name)) && !isPresent(env[name]));
   const invalid = [];
   const optionalMissing = OPTIONAL_PRODUCTION_VARIABLES.filter((name) => !isPresent(env[name]));
 
   if (env.NODE_ENV !== 'production') invalid.push('NODE_ENV must be exactly production for production validation');
+  if (env.NODE_ENV === 'production' && !secretManagerEnabled) invalid.push('SECRET_MANAGER_ENABLED must be true in production; raw production secrets in generic environment variables are not supported');
   if (isPresent(env.APP_URL)) {
     try {
       const url = new URL(env.APP_URL);
@@ -40,6 +48,7 @@ export function inspectProductionEnvironment(env = process.env) {
     if (env.INTEGRATION_ENCRYPTION_KEY.length < 32) invalid.push('INTEGRATION_ENCRYPTION_KEY must be at least 32 characters');
     if (isPlaceholder(env.INTEGRATION_ENCRYPTION_KEY)) invalid.push('INTEGRATION_ENCRYPTION_KEY must be a unique production secret, not a placeholder');
   }
+  if (isPresent(env.INTEGRATION_KMS_KEY_NAME) && !/^projects\/[^/]+\/locations\/[^/]+\/keyRings\/[^/]+\/cryptoKeys\/[^/]+(?:\/cryptoKeyVersions\/[^/]+)?$/.test(env.INTEGRATION_KMS_KEY_NAME)) invalid.push('INTEGRATION_KMS_KEY_NAME must be a valid Cloud KMS crypto key resource');
   if (isPresent(env.TRUSTED_PROXY_HOPS) && (!/^\d+$/.test(env.TRUSTED_PROXY_HOPS) || Number(env.TRUSTED_PROXY_HOPS) > 10)) invalid.push('TRUSTED_PROXY_HOPS must be an integer from 0 to 10');
   if (env.FIREBASE_ADMIN_ENABLED !== 'true') invalid.push('FIREBASE_ADMIN_ENABLED must be true in production');
   if (!isPresent(env.K_SERVICE) && !isPresent(env.GOOGLE_APPLICATION_CREDENTIALS)) invalid.push('Firebase Admin credentials are missing: set K_SERVICE on Cloud Run or GOOGLE_APPLICATION_CREDENTIALS');

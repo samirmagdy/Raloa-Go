@@ -2,36 +2,36 @@
 
 ## Required production configuration
 
-Configure these in Cloud Run Secret Manager or the deployment environment. Never commit them:
+Configure non-secret settings as Cloud Run environment variables. Configure managed secret values in Google Secret Manager and set `SECRET_MANAGER_ENABLED=true`; never commit secret values:
 
 ```text
 APP_URL=https://raloa.app
-AUTH_SESSION_SECRET=<random 32+ character secret>
-INTEGRATION_ENCRYPTION_KEY=<separate random 32+ character secret>
+SECRET_MANAGER_ENABLED=true
+SECRET_MANAGER_PROJECT_ID=gen-lang-client-0319129908
+INTEGRATION_KMS_KEY_NAME=projects/PROJECT_ID/locations/global/keyRings/RING/cryptoKeys/integrations
 FIREBASE_PROJECT_ID=gen-lang-client-0319129908
 FIRESTORE_DATABASE_ID=ai-studio-raloadesignfirst-8ccbe7ea-5af1-4106-809a-71252bddde6f
 FIREBASE_STORAGE_BUCKET=gen-lang-client-0319129908.firebasestorage.app
 FIREBASE_ADMIN_ENABLED=true
-STRIPE_SECRET_KEY
-STRIPE_WEBHOOK_SECRET
 STRIPE_PRICE_PRO_MONTHLY
 STRIPE_PRICE_PRO_YEARLY
 STRIPE_PRICE_STUDIO_MONTHLY
 STRIPE_PRICE_STUDIO_YEARLY
-CLOUDFLARE_API_TOKEN
 CLOUDFLARE_ZONE_ID
 TRUSTED_PROXY_HOPS=1
 ```
 
 Cloud Run must provide `K_SERVICE` (automatic) or a valid
 `GOOGLE_APPLICATION_CREDENTIALS` path for Firebase Admin credentials. The
-startup validator rejects missing values, local URLs, placeholder secrets,
+startup validator rejects missing Secret Manager configuration, local URLs, placeholder secrets,
 Stripe test keys, incomplete provider groups, and invalid proxy/domain values.
 
 Optional configuration includes `GEMINI_API_KEY`, `VITE_ANALYTICS_ENDPOINT`,
 `SENTRY_DSN`, Resend notifications, Google/Outlook Calendar OAuth, and GitHub
 OAuth. Optional provider settings must be supplied as complete groups when
 enabled.
+
+See [secrets-management.md](secrets-management.md) for IAM, provisioning, and rotation procedures.
 
 ## Local verification
 

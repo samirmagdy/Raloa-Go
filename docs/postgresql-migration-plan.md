@@ -110,6 +110,12 @@ being reconciled.
 
 ## Staged rollout
 
+This is a strangler migration, not a platform replacement. The existing Firestore repository is
+wrapped as the source implementation and the PostgreSQL repository is introduced behind the same
+domain contract. [`createStranglerRouter`](../server/infrastructure/migrations/strangler.ts)
+provides the request-path routing seam; it preserves source responses during shadow comparison,
+routes only flagged tenants to PostgreSQL, and supports idempotent dual writes before cutover.
+
 Migration is controlled by the resumable runner in
 [`server/infrastructure/migrations/runner.ts`](../server/infrastructure/migrations/runner.ts).
 Run one bounded domain at a time; do not migrate all collections in a single operation.
@@ -119,12 +125,13 @@ Run one bounded domain at a time; do not migrate all collections in a single ope
    the cursor after each successful page so an interrupted run resumes safely.
 3. Reconcile normalized source and target records. Stop on missing, mismatched, or extra records;
    retain a report and repair the source/target mapping before proceeding.
-4. Enable shadow reads and compare source/target responses without changing the client response.
+4. Enable shadow reads through the strangler router and compare source/target responses without changing the client response.
    Track mismatch counts and latency/errors during an observation window.
-5. Enable dual writes: source remains authoritative while the target write is verified. Provider
+5. Enable the tenant-scoped write flag in dual-write mode: source remains authoritative while the target write is verified. Provider
    calls and cross-store writes use outbox/idempotency workflows, never distributed transactions.
-6. Switch reads and writes to PostgreSQL only after reconciliation is equivalent and the observation
-   window is clean. Retain the source adapter read-only for rollback until the domain is accepted.
+6. Switch reads to PostgreSQL only for an approved tenant cohort after reconciliation is equivalent
+   and the observation window is clean; then switch writes for that cohort. Retain the source adapter
+   read-only for rollback until the domain is accepted.
 7. Complete the checkpoint and remove Firestore writes for that domain. Repeat for the next bounded
    domain in dependency order.
 

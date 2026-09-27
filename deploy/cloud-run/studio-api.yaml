@@ -1,0 +1,78 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: raloa-studio-api
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: '1'
+        autoscaling.knative.dev/maxScale: '30'
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: RALOA_RUNTIME_SERVICE_ACCOUNT
+      containerConcurrency: 40
+      containers:
+        - image: REGION-docker.pkg.dev/PROJECT_ID/raloa/raloa:RELEASE_ID
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SERVICE_ROLE
+              value: studio-api
+            - name: NODE_ENV
+              value: production
+            - name: RELEASE_ID
+              value: RELEASE_ID
+            - name: APP_URL
+              value: https://raloa.app
+            - name: FIREBASE_PROJECT_ID
+              value: PROJECT_ID
+            - name: FIRESTORE_DATABASE_ID
+              value: FIRESTORE_DATABASE_ID
+            - name: FIREBASE_STORAGE_BUCKET
+              value: STORAGE_BUCKET
+            - name: FIREBASE_ADMIN_ENABLED
+              value: 'true'
+            - name: SECRET_MANAGER_ENABLED
+              value: 'true'
+            - name: SECRET_MANAGER_PROJECT_ID
+              value: PROJECT_ID
+            - name: INTEGRATION_KMS_KEY_NAME
+              value: KMS_KEY_RESOURCE
+            - name: STRIPE_PRICE_PRO_MONTHLY
+              value: STRIPE_PRICE_PRO_MONTHLY
+            - name: STRIPE_PRICE_PRO_YEARLY
+              value: STRIPE_PRICE_PRO_YEARLY
+            - name: STRIPE_PRICE_STUDIO_MONTHLY
+              value: STRIPE_PRICE_STUDIO_MONTHLY
+            - name: STRIPE_PRICE_STUDIO_YEARLY
+              value: STRIPE_PRICE_STUDIO_YEARLY
+            - name: CLOUDFLARE_ZONE_ID
+              value: CLOUDFLARE_ZONE_ID
+            - name: TRUSTED_PROXY_HOPS
+              value: '1'
+            - name: CLOUD_TASKS_DISPATCH_URL
+              value: https://raloa-worker-TBD.run.app/tasks/background-jobs
+            - name: CLOUD_TASKS_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: raloa-worker-auth-token
+                  key: latest
+          resources:
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /api/health
+            initialDelaySeconds: 5
+            timeoutSeconds: 3
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /api/health
+            periodSeconds: 30
+            timeoutSeconds: 5

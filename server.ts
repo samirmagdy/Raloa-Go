@@ -60,6 +60,9 @@ import { cacheKey } from './server/infrastructure/cache/policy';
 import { apiErrorSchema } from './src/shared/schema';
 import { createStructuredLogger, InMemoryMetrics, traceIdFromHeaders } from './server/infrastructure/observability/logger';
 import { captureServerException, initializeServerSentry } from './server/infrastructure/observability/sentry';
+import { integrationEnvelopeCipher } from './server/infrastructure/crypto/envelope';
+import { createFirestoreAuditRepository } from './server/audit/firestore';
+import { createAuditService } from './server/audit/service';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -79,6 +82,11 @@ export const domainModules = createDomainModules(adminDb, {
 const entitlementService = createEntitlementService({ billing: getAuthoritativeBillingState });
 const publicCache = new MemoryCacheStore();
 export const publicCreatorAdapter = createPublicCreatorAdapter({ getPublishedSiteByHandle, cache: publicCache });
+export const auditService = createAuditService(createFirestoreAuditRepository(adminDb));
+const auditRequestId = (req: Request): string | undefined => {
+  const value = req.headers['x-request-id'];
+  return typeof value === 'string' && value ? value : undefined;
+};
 async function getCachedPublicDomain(hostname: string): Promise<DomainRecord | null> {
   const normalized = hostname.trim().toLowerCase();
   const key = cacheKey('domainResolution', normalized);
@@ -116,7 +124,7 @@ export const outbox = createOutboxService(createFirestoreOutboxRepository(adminD
     await domainEventBus.publish({ id: event.id, type: event.eventType, name: name as DomainEvent['name'], version: Number(version || 1) as 1, aggregateType: event.aggregateType, aggregateId: event.aggregateId, occurredAt: event.createdAt, payload: event.payload });
   }
 });
-const billingController = createBillingController(domainModules.billing.service, (request) => getAuthenticatedUser(request));
+const billingController = createBillingController(domainModules.billing.service, (request) => getAuthenticatedUser(request), auditService);
 const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS || 1);
 app.set('trust proxy', Number.isInteger(trustedProxyHops) && trustedProxyHops >= 0 ? trustedProxyHops : 1);
 const PORT = Number(process.env.PORT) || 3000;
@@ -161,6 +169,20 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+// The public deployment shares the compatibility image during the incremental
+// split, but it cannot become an authenticated API origin. Studio/API remains
+// the owner of private and webhook routes.
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (process.env.SERVICE_ROLE !== 'public-web') return next();
+  const publicApi = req.path === '/api/health' || req.path.startsWith('/api/public') || req.path.startsWith('/api/v1/public') || req.path.startsWith('/api/v1/handles');
+  if (!req.path.startsWith('/api') || publicApi) return next();
+  return res.status(404).json({ error: 'NOT_FOUND' });
+});
+
+app.get('/api/health', (_req: Request, res: Response) => {
+  return res.status(200).json({ status: 'ok', role: process.env.SERVICE_ROLE || 'edge', version: process.env.RELEASE_ID || 'local' });
+});
+
 app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
   const signature = req.headers['stripe-signature'];
   if (typeof signature !== 'string') return res.status(400).json({ error: 'Missing Stripe signature' });
@@ -168,6 +190,7 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
   try {
     observabilityMetrics.increment('webhook.received', { provider: 'stripe' });
     await handleStripeWebhook(req.body as Buffer, signature);
+    await auditService.recordBestEffort({ actorType: 'provider', resourceType: 'billing', resourceId: 'stripe', action: 'billing.webhook_processed', requestId: auditRequestId(req), metadata: { provider: 'stripe' } });
     observabilityMetrics.increment('webhook.processed', { provider: 'stripe', status: 'success' });
     return res.status(200).json({ received: true });
   } catch (error) {
@@ -727,30 +750,12 @@ type StoredIntegration = {
 const OAUTH_SCOPES: Record<OAuthProvider, string[]> = { github: ['read:user'] };
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
-function integrationEncryptionKey(): Buffer {
-  const secret = process.env.INTEGRATION_ENCRYPTION_KEY || (process.env.NODE_ENV !== 'production' ? AUTH_SESSION_SECRET : '');
-  if (!secret || secret.length < 32) throw new Error('INTEGRATION_ENCRYPTION_KEY_NOT_CONFIGURED');
-  return crypto.createHash('sha256').update(secret).digest();
-}
-
 function integrationEncryptionConfigured(): boolean {
-  return AUTH_SESSION_SECRET.length >= 32 && Boolean((process.env.INTEGRATION_ENCRYPTION_KEY && process.env.INTEGRATION_ENCRYPTION_KEY.length >= 32) || (process.env.NODE_ENV !== 'production' && AUTH_SESSION_SECRET.length >= 32));
+  return Boolean(process.env.INTEGRATION_KMS_KEY_NAME || (process.env.NODE_ENV !== 'production' && AUTH_SESSION_SECRET.length >= 32));
 }
 
-function encryptIntegrationToken(token: string): string {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', integrationEncryptionKey(), iv);
-  const ciphertext = Buffer.concat([cipher.update(token, 'utf8'), cipher.final()]);
-  return [iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), ciphertext.toString('base64url')].join('.');
-}
-
-function decryptIntegrationToken(value: string): string {
-  const [ivValue, tagValue, ciphertextValue] = value.split('.');
-  if (!ivValue || !tagValue || !ciphertextValue) throw new Error('INVALID_ENCRYPTED_INTEGRATION_TOKEN');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', integrationEncryptionKey(), Buffer.from(ivValue, 'base64url'));
-  decipher.setAuthTag(Buffer.from(tagValue, 'base64url'));
-  return Buffer.concat([decipher.update(Buffer.from(ciphertextValue, 'base64url')), decipher.final()]).toString('utf8');
-}
+function encryptIntegrationToken(token: string): Promise<string> { return integrationEnvelopeCipher.encrypt(token, 'github-token'); }
+function decryptIntegrationToken(value: string): Promise<string> { return integrationEnvelopeCipher.decrypt(value, 'github-token'); }
 
 function githubConfig(): { clientId: string; clientSecret: string; redirectUri: string } | null {
   const clientId = process.env.GITHUB_CLIENT_ID;
@@ -1186,11 +1191,11 @@ async function processPendingCalendarJobs(): Promise<void> {
       if (!integrationSnapshot.exists) throw new Error('CALENDAR_REAUTH_REQUIRED');
       const integration = integrationSnapshot.data() || {};
       const adapter = calendarAdapter(provider);
-      let tokens = decryptCalendarTokens(String(integration.encryptedTokens || ''));
+      let tokens = await decryptCalendarTokens(String(integration.encryptedTokens || ''));
       const refreshed = await adapter.refresh(tokens);
       if (JSON.stringify(refreshed) !== JSON.stringify(tokens)) {
         tokens = refreshed;
-        await integrationRef.set({ encryptedTokens: encryptCalendarTokens(tokens), expiresAt: tokens.expiresAt, updatedAt: new Date().toISOString() }, { merge: true });
+        await integrationRef.set({ encryptedTokens: await encryptCalendarTokens(tokens), expiresAt: tokens.expiresAt, updatedAt: new Date().toISOString() }, { merge: true });
       }
       if (job.operation === 'cancel') {
         if (typeof job.externalEventId === 'string' && job.externalEventId) await adapter.cancelEvent(tokens, job.externalEventId);
@@ -3453,6 +3458,7 @@ app.post('/api/account/delete-request', async (req: Request, res: Response) => {
     } else {
       LOCAL_ACCOUNT_SETTINGS.set(user.uid, { ...accountSettingsFor(user), deletionRequestedAt: new Date().toISOString() });
     }
+    await auditService.recordBestEffort({ actorUserId: user.uid, resourceType: 'account', resourceId: user.uid, action: 'admin.changed', requestId: auditRequestId(req), metadata: { change: 'deletion_requested' } });
     return res.status(202).json({ status: 'requested' });
   } catch (error) {
     console.error('[Account deletion request]', error);
@@ -4016,6 +4022,7 @@ app.post('/api/sites', async (req: Request, res: Response) => {
   const entitlement = validateSiteEntitlements(site, profile.data());
   if (entitlement) return entitlementError(res, entitlement.feature, entitlement.message, entitlement.details);
   await reference.create(site);
+  await auditService.recordBestEffort({ actorUserId: user.uid, siteId, resourceType: 'site', resourceId: siteId, action: 'site.created', requestId: auditRequestId(req), metadata: { handle: username, templateId: requestedTemplateId } });
   return res.status(201).json({ site });
 });
 
@@ -4037,6 +4044,7 @@ app.delete('/api/sites/:siteId', async (req: Request, res: Response) => {
     await batch.commit();
   }
   await reference.delete();
+  await auditService.recordBestEffort({ actorUserId: user.uid, siteId, resourceType: 'site', resourceId: siteId, action: 'site.deleted', requestId: auditRequestId(req), metadata: { handle: String(snapshot.data()?.username || '') } });
   return res.status(204).send();
 });
 
@@ -4165,6 +4173,13 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
     }
   }
   await Promise.all([publicCreatorAdapter.invalidate(handle), previousHandle && previousHandle !== handle ? publicCreatorAdapter.invalidate(previousHandle) : Promise.resolve()]);
+  const publicationChanged = Boolean(current.isPublished) !== Boolean(sanitized.isPublished);
+  await auditService.recordBestEffort({
+    actorUserId: user.uid, siteId, resourceType: 'site', resourceId: siteId,
+    action: publicationChanged ? (sanitized.isPublished ? 'site.published' : 'site.unpublished') : 'site.updated',
+    requestId: auditRequestId(req),
+    metadata: { fromPublished: Boolean(current.isPublished), toPublished: Boolean(sanitized.isPublished), handle, revision: sanitized.revision }
+  });
   return res.status(existing.exists ? 200 : 201).json({ site: sanitized });
 });
 
@@ -4506,6 +4521,7 @@ app.patch('/api/creator/orders/:orderId/fulfillment', async (req: Request, res: 
       transaction.update(reference, updates);
       return { id: reference.id, ...order, ...updates };
     });
+    await auditService.recordBestEffort({ actorUserId: user.uid, siteId: resolvedOrderSiteId, resourceType: 'order', resourceId: orderId, action: 'order.fulfillment_changed', requestId: auditRequestId(req), metadata: { to: fulfillmentStatus } });
     return res.status(200).json({ order: result });
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
@@ -4677,10 +4693,11 @@ app.get('/api/integrations/github/callback', async (req: Request, res: Response)
     const now = new Date().toISOString();
     const integration: StoredIntegration = {
       provider: 'github', userId: decoded.uid, providerAccountId: account.id, accountLabel: account.label,
-      profileUrl: account.profileUrl, scopes: OAUTH_SCOPES.github, status: 'connected', encryptedAccessToken: encryptIntegrationToken(accessToken),
+      profileUrl: account.profileUrl, scopes: OAUTH_SCOPES.github, status: 'connected', encryptedAccessToken: await encryptIntegrationToken(accessToken),
       tokenExpiresAt: null, connectedAt: now, updatedAt: now
     };
     await adminDb.collection('creator_integrations').doc(`${decoded.uid}_github`).set(integration, { merge: true });
+    await auditService.recordBestEffort({ actorUserId: decoded.uid, resourceType: 'integration', resourceId: `${decoded.uid}_github`, action: 'integration.connected', metadata: { provider: 'github', scopes: OAUTH_SCOPES.github.join(' ') } });
     return res.redirect(`${APP_URL}/studio?integration=github&status=connected`);
   } catch (error) {
     console.error('[GitHub OAuth callback]', error);
@@ -4698,7 +4715,7 @@ app.post('/api/integrations/:provider/refresh', async (req: Request, res: Respon
   if (!snapshot.exists) return apiError(res, 404, 'INTEGRATION_NOT_CONNECTED', 'This integration is not connected.');
   const integration = snapshot.data() as StoredIntegration;
   try {
-    await socialAdapters.github.validateToken(decryptIntegrationToken(integration.encryptedAccessToken));
+    await socialAdapters.github.validateToken(await decryptIntegrationToken(integration.encryptedAccessToken));
     await ref.set({ status: 'connected', lastError: null, updatedAt: new Date().toISOString() }, { merge: true });
     return res.json({ integration: publicIntegration({ ...integration, status: 'connected', updatedAt: new Date().toISOString() }) });
   } catch (error) {
@@ -4719,16 +4736,17 @@ app.delete('/api/integrations/:provider', async (req: Request, res: Response) =>
     const config = githubConfig();
     if (config) {
       try {
-        await socialAdapters.github.revokeToken(config, decryptIntegrationToken(integration.encryptedAccessToken));
+        await socialAdapters.github.revokeToken(config, await decryptIntegrationToken(integration.encryptedAccessToken));
       } catch (error) { console.warn('[GitHub token revoke]', error); }
     }
     await ref.delete();
+    await auditService.recordBestEffort({ actorUserId: user.uid, resourceType: 'integration', resourceId: ref.id, action: 'integration.disconnected', requestId: auditRequestId(req), metadata: { provider } });
   }
   return res.status(204).send();
 });
 
 function calendarTokenStorageConfigured(): boolean {
-  return Boolean((process.env.INTEGRATION_ENCRYPTION_KEY && process.env.INTEGRATION_ENCRYPTION_KEY.length >= 32) || (process.env.NODE_ENV !== 'production' && AUTH_SESSION_SECRET.length >= 32));
+  return Boolean(process.env.INTEGRATION_KMS_KEY_NAME || (process.env.NODE_ENV !== 'production' && AUTH_SESSION_SECRET.length >= 32));
 }
 
 app.get('/api/calendar/integrations', async (req: Request, res: Response) => {
@@ -4785,7 +4803,8 @@ app.get('/api/calendar/:provider/callback', async (req: Request, res: Response) 
     await stateRef.delete();
     const tokens = await calendarAdapter(provider).exchangeCode(code);
     const now = new Date().toISOString();
-    await adminDb.collection('calendar_integrations').doc(`${decoded.uid}_${provider}`).set({ userId: decoded.uid, provider, status: 'connected', scopes: calendarOAuthConfiguration(provider)!.scopes, encryptedTokens: encryptCalendarTokens(tokens), expiresAt: tokens.expiresAt, connectedAt: now, updatedAt: now }, { merge: true });
+    await adminDb.collection('calendar_integrations').doc(`${decoded.uid}_${provider}`).set({ userId: decoded.uid, provider, status: 'connected', scopes: calendarOAuthConfiguration(provider)!.scopes, encryptedTokens: await encryptCalendarTokens(tokens), expiresAt: tokens.expiresAt, connectedAt: now, updatedAt: now }, { merge: true });
+    await auditService.recordBestEffort({ actorUserId: decoded.uid, resourceType: 'integration', resourceId: `${decoded.uid}_${provider}`, action: 'integration.connected', metadata: { provider, scopes: calendarOAuthConfiguration(provider)!.scopes.join(' ') } });
     return res.redirect(`${APP_URL}/studio?calendar=${encodeURIComponent(provider)}&status=connected`);
   } catch (error) {
     console.error('[Calendar OAuth callback]', error);
@@ -4799,6 +4818,7 @@ app.delete('/api/calendar/:provider', async (req: Request, res: Response) => {
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!['google', 'outlook'].includes(provider)) return apiError(res, 404, 'CALENDAR_PROVIDER_NOT_FOUND', 'Unsupported calendar provider.');
   await adminDb.collection('calendar_integrations').doc(`${user.uid}_${provider}`).delete();
+  await auditService.recordBestEffort({ actorUserId: user.uid, resourceType: 'integration', resourceId: `${user.uid}_${provider}`, action: 'integration.disconnected', requestId: auditRequestId(req), metadata: { provider } });
   return res.status(204).send();
 });
 
@@ -4904,6 +4924,7 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
     };
     await saveDomain({ ...domain, dnsRecords: domainDnsRecords(cloudflare) });
     await publicCache.delete(cacheKey('domainResolution', hostname));
+    await auditService.recordBestEffort({ actorUserId: user.uid, siteId, resourceType: 'domain', resourceId: domainId, action: 'domain.provisioned', requestId: auditRequestId(req), metadata: { hostname, provider: 'cloudflare' } });
     return res.status(201).json({ domain, dnsRecords: domainDnsRecords(cloudflare) });
   } catch (error) {
     if (error instanceof Error && error.message === 'DOMAIN_ALREADY_RESERVED') {
@@ -4950,6 +4971,7 @@ app.post('/api/domains/verify', async (req: Request, res: Response) => {
     };
     await saveDomain(updated);
     await publicCache.delete(cacheKey('domainResolution', String(domain.hostname || '').toLowerCase()));
+    if (verificationStatus === 'verified') await auditService.recordBestEffort({ actorUserId: user.uid, siteId: domain.siteId, resourceType: 'domain', resourceId: domain.domainId, action: 'domain.verified', requestId: auditRequestId(req), metadata: { hostname: domain.hostname, sslStatus } });
     return res.status(200).json({ domain: updated });
   } catch (error) {
     await saveDomain({
@@ -4979,6 +5001,7 @@ app.delete('/api/domains/:domainId', async (req: Request, res: Response) => {
     }
     await deleteDomain(domain.domainId);
     await publicCache.delete(cacheKey('domainResolution', String(domain.hostname || '').toLowerCase()));
+    await auditService.recordBestEffort({ actorUserId: user.uid, siteId: domain.siteId, resourceType: 'domain', resourceId: domain.domainId, action: 'domain.deleted', requestId: auditRequestId(req), metadata: { hostname: domain.hostname, provider: 'cloudflare' } });
     return res.status(204).send();
   } catch (error) {
     console.error('[Domain delete]', error);

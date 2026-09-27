@@ -1,4 +1,5 @@
 -- RALOA PostgreSQL target schema.
+-- compatibility: expand
 -- Additive only: this migration does not modify Firestore or Firebase Auth.
 -- Firebase UID is retained in app_users.external_auth_id during the migration.
 
@@ -681,14 +682,35 @@ CREATE INDEX operational_jobs_claim_idx ON operational_jobs (status, available_a
 CREATE TABLE audit_log (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   actor_user_id uuid REFERENCES app_users(id),
+  actor_type text NOT NULL DEFAULT 'user' CHECK (actor_type IN ('user', 'system', 'provider')),
+  tenant_id uuid,
+  site_id uuid REFERENCES sites(id),
   action text NOT NULL,
   entity_type text NOT NULL,
   entity_id uuid,
   before_data jsonb,
   after_data jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  request_id text,
+  trace_id text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (jsonb_typeof(metadata) = 'object'),
+  CHECK (before_data IS NULL OR jsonb_typeof(before_data) = 'object'),
+  CHECK (after_data IS NULL OR jsonb_typeof(after_data) = 'object')
 );
 CREATE INDEX audit_log_entity_idx ON audit_log (entity_type, entity_id, created_at DESC);
+CREATE INDEX audit_log_site_idx ON audit_log (site_id, created_at DESC);
+CREATE INDEX audit_log_actor_idx ON audit_log (actor_user_id, created_at DESC);
+CREATE INDEX audit_log_action_idx ON audit_log (action, created_at DESC);
+
+CREATE OR REPLACE FUNCTION reject_audit_log_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'audit_log is append-only';
+END;
+$$;
+CREATE TRIGGER audit_log_append_only
+  BEFORE UPDATE OR DELETE ON audit_log
+  FOR EACH ROW EXECUTE FUNCTION reject_audit_log_mutation();
 
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN

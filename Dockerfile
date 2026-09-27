@@ -13,6 +13,9 @@ COPY package*.json ./
 RUN npm ci --omit=dev --legacy-peer-deps && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.ts ./server.ts
+COPY --from=build /app/worker.ts ./worker.ts
+COPY --from=build /app/server ./server
+COPY --from=build /app/server-calendar.ts ./server-calendar.ts
 COPY --from=build /app/server-services.ts ./server-services.ts
 COPY --from=build /app/server-config.mjs ./server-config.mjs
 COPY --from=build /app/src ./src

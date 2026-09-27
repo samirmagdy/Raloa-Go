@@ -3,6 +3,10 @@ import path from 'node:path';
 
 const root = process.cwd();
 const allowed = `${path.sep}server${path.sep}infrastructure${path.sep}postgres${path.sep}`;
+const migrationTools = [
+  `${path.sep}scripts${path.sep}run-postgres-migrations.mjs`,
+  `${path.sep}scripts${path.sep}verify-postgres-migrations.mjs`
+];
 const violations = [];
 
 function walk(directory) {
@@ -12,7 +16,7 @@ function walk(directory) {
     if (!entry.isFile() || !/\.(ts|tsx|js|mjs)$/.test(entry.name)) continue;
     const source = fs.readFileSync(file, 'utf8');
     if (!source.match(/from ['"](?:drizzle-orm|pg)(?:\/|['"])/)) continue;
-    if (!file.includes(allowed)) violations.push(path.relative(root, file));
+    if (!file.includes(allowed) && !migrationTools.some((tool) => file.endsWith(tool))) violations.push(path.relative(root, file));
   }
 }
 

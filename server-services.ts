@@ -7,8 +7,12 @@ import { canonicalSiteToLegacy, normalizeSiteContent } from './src/lib/contentSc
 import { normalizeSiteSlug, validateSiteSlug } from './src/lib/siteSlug';
 import { assertProductionEnvironment } from './server-config.mjs';
 import { assertOrderTransition, legacyOrderState, type OrderState } from './server/domains/orders/state-machine';
+import { loadProductionSecrets } from './server/infrastructure/secrets/provider';
+import { createFirebaseAuthAdapter } from './server/adapters/firebase-auth';
+import { createFeatureFlagService, createFirestoreFeatureFlagRepository, type FeatureFlagService } from './server/infrastructure/feature-flags';
 
 // Run before any Firebase, Stripe, or Cloudflare client is initialized.
+await loadProductionSecrets();
 assertProductionEnvironment();
 
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0319129908';
@@ -18,8 +22,12 @@ const APP_URL = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, 
 const adminApp = getApps().length ? getApps()[0] : initializeApp({ projectId: PROJECT_ID });
 export const adminDb = getFirestore(adminApp, DATABASE_ID);
 export const adminAuth = getAdminAuth(adminApp);
+const firebaseAuthAdapter = createFirebaseAuthAdapter(adminAuth);
 const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.GCLOUD_STORAGE_BUCKET || `${PROJECT_ID}.firebasestorage.app`;
 export const adminStorage = getStorage(adminApp).bucket(STORAGE_BUCKET);
+// Feature configuration is read from Firestore at evaluation time so rollout
+// and kill-switch changes do not require an application redeploy.
+export const featureFlags: FeatureFlagService = createFeatureFlagService(createFirestoreFeatureFlagRepository(adminDb));
 
 export const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY)
@@ -55,12 +63,7 @@ export function isStripeConfigured(): boolean {
 }
 
 export async function verifyBearerToken(token: string): Promise<AuthenticatedUser | null> {
-  try {
-    const decoded = await adminAuth.verifyIdToken(token);
-    return { uid: decoded.uid, email: decoded.email };
-  } catch {
-    return null;
-  }
+  return firebaseAuthAdapter.verifyBearerToken(token);
 }
 
 export function getPriceId(plan: 'pro' | 'studio', isYearly: boolean): string | null {

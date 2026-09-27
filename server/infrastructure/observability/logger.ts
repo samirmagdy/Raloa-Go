@@ -1,11 +1,17 @@
 import type { MetricLabels, ObservabilityMetrics, TelemetryContext } from './types';
 
 const SENSITIVE_KEY = /(authorization|cookie|token|secret|password|credential|raw.?event|payload|body|email)/i;
+const SECRET_VALUE = /(sk_(?:live|test)_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+|AIza[A-Za-z0-9_-]+|-----BEGIN [A-Z ]+ PRIVATE KEY-----)/g;
+
+function redactText(value: string): string {
+  return value.replace(SECRET_VALUE, '[REDACTED]');
+}
 
 function safeValue(key: string, value: unknown): unknown {
   if (SENSITIVE_KEY.test(key)) return '[REDACTED]';
-  if (value instanceof Error) return { name: value.name, message: value.message, stack: value.stack };
-  if (typeof value === 'string' && value.length > 500) return `${value.slice(0, 500)}…`;
+  if (value instanceof Error) return { name: value.name, message: redactText(value.message), stack: value.stack ? redactText(value.stack) : undefined };
+  if (typeof value === 'string' && value.length > 500) return `${redactText(value.slice(0, 500))}…`;
+  if (typeof value === 'string') return redactText(value);
   return value;
 }
 

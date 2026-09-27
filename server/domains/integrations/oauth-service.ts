@@ -1,5 +1,5 @@
-import crypto from 'node:crypto';
 import { oauthTokenBundleSchemaV1 } from '../../../src/shared/schema';
+import { integrationEnvelopeCipher } from '../../infrastructure/crypto/envelope';
 
 export type OAuthConnectionState = 'connected' | 'refreshing' | 'reauthorization_required' | 'revoked' | 'error';
 export interface OAuthTokenBundle { accessToken: string; refreshToken?: string; expiresAt?: number; }
@@ -19,29 +19,8 @@ export interface OAuthConnectionRepository {
   revoke(id: string, updatedAt: string): Promise<void>;
 }
 
-function encryptionKey(): Buffer {
-  const secret = process.env.INTEGRATION_ENCRYPTION_KEY || (process.env.NODE_ENV !== 'production' ? process.env.AUTH_SESSION_SECRET : '');
-  if (!secret || secret.length < 32) throw new Error('INTEGRATION_ENCRYPTION_KEY_NOT_CONFIGURED');
-  return crypto.createHash('sha256').update(secret).digest();
-}
-
-function encrypt(value: string): string {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', encryptionKey(), iv);
-  const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
-  return [iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), ciphertext.toString('base64url')].join('.');
-}
-
-function decrypt(value: string): string {
-  const [iv, tag, ciphertext] = value.split('.');
-  if (!iv || !tag || !ciphertext) throw new Error('INVALID_ENCRYPTED_OAUTH_TOKEN');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', encryptionKey(), Buffer.from(iv, 'base64url'));
-  decipher.setAuthTag(Buffer.from(tag, 'base64url'));
-  return Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64url')), decipher.final()]).toString('utf8');
-}
-
-function tokenBundle(connection: OAuthConnection): OAuthTokenBundle {
-  return { accessToken: decrypt(connection.encryptedAccessToken), ...(connection.encryptedRefreshToken ? { refreshToken: decrypt(connection.encryptedRefreshToken) } : {}), expiresAt: connection.expiresAt };
+async function tokenBundle(connection: OAuthConnection): Promise<OAuthTokenBundle> {
+  return { accessToken: await integrationEnvelopeCipher.decrypt(connection.encryptedAccessToken), ...(connection.encryptedRefreshToken ? { refreshToken: await integrationEnvelopeCipher.decrypt(connection.encryptedRefreshToken) } : {}), expiresAt: connection.expiresAt };
 }
 
 function assertAllowedScopes(scopes: readonly string[], allowedScopes: readonly string[]): void {
@@ -57,7 +36,7 @@ export function createOAuthTokenService(repository: OAuthConnectionRepository, a
       if (!adapter) throw new Error('OAUTH_PROVIDER_NOT_SUPPORTED');
       assertAllowedScopes(input.scopes, adapter.allowedScopes);
       const now = new Date().toISOString();
-      await repository.save({ id: input.id, userId: input.userId, siteId: input.siteId, provider: input.provider, scopes: [...input.scopes], state: 'connected', encryptedAccessToken: encrypt(tokens.accessToken), ...(tokens.refreshToken ? { encryptedRefreshToken: encrypt(tokens.refreshToken) } : {}), expiresAt: tokens.expiresAt, tokenVersion: 1, updatedAt: now });
+      await repository.save({ id: input.id, userId: input.userId, siteId: input.siteId, provider: input.provider, scopes: [...input.scopes], state: 'connected', encryptedAccessToken: await integrationEnvelopeCipher.encrypt(tokens.accessToken), ...(tokens.refreshToken ? { encryptedRefreshToken: await integrationEnvelopeCipher.encrypt(tokens.refreshToken) } : {}), expiresAt: tokens.expiresAt, tokenVersion: 1, updatedAt: now });
     },
     async withAccessToken<T>(userId: string, provider: string, siteId: string | undefined, operation: (accessToken: string) => Promise<T>): Promise<T> {
       const connection = await repository.get(userId, provider, siteId);
@@ -70,9 +49,9 @@ export function createOAuthTokenService(repository: OAuthConnectionRepository, a
         const claimed = await repository.claimRefreshLock(current.id, Date.now() + 30_000);
         if (claimed) {
           try {
-            const refreshed = await adapter.refresh(tokenBundle(current));
-            await repository.save({ ...current, state: 'connected', encryptedAccessToken: encrypt(refreshed.accessToken), ...(refreshed.refreshToken ? { encryptedRefreshToken: encrypt(refreshed.refreshToken) } : {}), expiresAt: refreshed.expiresAt, tokenVersion: current.tokenVersion + 1, refreshLockUntil: undefined, updatedAt: new Date().toISOString() });
-            current = { ...current, encryptedAccessToken: encrypt(refreshed.accessToken), expiresAt: refreshed.expiresAt };
+            const refreshed = await adapter.refresh(await tokenBundle(current));
+            await repository.save({ ...current, state: 'connected', encryptedAccessToken: await integrationEnvelopeCipher.encrypt(refreshed.accessToken), ...(refreshed.refreshToken ? { encryptedRefreshToken: await integrationEnvelopeCipher.encrypt(refreshed.refreshToken) } : {}), expiresAt: refreshed.expiresAt, tokenVersion: current.tokenVersion + 1, refreshLockUntil: undefined, updatedAt: new Date().toISOString() });
+            current = { ...current, encryptedAccessToken: await integrationEnvelopeCipher.encrypt(refreshed.accessToken), expiresAt: refreshed.expiresAt };
           } catch (error) {
             await repository.save({ ...current, state: 'reauthorization_required', refreshLockUntil: undefined, updatedAt: new Date().toISOString() });
             throw error;
@@ -81,13 +60,13 @@ export function createOAuthTokenService(repository: OAuthConnectionRepository, a
           throw new Error('OAUTH_REFRESH_IN_PROGRESS');
         }
       }
-      return operation(decrypt(current.encryptedAccessToken));
+      return operation(await integrationEnvelopeCipher.decrypt(current.encryptedAccessToken));
     },
     async revoke(userId: string, provider: string, siteId?: string): Promise<void> {
       const connection = await repository.get(userId, provider, siteId);
       if (!connection) return;
       const adapter = adapterFor(provider);
-      if (adapter?.revoke) await adapter.revoke(tokenBundle(connection)).catch(() => undefined);
+      if (adapter?.revoke) await adapter.revoke(await tokenBundle(connection)).catch(() => undefined);
       await repository.revoke(connection.id, new Date().toISOString());
     },
     async validate(userId: string, provider: string, siteId?: string): Promise<void> {
