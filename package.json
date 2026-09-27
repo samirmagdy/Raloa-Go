@@ -11,6 +11,7 @@
     "server": "NODE_ENV=development tsx server.ts",
     "start": "NODE_ENV=production tsx server.ts",
     "validate:production": "NODE_ENV=production node scripts/validate-production-env.mjs",
+    "smoke:production": "node scripts/post-deploy-smoke.mjs",
     "test:production-config": "node test-production-config.mjs",
     "check:api": "node /Users/samirmagdy/.agents/skills/backend-first/scripts/api-contract-check.mjs --root . --src . --docs docs/api --openapi docs/api/openapi.yaml",
     "clean": "rm -rf dist server.js",

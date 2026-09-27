@@ -116,6 +116,51 @@ curl -fsS 'https://raloa.app/api/v1/handles/check?handle=launch-test'
 
 Then verify registration, Google login, publishing, image upload, custom-domain setup, Stripe Checkout, Billing Portal, webhook synchronization, referral qualification, and mobile layouts.
 
+## Post-deployment smoke verification
+
+Run the safe checks against the deployed origin first:
+
+```bash
+PRODUCTION_SMOKE_BASE_URL=https://raloa.app \
+SMOKE_PUBLIC_HANDLE=the-disposable-published-handle \
+SMOKE_BEARER_TOKEN="$SMOKE_FIREBASE_ID_TOKEN" \
+npm run smoke:production
+```
+
+The command verifies health/readiness, required production configuration as
+reported by readiness, authenticated session handling, Firestore-backed site
+listing, public page/API resolution, Stripe signature rejection, OAuth callback
+error handling, sitemap, and robots.txt. `SMOKE_STRICT=true` makes missing
+verification inputs fail instead of silently passing.
+
+Write checks are disabled by default. To verify publishing, analytics,
+booking, checkout, or Cloudflare provisioning, use a disposable site/account
+and explicitly opt in:
+
+```bash
+SMOKE_ALLOW_WRITES=true \
+SMOKE_ALLOW_EXTERNAL_MUTATIONS=true \
+SMOKE_DISPOSABLE_DATA_CONFIRMATION=I_UNDERSTAND \
+SMOKE_SITE_ID=disposable-site-id \
+SMOKE_BOOKING_DATE=2030-01-15 \
+SMOKE_BOOKING_SERVICE_ID=service-id \
+SMOKE_TEST_EMAIL=smoke-inbox@example.test \
+SMOKE_DOMAIN_HOSTNAME=smoke-domain.example.com \
+SMOKE_REQUIRE_OAUTH=true \
+PRODUCTION_SMOKE_BASE_URL=https://raloa.app \
+SMOKE_PUBLIC_HANDLE=disposable-handle \
+SMOKE_BEARER_TOKEN="$SMOKE_FIREBASE_ID_TOKEN" \
+npm run smoke:production
+```
+
+The booking check cancels its created booking. Domain checks remove the
+provisioned hostname after verification. Product checkout intentionally leaves
+a pending disposable order because Stripe checkout sessions must be reconciled
+by Stripe/webhook lifecycle rules; do not run it against a real customer or
+production inventory. Successful OAuth token exchange still requires a real
+provider account and callback authorization; the smoke check validates provider
+authorization URL generation and safe callback failure handling.
+
 ## Rollback
 
 If checkout, authentication, publishing, or domain routing fails, route Cloud Run traffic back to the previous healthy revision. Do not disable webhook signature verification or Firestore rules to recover. Fix forward with a new revision after preserving the failing revision logs and request IDs.
