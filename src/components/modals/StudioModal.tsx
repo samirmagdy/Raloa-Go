@@ -25,7 +25,6 @@ import { StudioAnalyticsTab } from '../studio/StudioAnalyticsTab';
 import { StudioSettingsTab } from '../studio/StudioSettingsTab';
 import { StudioMobileNav, StudioTab } from '../studio/StudioMobileNav';
 import { StudioQrModal } from '../studio/StudioQrModal';
-import { StudioLinktreeImporter } from '../studio/StudioLinktreeImporter';
 import { DEFAULT_BOOKING_CONFIG } from '../studio/StudioSchedulingSettings';
 import { StudioTemplatePreview } from '../studio/StudioTemplatePreview';
 import { StudioBlockItem } from '../studio/SortableBlockList';
@@ -100,7 +99,6 @@ export const StudioModal: React.FC<StudioModalProps> = ({
 
   // Secondary Modals
   const [showQrModal, setShowQrModal] = useState(false);
-  const [showLinktreeImporter, setShowLinktreeImporter] = useState(false);
 
   // Persistence status is intentionally separate from publication status.
   const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | 'error'>('saved');
@@ -645,7 +643,6 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                 onAvatarChange={(val) => updateTextField('avatar', val)}
                 links={links}
                 onLinksChange={(newLinks) => updateSiteConfig({ links: newLinks })}
-                onOpenLinktreeImport={() => setShowLinktreeImporter(true)}
                 allowedBlockTypes={capabilities.allowedBlockTypes}
                 maxLinks={capabilities.maxLinks}
                 onEntitlementError={setEntitlementMessage}
@@ -832,20 +829,6 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         locale={locale}
       />
 
-      {/* Linktree Importer Modal */}
-      <StudioLinktreeImporter
-        isOpen={showLinktreeImporter}
-        onClose={() => setShowLinktreeImporter(false)}
-        onImport={(importedData) => {
-          updateSiteConfig((prev) => ({
-            ...prev,
-            displayName: importedData.displayName || prev.displayName,
-            bio: importedData.bio || prev.bio,
-            links: [...prev.links, ...importedData.links]
-          }));
-        }}
-        locale={locale}
-      />
     </main>
   );
 };

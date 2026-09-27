@@ -4,7 +4,6 @@ import {
   Plus,
   Sparkles,
   Link2,
-  Download,
   CheckCircle2,
   Circle,
   ShoppingBag,
@@ -34,7 +33,6 @@ interface StudioContentTabProps {
   onAvatarChange: (val: string) => void;
   links: StudioBlockItem[];
   onLinksChange: (links: StudioBlockItem[]) => void;
-  onOpenLinktreeImport: () => void;
   allowedBlockTypes?: readonly string[];
   maxLinks?: number;
   onEntitlementError?: (message: string) => void;
@@ -54,7 +52,6 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
   onAvatarChange,
   links,
   onLinksChange,
-  onOpenLinktreeImport,
   allowedBlockTypes,
   maxLinks,
   onEntitlementError,
@@ -278,7 +275,7 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
         </div>
       </div>
 
-      {/* 3. Multi-Page Tabs & Import Linktree */}
+      {/* 3. Multi-Page Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700">
           <button
@@ -316,15 +313,6 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
           </button>
         </div>
 
-        {/* Import Linktree Button */}
-        <button
-          type="button"
-          onClick={onOpenLinktreeImport}
-          className="px-3 py-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/60 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-        >
-          <Download className="w-3.5 h-3.5 text-emerald-600" />
-          <span>{isRtl ? 'استيراد Linktree' : 'Import Linktree'}</span>
-        </button>
       </div>
 
       {/* 4. Add Blocks Action & Block List */}
