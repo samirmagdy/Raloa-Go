@@ -13,18 +13,20 @@ import { createIntegrationsModule, type ExternalProvider } from './domains/integ
 import { createInventoryModule } from './domains/inventory';
 import { createSubscriptionsModule } from './domains/subscriptions';
 import type { CloudflareProvider } from './core/providers';
+import type { OAuthProviderAdapter } from './domains/integrations/oauth-service';
 
 export function createDomainModules(db: Firestore, dependencies: {
   resolvePublicSite: (handle: string) => Promise<Record<string, unknown> | null>;
   billing: BillingProvider;
   cloudflare: CloudflareProvider;
+  oauthAdapters?: readonly OAuthProviderAdapter[];
   providers?: readonly ExternalProvider[];
 }) {
   return {
     sites: createSitesModule(db), publishing: createPublishingModule(dependencies.resolvePublicSite),
     audience: createAudienceModule(db), analytics: createAnalyticsModule(db), bookings: createBookingsModule(db),
     products: createProductsModule(db), orders: createOrdersModule(db), billing: createBillingModule(dependencies.billing),
-    domains: createDomainsModule(db, dependencies.cloudflare), media: createMediaModule(db), integrations: createIntegrationsModule(db, dependencies.providers || []),
+    domains: createDomainsModule(db, dependencies.cloudflare), media: createMediaModule(db), integrations: createIntegrationsModule(db, dependencies.providers || [], dependencies.oauthAdapters || []),
     inventory: createInventoryModule(db), subscriptions: createSubscriptionsModule(db)
   };
 }

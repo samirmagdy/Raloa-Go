@@ -44,6 +44,7 @@ import type { BookingConfig, BookingServiceConfig } from './src/types';
 import { normalizeSiteSlug, RESERVED_SITE_SLUGS, validateSiteSlug } from './src/lib/siteSlug';
 import { createDomainModules } from './server/modules';
 import { calendarProviders } from './server/adapters/calendar';
+import { oauthProviderAdapters } from './server/adapters/oauth';
 import { stripeAdapter } from './server/adapters/stripe';
 import { cloudflareAdapter } from './server/adapters/cloudflare';
 import { createBillingController } from './server/domains/billing/controller';
@@ -59,6 +60,7 @@ export const domainModules = createDomainModules(adminDb, {
   resolvePublicSite: (handle) => getPublishedSiteByHandle(handle),
   billing: stripeAdapter,
   cloudflare: cloudflareAdapter,
+  oauthAdapters: oauthProviderAdapters(),
   providers: calendarProviders()
 });
 const billingController = createBillingController(domainModules.billing.service, (request) => getAuthenticatedUser(request));

@@ -481,17 +481,32 @@ CREATE INDEX billing_reconciliation_due_idx ON billing_reconciliation_runs (prov
 CREATE TABLE integrations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  site_id uuid REFERENCES sites(id) ON DELETE CASCADE,
   provider text NOT NULL,
   status integration_status NOT NULL DEFAULT 'disconnected',
+  connection_state text NOT NULL DEFAULT 'connected'
+    CHECK (connection_state IN ('connected', 'refreshing', 'reauthorization_required', 'revoked', 'error')),
   scopes text[] NOT NULL DEFAULT '{}',
   encrypted_credentials bytea,
+  encrypted_access_token bytea,
+  encrypted_refresh_token bytea,
+  token_expires_at timestamptz,
+  refresh_lock_until timestamptz,
+  token_version integer NOT NULL DEFAULT 1 CHECK (token_version > 0),
+  revoked_at timestamptz,
   expires_at timestamptz,
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (user_id, provider)
+  UNIQUE (user_id, provider, site_id)
 );
 CREATE INDEX integrations_provider_status_idx ON integrations (provider, status);
+CREATE UNIQUE INDEX integrations_user_provider_global_uniq
+  ON integrations (user_id, provider) WHERE site_id IS NULL;
+CREATE UNIQUE INDEX integrations_user_provider_site_uniq
+  ON integrations (user_id, provider, site_id) WHERE site_id IS NOT NULL;
+CREATE INDEX integrations_refresh_due_idx ON integrations (refresh_lock_until, token_expires_at)
+  WHERE connection_state IN ('connected', 'refreshing');
 
 CREATE TABLE custom_domains (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
