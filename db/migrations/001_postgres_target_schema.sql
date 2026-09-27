@@ -523,6 +523,44 @@ CREATE TABLE custom_domains (
 );
 CREATE INDEX custom_domains_ready_idx ON custom_domains (hostname) WHERE verification_status = 'verified' AND ssl_status = 'active';
 
+CREATE TABLE media_assets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id uuid NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  site_id uuid NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  purpose text NOT NULL CHECK (purpose IN ('gallery', 'product', 'background', 'block', 'avatar')),
+  lifecycle_state text NOT NULL CHECK (lifecycle_state IN ('pending_upload', 'uploaded', 'processing', 'ready', 'failed', 'deleted')),
+  original_provider text NOT NULL CHECK (original_provider IN ('firebase_storage', 'cloudflare_r2')),
+  original_object_key text NOT NULL UNIQUE,
+  original_content_type text NOT NULL,
+  original_bytes bigint NOT NULL DEFAULT 0 CHECK (original_bytes >= 0),
+  original_checksum text,
+  width integer CHECK (width IS NULL OR width > 0),
+  height integer CHECK (height IS NULL OR height > 0),
+  alt_text text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  deleted_at timestamptz
+);
+CREATE INDEX media_assets_owner_site_idx ON media_assets (owner_user_id, site_id, created_at DESC);
+CREATE INDEX media_assets_processing_idx ON media_assets (lifecycle_state, updated_at)
+  WHERE lifecycle_state IN ('pending_upload', 'processing', 'failed');
+
+CREATE TABLE media_variants (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  asset_id uuid NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE,
+  kind text NOT NULL CHECK (kind IN ('processed', 'thumbnail')),
+  provider text NOT NULL CHECK (provider IN ('firebase_storage', 'cloudflare_r2')),
+  object_key text NOT NULL UNIQUE,
+  content_type text NOT NULL,
+  bytes bigint NOT NULL CHECK (bytes >= 0),
+  checksum text,
+  cdn_url text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (asset_id, kind)
+);
+CREATE INDEX media_variants_asset_idx ON media_variants (asset_id, kind);
+
 -- Optional short-lived ingestion buffer only. Long-term raw event history belongs in BigQuery
 -- (or an equivalent analytical store), not this transactional database.
 CREATE TABLE analytics_events (
@@ -643,7 +681,7 @@ $$;
 DO $$
 DECLARE table_name text;
 BEGIN
-  FOREACH table_name IN ARRAY ARRAY['app_users', 'sites', 'booking_services', 'booking_slots', 'bookings', 'booking_attendees', 'calendar_sync_state', 'booking_idempotency_keys', 'products', 'product_variants', 'inventory', 'orders', 'order_items', 'inventory_reservations', 'payments', 'fulfillments', 'billing_price_mappings', 'billing_customers', 'subscriptions', 'billing_webhook_events', 'billing_reconciliation_runs', 'integrations', 'custom_domains', 'analytics_daily_rollups', 'idempotency_keys', 'outbox_events', 'operational_jobs'] LOOP
+  FOREACH table_name IN ARRAY ARRAY['app_users', 'sites', 'booking_services', 'booking_slots', 'bookings', 'booking_attendees', 'calendar_sync_state', 'booking_idempotency_keys', 'products', 'product_variants', 'inventory', 'orders', 'order_items', 'inventory_reservations', 'payments', 'fulfillments', 'billing_price_mappings', 'billing_customers', 'subscriptions', 'billing_webhook_events', 'billing_reconciliation_runs', 'integrations', 'custom_domains', 'media_assets', 'media_variants', 'analytics_daily_rollups', 'idempotency_keys', 'outbox_events', 'operational_jobs'] LOOP
     EXECUTE format('CREATE TRIGGER %I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION set_updated_at()', table_name, table_name);
   END LOOP;
 END;

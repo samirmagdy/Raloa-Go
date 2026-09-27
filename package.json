@@ -45,6 +45,7 @@
     "test:migration-runner": "tsx test-migration-runner.ts",
     "test:analytics-storage-policy": "tsx test-analytics-storage-policy.ts",
     "test:analytics-pipeline": "tsx test-analytics-pipeline.ts",
+    "test:media-service": "tsx test-media-service.ts",
     "check:persistence-boundary": "node scripts/check-persistence-boundary.mjs",
     "test:content-schema": "tsx test-content-schema.ts",
     "test:integration:staging": "node scripts/staging-integration-checks.mjs",
