@@ -30,7 +30,7 @@ interface AuthContextType {
   resetPassword: (oobCode: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
   updatePlan: (plan: 'free' | 'pro' | 'studio', isYearly?: boolean) => Promise<void>;
-  saveMiniSite: (siteData: Partial<UserMiniSite>, siteId: string) => Promise<void>;
+  saveMiniSite: (siteData: Partial<UserMiniSite>, siteId: string) => Promise<UserMiniSite | void>;
   loadMiniSite: (siteId: string) => Promise<UserMiniSite | null>;
   listMiniSites: () => Promise<UserMiniSiteSummary[]>;
   createMiniSite: (siteData: Partial<UserMiniSite>, siteId?: string) => Promise<UserMiniSite>;
@@ -164,8 +164,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Only attempt Firestore write if real Firebase Auth session is active
     if (auth.currentUser) {
-      await saveUserMiniSiteToFirestore(user.uid, siteData, siteId);
-      return;
+      return saveUserMiniSiteToFirestore(user.uid, siteData, siteId);
     }
 
     // Local-only preview mode has no authoritative server state. The Studio

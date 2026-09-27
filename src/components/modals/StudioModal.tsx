@@ -111,6 +111,19 @@ function studioConfigFromSite(savedSite: UserMiniSite, fallback: TemplateItem, r
 }
 
 type LocalRecoveryEnvelope = { version: 1; siteId: string; updatedAt: string; config: StudioSiteConfig };
+type SaveError = Error & { code?: string; status?: number; serverSite?: UserMiniSite };
+
+const MAX_SAVE_RETRIES = 3;
+const RETRY_DELAYS_MS = [500, 1000, 2000];
+
+const waitForRetry = (delay: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, delay));
+
+function isRetryableSaveError(error: unknown): boolean {
+  const typed = error as SaveError;
+  if (typed?.code === 'SITE_VERSION_CONFLICT' || typed?.code === 'AUTH_REQUIRED' || typed?.code === 'SITE_ID_REQUIRED') return false;
+  if (typed?.code && !['SITE_SAVE_FAILED', 'SERVICE_UNAVAILABLE', 'NETWORK_ERROR', 'OFFLINE'].includes(typed.code)) return false;
+  return typed?.code === 'OFFLINE' || typed?.code === 'NETWORK_ERROR' || typed?.status === 408 || typed?.status === 429 || Boolean(typed?.status && typed.status >= 500) || !typed?.code;
+}
 
 const configFingerprint = (config: StudioSiteConfig): string => JSON.stringify(config);
 const localRecoveryKey = (userId: string, siteId: string): string => `raloa_studio_recovery_${userId}_${siteId}`;
@@ -173,6 +186,9 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | 'error' | 'recovery'>('saving');
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
   const [recoveryConfig, setRecoveryConfig] = useState<StudioSiteConfig | null>(null);
+  const [conflictServerConfig, setConflictServerConfig] = useState<StudioSiteConfig | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine);
   const [publicationState, setPublicationState] = useState<PublicationState>('draft');
   const [entitlementMessage, setEntitlementMessage] = useState('');
   const [sites, setSites] = useState<UserMiniSiteSummary[]>([]);
@@ -183,6 +199,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const skipNextAutosaveRef = useRef(false);
   const authoritativeBaselineRef = useRef('');
+  const authoritativeRevisionRef = useRef<number | null>(null);
+  const conflictRevisionRef = useRef<number | null>(null);
   const saveAttemptRef = useRef(0);
 
   // Resolve user handle safely
@@ -303,7 +321,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   useEffect(() => {
     if (!user) {
       isInitialLoadDone.current = true;
-      setSaveStatus('saved');
+      setSaveStatus('recovery');
       return;
     }
     let isCancelled = false;
@@ -342,6 +360,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         if (savedSite && !isCancelled) {
           const loadedConfig = studioConfigFromSite(savedSite, defaultTemplate, resolvedHandle, isRtl);
           authoritativeBaselineRef.current = configFingerprint(loadedConfig);
+          authoritativeRevisionRef.current = typeof savedSite.revision === 'number' ? savedSite.revision : 0;
+          setIsDirty(false);
           resetHistory(loadedConfig);
           const recovery = readLocalRecovery(userId, selectedSiteId);
           if (recovery && configFingerprint(recovery.config) !== authoritativeBaselineRef.current) {
@@ -385,8 +405,15 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       setSaveStatus('saving');
 
       try {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          const offlineError = new Error('You are offline. Changes are stored for recovery and will not be marked saved.') as SaveError;
+          offlineError.code = 'OFFLINE';
+          throw offlineError;
+        }
+
+        let persistedSite: UserMiniSite | void = undefined;
         if (user) {
-          await saveMiniSite({
+          const payload = {
             username: configToSave.username,
             displayName: configToSave.displayName,
             role: configToSave.role,
@@ -399,6 +426,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             links: configToSave.links,
             socials: configToSave.socials.filter((social) => social.url.trim()),
             isPublished: configToSave.isPublished,
+            ...(authoritativeRevisionRef.current !== null ? { expectedRevision: authoritativeRevisionRef.current } : {}),
             ...({
               designTokens: configToSave.designTokens,
               accentColor: configToSave.accentColor,
@@ -416,7 +444,19 @@ export const StudioModal: React.FC<StudioModalProps> = ({
               webhookUrl: configToSave.webhookUrl,
               bookingConfig: configToSave.bookingConfig
             } as any)
-          }, activeSiteId);
+          };
+          for (let attempt = 0; attempt <= MAX_SAVE_RETRIES; attempt += 1) {
+            if (saveAttempt !== saveAttemptRef.current) return;
+            try {
+              persistedSite = await saveMiniSite(payload, activeSiteId);
+              break;
+            } catch (error) {
+              const typed = error as SaveError;
+              if (typed.code === 'SITE_VERSION_CONFLICT' || !isRetryableSaveError(error) || attempt === MAX_SAVE_RETRIES) throw error;
+              await waitForRetry(RETRY_DELAYS_MS[attempt]);
+              if (saveAttempt !== saveAttemptRef.current) return;
+            }
+          }
         } else {
           // Local fallback in case of unauthenticated preview mode
           try {
@@ -438,8 +478,11 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         }
         if (serverPersisted && user) {
           if (saveAttempt !== saveAttemptRef.current) return;
+          if (persistedSite && typeof persistedSite.revision === 'number') authoritativeRevisionRef.current = persistedSite.revision;
           // This baseline is authoritative only after saveMiniSite resolved.
           authoritativeBaselineRef.current = configFingerprint(configToSave);
+          setIsDirty(false);
+          setConflictServerConfig(null);
           const recovery = readLocalRecovery(user.uid, activeSiteId);
           if (!recovery || configFingerprint(recovery.config) === configFingerprint(configToSave) || Date.parse(recovery.updatedAt) <= saveStartedAt) {
             clearLocalRecovery(user.uid, activeSiteId);
@@ -459,12 +502,18 @@ export const StudioModal: React.FC<StudioModalProps> = ({
           setRecoveryConfig(configToSave);
           setRecoveryAvailable(true);
         }
+        if ((err as SaveError)?.code === 'SITE_VERSION_CONFLICT' && (err as SaveError).serverSite) {
+          const serverSite = (err as SaveError).serverSite as UserMiniSite;
+          conflictRevisionRef.current = typeof serverSite.revision === 'number' ? serverSite.revision : 0;
+          setConflictServerConfig(studioConfigFromSite(serverSite, defaultTemplate, resolvedHandle, isRtl));
+        }
+        setIsDirty(true);
         setSaveStatus('error');
         setEntitlementMessage(err instanceof Error ? err.message : 'This change is not included in your current plan.');
         throw err;
       }
     },
-    [user, saveMiniSite, siteConfig, activeSiteId, listMiniSites]
+    [defaultTemplate, isRtl, user, saveMiniSite, siteConfig, activeSiteId, listMiniSites, resolvedHandle]
   );
 
   const switchSite = useCallback(async (nextSiteId: string) => {
@@ -476,6 +525,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       if (!savedSite || !summary) throw new Error('SITE_NOT_FOUND');
       const loadedConfig = studioConfigFromSite(savedSite, defaultTemplate, resolvedHandle, isRtl);
       authoritativeBaselineRef.current = configFingerprint(loadedConfig);
+      authoritativeRevisionRef.current = typeof savedSite.revision === 'number' ? savedSite.revision : 0;
+      setIsDirty(false);
       resetHistory(loadedConfig);
       setActiveSiteId(nextSiteId);
       const recovery = readLocalRecovery(user?.uid || '', nextSiteId);
@@ -525,6 +576,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       if (!savedSite) throw new Error('SITE_NOT_FOUND');
       const loadedConfig = studioConfigFromSite(savedSite, defaultTemplate, resolvedHandle, isRtl);
       authoritativeBaselineRef.current = configFingerprint(loadedConfig);
+      authoritativeRevisionRef.current = typeof savedSite.revision === 'number' ? savedSite.revision : 0;
+      setIsDirty(false);
       resetHistory(loadedConfig);
       setActiveSiteId(nextSite.id);
       const recovery = readLocalRecovery(user?.uid || '', nextSite.id);
@@ -599,17 +652,37 @@ export const StudioModal: React.FC<StudioModalProps> = ({
     if (!isInitialLoadDone.current || !activeSiteId || !user?.uid) return;
     const currentFingerprint = configFingerprint(siteConfig);
     if (authoritativeBaselineRef.current && currentFingerprint === authoritativeBaselineRef.current) {
+      setIsDirty(false);
       const recovery = readLocalRecovery(user.uid, activeSiteId);
       if (recovery && configFingerprint(recovery.config) !== authoritativeBaselineRef.current) return;
       clearLocalRecovery(user.uid, activeSiteId);
       return;
     }
+    setIsDirty(true);
     writeLocalRecovery(user.uid, activeSiteId, siteConfig);
   }, [activeSiteId, siteConfig, user?.uid]);
+
+  useEffect(() => {
+    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => {
+      setIsOffline(false);
+      if (isDirty && isInitialLoadDone.current) {
+        void persistSiteConfig(siteConfig).catch(() => undefined);
+      }
+    };
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [isDirty, persistSiteConfig, siteConfig]);
 
   const restoreLocalRecovery = useCallback(() => {
     if (!recoveryConfig) return;
     resetHistory(recoveryConfig);
+    setIsDirty(true);
+    setConflictServerConfig(null);
     setRecoveryConfig(null);
     setRecoveryAvailable(false);
     setSaveStatus('recovery');
@@ -620,8 +693,31 @@ export const StudioModal: React.FC<StudioModalProps> = ({
     if (user?.uid && activeSiteId) clearLocalRecovery(user.uid, activeSiteId);
     setRecoveryConfig(null);
     setRecoveryAvailable(false);
+    setIsDirty(false);
+    setConflictServerConfig(null);
     setSaveStatus('saved');
   }, [activeSiteId, user?.uid]);
+
+  const useServerConflictVersion = useCallback(() => {
+    if (!conflictServerConfig) return;
+    resetHistory(conflictServerConfig);
+    authoritativeBaselineRef.current = configFingerprint(conflictServerConfig);
+    authoritativeRevisionRef.current = conflictRevisionRef.current;
+    conflictRevisionRef.current = null;
+    setIsDirty(false);
+    setConflictServerConfig(null);
+    setRecoveryConfig(null);
+    setRecoveryAvailable(false);
+    if (user?.uid && activeSiteId) clearLocalRecovery(user.uid, activeSiteId);
+    setSaveStatus('saved');
+    setEntitlementMessage('');
+  }, [activeSiteId, conflictServerConfig, resetHistory, user?.uid]);
+
+  const keepLocalConflictVersion = useCallback(() => {
+    setConflictServerConfig(null);
+    setSaveStatus('recovery');
+    setEntitlementMessage('Your local edits are preserved. Reload the server version before retrying if another editor owns the latest changes.');
+  }, []);
 
   // Global Keyboard Shortcuts (Ctrl/Cmd+Z, Ctrl/Cmd+Y)
   useEffect(() => {
@@ -742,6 +838,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
         handle={username}
         plan={profile?.plan || 'free'}
         saveStatus={saveStatus}
+        isDirty={isDirty}
+        isOffline={isOffline}
         publicationState={publicationState}
         isPublished={siteConfig.isPublished}
         onPublishToggle={publishToggle}
@@ -769,6 +867,19 @@ export const StudioModal: React.FC<StudioModalProps> = ({
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={restoreLocalRecovery} className="min-h-11 rounded-xl bg-amber-700 px-3 py-2 text-xs font-bold text-white hover:bg-amber-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600">{isRtl ? 'استعادة التعديلات' : 'Restore edits'}</button>
             <button type="button" onClick={keepServerVersion} className="min-h-11 rounded-xl border border-amber-300 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 dark:border-amber-800 dark:text-amber-100 dark:hover:bg-amber-950/50">{isRtl ? 'الاحتفاظ بنسخة الخادم' : 'Keep server version'}</button>
+          </div>
+        </div>
+      )}
+
+      {conflictServerConfig && (
+        <div role="alert" className="mx-3 mt-3 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-950 shadow-sm dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-100 sm:mx-6 sm:flex-row sm:items-center sm:justify-between lg:mx-8">
+          <div>
+            <p className="text-sm font-bold">{isRtl ? 'تعارض في نسخة الموقع' : 'Site changed on the server'}</p>
+            <p className="mt-1 text-xs text-rose-800 dark:text-rose-200">{isRtl ? 'لم نكتب فوق التعديلات الأحدث. اختر نسخة الخادم أو احتفظ بمسودتك المحلية.' : 'Your save was not allowed to overwrite newer server edits. Choose the server version or keep your local draft.'}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={useServerConflictVersion} className="min-h-11 rounded-xl bg-rose-700 px-3 py-2 text-xs font-bold text-white hover:bg-rose-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600">{isRtl ? 'استخدام نسخة الخادم' : 'Use server version'}</button>
+            <button type="button" onClick={keepLocalConflictVersion} className="min-h-11 rounded-xl border border-rose-300 px-3 py-2 text-xs font-bold text-rose-900 hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 dark:border-rose-800 dark:text-rose-100 dark:hover:bg-rose-950/50">{isRtl ? 'الاحتفاظ بمسودتي' : 'Keep my draft'}</button>
           </div>
         </div>
       )}

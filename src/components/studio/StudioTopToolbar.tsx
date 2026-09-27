@@ -20,6 +20,8 @@ export interface StudioTopToolbarProps {
   handle: string;
   plan: 'free' | 'pro' | 'studio' | string;
   saveStatus: 'saving' | 'saved' | 'error' | 'recovery';
+  isDirty: boolean;
+  isOffline: boolean;
   publicationState: PublicationState;
   isPublished: boolean;
   onPublishToggle: () => void;
@@ -44,6 +46,8 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
   handle,
   plan = 'free',
   saveStatus,
+  isDirty,
+  isOffline,
   publicationState,
   isPublished,
   onPublishToggle,
@@ -151,6 +155,20 @@ export const StudioTopToolbar: React.FC<StudioTopToolbarProps> = ({
 
       {/* Center: persistence and publication state are intentionally separate */}
       <div className="flex items-center gap-2">
+        {isOffline && (
+          <div role="status" className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">{isRtl ? 'غير متصل' : 'Offline'}</span>
+          </div>
+        )}
+
+        {isDirty && saveStatus !== 'saving' && (
+          <div role="status" className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+            <span className="h-2 w-2 rounded-full bg-amber-500" />
+            <span>{isRtl ? 'تعديلات غير محفوظة' : 'Unsaved changes'}</span>
+          </div>
+        )}
+
         {saveStatus === 'saving' && (
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/80 dark:border-amber-900/60 text-xs font-medium animate-pulse">
             <div className="w-2.5 h-2.5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin shrink-0" />

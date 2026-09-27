@@ -261,6 +261,8 @@ export interface UserProfile {
 export interface UserMiniSite {
   id: string;
   userId: string;
+  /** Monotonically increasing server revision used for optimistic concurrency. */
+  revision?: number;
   username: string;
   displayName: string;
   role?: string;

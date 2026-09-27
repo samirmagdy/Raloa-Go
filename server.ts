@@ -3877,6 +3877,7 @@ app.post('/api/sites', async (req: Request, res: Response) => {
     links: Array.isArray(incoming.links) ? incoming.links : [],
     socials: Array.isArray(incoming.socials) ? incoming.socials : [],
     isPublished: false,
+    revision: 1,
     updatedAt: new Date().toISOString()
   } as Record<string, any>;
   if (site.links.some((link: any) => !link || typeof link !== 'object' || typeof link.id !== 'string' || typeof link.title !== 'string' || !isSafePublicUrl(link.url, true))) return apiError(res, 400, 'INVALID_LINKS', 'Every link must have valid text and a safe public URL.');
@@ -3923,6 +3924,23 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
   const existingRef = adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId);
   const existing = await existingRef.get();
   const current = existing.data() || {};
+  const expectedRevisionRaw = incoming.expectedRevision;
+  const expectedRevision = expectedRevisionRaw === undefined || expectedRevisionRaw === null || expectedRevisionRaw === ''
+    ? undefined
+    : Number(expectedRevisionRaw);
+  if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) {
+    return apiError(res, 400, 'INVALID_SITE_REVISION', 'The site revision is invalid.');
+  }
+  const currentRevision = Number.isSafeInteger(Number(current.revision)) && Number(current.revision) >= 0 ? Number(current.revision) : 0;
+  if (expectedRevision !== undefined && expectedRevision !== currentRevision) {
+    return res.status(409).json({
+      status: 'error',
+      error: 'SITE_VERSION_CONFLICT',
+      code: 'SITE_VERSION_CONFLICT',
+      message: 'This site changed elsewhere. Reload the server version before saving again.',
+      site: { ...current, id: siteId, userId: user.uid, revision: currentRevision }
+    });
+  }
   const merged = {
     ...current,
     ...incoming,
@@ -3956,6 +3974,7 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
   merged.designTokens = normalizeDesignTokens(merged.designTokens, merged);
   const allowedKeys = new Set(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'socials', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'designTokens', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'bookingConfig', 'updatedAt']);
   const sanitized = Object.fromEntries(Object.entries(merged).filter(([key]) => allowedKeys.has(key)));
+  sanitized.revision = currentRevision + 1;
   const entitlement = validateSiteEntitlements(sanitized, profileData);
   if (entitlement) return entitlementError(res, entitlement.feature, entitlement.message, entitlement.details);
   const ownedMediaError = await validateOwnedMediaReferences(sanitized, user.uid, siteId);
@@ -3972,6 +3991,8 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
         const currentSnapshot = await transaction.get(existingRef);
         const redirectSnapshot = await transaction.get(redirectRef);
         if (!currentSnapshot.exists) throw new Error('SITE_NOT_FOUND');
+        const transactionRevision = Number(currentSnapshot.data()?.revision || 0);
+        if (expectedRevision !== undefined && transactionRevision !== expectedRevision) throw new Error('SITE_VERSION_CONFLICT');
         if (redirectSnapshot.exists && String(redirectSnapshot.data()?.siteId || '') !== siteId) throw new Error('HANDLE_REDIRECT_CONFLICT');
         transaction.set(redirectRef, {
           oldSlug: previousHandle,
@@ -3987,10 +4008,29 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
       if (error instanceof Error && error.message === 'HANDLE_REDIRECT_CONFLICT') {
         return apiError(res, 409, 'HANDLE_REDIRECT_CONFLICT', 'The previous site handle is already reserved by another site.');
       }
+      if (error instanceof Error && error.message === 'SITE_VERSION_CONFLICT') {
+        const latest = await existingRef.get();
+        const latestData = latest.data() || {};
+        return res.status(409).json({ status: 'error', error: 'SITE_VERSION_CONFLICT', code: 'SITE_VERSION_CONFLICT', message: 'This site changed elsewhere. Reload the server version before saving again.', site: { ...latestData, id: siteId, userId: user.uid, revision: Number(latestData.revision || 0) } });
+      }
       throw error;
     }
   } else {
-    await existingRef.set(sanitized, { merge: true });
+    try {
+      await adminDb.runTransaction(async (transaction) => {
+        const currentSnapshot = await transaction.get(existingRef);
+        const transactionRevision = Number(currentSnapshot.data()?.revision || 0);
+        if (expectedRevision !== undefined && transactionRevision !== expectedRevision) throw new Error('SITE_VERSION_CONFLICT');
+        transaction.set(existingRef, sanitized, { merge: true });
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'SITE_VERSION_CONFLICT') {
+        const latest = await existingRef.get();
+        const latestData = latest.data() || {};
+        return res.status(409).json({ status: 'error', error: 'SITE_VERSION_CONFLICT', code: 'SITE_VERSION_CONFLICT', message: 'This site changed elsewhere. Reload the server version before saving again.', site: { ...latestData, id: siteId, userId: user.uid, revision: Number(latestData.revision || 0) } });
+      }
+      throw error;
+    }
   }
   return res.status(existing.exists ? 200 : 201).json({ site: sanitized });
 });

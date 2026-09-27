@@ -559,7 +559,7 @@ export async function saveUserMiniSiteToFirestore(
   userId: string,
   siteData: Partial<UserMiniSite>,
   siteId: string
-): Promise<void> {
+): Promise<UserMiniSite> {
   if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error('AUTH_REQUIRED');
   const token = await auth.currentUser.getIdToken();
   const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}`, {
@@ -569,11 +569,15 @@ export async function saveUserMiniSiteToFirestore(
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    const error = new Error(payload?.error?.message || payload?.message || 'SITE_SAVE_FAILED') as Error & { code?: string; fields?: Record<string, string> };
+    const error = new Error(payload?.error?.message || payload?.message || 'SITE_SAVE_FAILED') as Error & { code?: string; fields?: Record<string, string>; status?: number; serverSite?: UserMiniSite };
     error.code = payload?.error?.code || payload?.code || 'SITE_SAVE_FAILED';
     error.fields = payload?.error?.fields || payload?.fields;
+    error.status = response.status;
+    error.serverSite = payload?.site as UserMiniSite | undefined;
     throw error;
   }
+  const payload = await response.json().catch(() => ({}));
+  return payload.site as UserMiniSite;
 }
 
 /**
