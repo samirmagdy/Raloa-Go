@@ -267,6 +267,7 @@ export interface UserMiniSite {
   displayName: string;
   role?: string;
   bio: string;
+  bioAr?: string;
   templateId: string;
   avatar: string;
   coverImage?: string;

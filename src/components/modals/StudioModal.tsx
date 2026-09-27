@@ -32,6 +32,7 @@ import { StudioBlockItem } from '../studio/SortableBlockList';
 import { getPlanCapabilities, isPremiumTemplate } from '../../lib/planCapabilities';
 import { auth } from '../../lib/firebase';
 import { normalizeSiteSlug } from '../../lib/siteSlug';
+import { normalizeSiteContent, validateSiteContent } from '../../lib/contentSchema';
 
 export interface StudioSiteConfig {
   username: string;
@@ -79,7 +80,8 @@ export interface StudioModalProps {
 }
 
 function studioConfigFromSite(savedSite: UserMiniSite, fallback: TemplateItem, resolvedHandle: string, isRtl: boolean): StudioSiteConfig {
-  return {
+  const canonical = normalizeSiteContent({
+    ...savedSite,
     username: savedSite.username || resolvedHandle,
     templateId: savedSite.templateId || fallback.id,
     displayName: savedSite.displayName || fallback.name,
@@ -87,26 +89,53 @@ function studioConfigFromSite(savedSite: UserMiniSite, fallback: TemplateItem, r
     bio: savedSite.bio !== undefined ? savedSite.bio : (isRtl ? fallback.bioAr : fallback.bio),
     avatar: savedSite.avatar || fallback.avatar,
     coverImage: savedSite.coverImage || fallback.coverImage,
-    bgStyle: savedSite.bgStyle || fallback.backgroundStyle || 'signature',
-    themeMode: savedSite.themeMode || 'auto',
-    links: savedSite.links?.length ? savedSite.links as StudioBlockItem[] : fallback.sampleLinks.map((link) => ({ id: link.id, title: isRtl ? link.titleAr : link.title, url: link.url, subtitle: (isRtl ? link.subtitleAr : link.subtitle) || '', type: link.type || 'link' })),
+    links: savedSite.links?.length ? savedSite.links : fallback.sampleLinks.map((link) => ({ id: link.id, title: isRtl ? link.titleAr : link.title, url: link.url, subtitle: (isRtl ? link.subtitleAr : link.subtitle) || '', type: link.type || 'link' })),
     socials: Array.isArray((savedSite as any).socials) ? (savedSite as any).socials : fallback.socials.map((social) => ({ ...social, enabled: true })),
-    isPublished: savedSite.isPublished ?? false,
-    accentColor: (savedSite as any).accentColor || DEFAULT_DESIGN_TOKENS.accentColor,
-    surfaceColor: (savedSite as any).surfaceColor || DEFAULT_DESIGN_TOKENS.surfaceColor,
-    cardRadius: (savedSite as any).cardRadius || DEFAULT_DESIGN_TOKENS.cardRadius,
-    cardShadow: (savedSite as any).cardShadow || DEFAULT_DESIGN_TOKENS.cardShadow,
-    borderStyle: (savedSite as any).borderStyle || DEFAULT_DESIGN_TOKENS.borderStyle,
-    designTokens: normalizeDesignTokens((savedSite as any).designTokens, savedSite as any),
-    customDomain: (savedSite as any).customDomain || '',
-    metaTitle: (savedSite as any).metaTitle || '',
-    metaDescription: (savedSite as any).metaDescription || '',
-    hidePoweredBy: (savedSite as any).hidePoweredBy ?? false,
-    sensitiveWarning: (savedSite as any).sensitiveWarning ?? false,
-    ga4Id: (savedSite as any).ga4Id || '',
-    metaPixelId: (savedSite as any).metaPixelId || '',
-    webhookUrl: (savedSite as any).webhookUrl || '',
-    bookingConfig: (savedSite as any).bookingConfig || DEFAULT_BOOKING_CONFIG
+    designTokens: savedSite.designTokens || DEFAULT_DESIGN_TOKENS,
+    bookingConfig: savedSite.bookingConfig || DEFAULT_BOOKING_CONFIG
+  });
+  return {
+    username: canonical.username,
+    templateId: canonical.templateId,
+    displayName: canonical.displayName,
+    role: canonical.role,
+    bio: canonical.bio,
+    avatar: canonical.avatar,
+    coverImage: canonical.coverImage,
+    bgStyle: canonical.bgStyle,
+    themeMode: canonical.themeMode,
+    links: canonical.links as StudioBlockItem[],
+    socials: canonical.socials,
+    isPublished: canonical.isPublished,
+    accentColor: canonical.designTokens.accentColor,
+    surfaceColor: canonical.designTokens.surfaceColor,
+    cardRadius: canonical.designTokens.cardRadius,
+    cardShadow: canonical.designTokens.cardShadow,
+    borderStyle: canonical.designTokens.borderStyle,
+    designTokens: canonical.designTokens,
+    customDomain: canonical.customDomain,
+    metaTitle: canonical.metaTitle,
+    metaDescription: canonical.metaDescription,
+    hidePoweredBy: canonical.hidePoweredBy,
+    sensitiveWarning: canonical.sensitiveWarning,
+    ga4Id: canonical.ga4Id,
+    metaPixelId: canonical.metaPixelId,
+    webhookUrl: canonical.webhookUrl,
+    bookingConfig: canonical.bookingConfig
+  };
+}
+
+function normalizeStudioConfig(config: StudioSiteConfig): StudioSiteConfig {
+  const canonical = normalizeSiteContent(config);
+  return {
+    ...config,
+    ...canonical,
+    links: canonical.links as StudioBlockItem[],
+    accentColor: canonical.designTokens.accentColor,
+    surfaceColor: canonical.designTokens.surfaceColor,
+    cardRadius: canonical.designTokens.cardRadius,
+    cardShadow: canonical.designTokens.cardShadow,
+    borderStyle: canonical.designTokens.borderStyle
   };
 }
 
@@ -298,7 +327,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       lastTextEditRef.current = 0;
       setSiteConfig((prev) => {
         const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
-        return next;
+        return normalizeStudioConfig(next);
       }, options);
     },
     [setSiteConfig]
@@ -310,7 +339,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       const now = Date.now();
       const shouldOverwrite = now - lastTextEditRef.current < 700;
       lastTextEditRef.current = now;
-      setSiteConfig((prev) => ({ ...prev, [field]: value }), {
+      setSiteConfig((prev) => normalizeStudioConfig({ ...prev, [field]: value }), {
         overwrite: shouldOverwrite
       });
     },
@@ -405,6 +434,9 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       setSaveStatus('saving');
 
       try {
+        configToSave = normalizeStudioConfig(configToSave);
+        const schema = validateSiteContent(configToSave);
+        if (!schema.valid) throw new Error(`INVALID_SITE_CONTENT:${schema.issues[0]?.path || 'content'}`);
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           const offlineError = new Error('You are offline. Changes are stored for recovery and will not be marked saved.') as SaveError;
           offlineError.code = 'OFFLINE';
@@ -748,27 +780,28 @@ export const StudioModal: React.FC<StudioModalProps> = ({
   }, [undo, redo, canUndo, canRedo]);
 
   // Build live preview template object for the right-hand PhoneMockup
+  const canonicalPreview = normalizeSiteContent(siteConfig);
   const livePreviewTemplate: TemplateItem = {
     ...selectedTemplate,
-    name: displayName,
-    role: role,
-    bio: bio,
-    bioAr: bio,
-    avatar: avatar,
-    coverImage: coverImage,
-    backgroundStyle: bgStyle,
-    designTokens,
-    sampleLinks: links.map((l) => ({
+    name: canonicalPreview.displayName,
+    role: canonicalPreview.role,
+    bio: canonicalPreview.bio,
+    bioAr: canonicalPreview.bio,
+    avatar: canonicalPreview.avatar,
+    coverImage: canonicalPreview.coverImage,
+    backgroundStyle: canonicalPreview.designTokens.background.style,
+    designTokens: canonicalPreview.designTokens,
+    sampleLinks: canonicalPreview.links.map((l) => ({
       id: l.id,
       title: l.title,
-      titleAr: l.title,
+      titleAr: l.titleAr || l.title,
       subtitle: l.subtitle,
-      subtitleAr: l.subtitle,
+      subtitleAr: l.subtitleAr || l.subtitle,
       url: l.url,
       galleryItems: l.galleryItems,
       type: l.type as any
     })),
-    socials: siteConfig.socials.filter((social) => social.enabled !== false && social.url.trim()) as TemplateItem['socials']
+    socials: canonicalPreview.socials.filter((social) => social.enabled !== false && social.url.trim()) as TemplateItem['socials']
   };
 
   // 1. Authenticated-Only Gate Screen

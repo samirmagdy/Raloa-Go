@@ -39,8 +39,9 @@ import {
 import { templatesData } from './src/data/content';
 import { getPlanCapabilities, getPlanTier, isPremiumTemplate } from './src/lib/planCapabilities';
 import { calendarAdapter, calendarOAuthConfiguration, calendarProviderIsConfigured, decryptCalendarTokens, encryptCalendarTokens, type CalendarProvider, type CalendarBookingEvent, type CalendarTokenBundle } from './server-calendar';
-import { normalizeDesignTokens } from './src/utils/designTokens';
 import { isSupportedBlockType, isSupportedEmbedUrl } from './src/lib/blockTypes';
+import { canonicalSiteToLegacy, normalizeBookingConfig, normalizeProductInput, normalizeSiteContent, validateProductInput, validateSiteContent } from './src/lib/contentSchema';
+import type { BookingConfig, BookingServiceConfig } from './src/types';
 import { normalizeSiteSlug, RESERVED_SITE_SLUGS, validateSiteSlug } from './src/lib/siteSlug';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -906,26 +907,17 @@ export function analyticsEventDocumentId(collection: 'page_views' | 'link_clicks
 
 const PRODUCT_CURRENCIES = new Set(['usd', 'eur', 'gbp', 'sar', 'aed', 'cad', 'aud']);
 
-function validProductImage(value: unknown): value is string {
-  if (typeof value !== 'string' || value.length > 2000) return false;
-  try {
-    const url = new URL(value);
-    return ['https:', 'http:'].includes(url.protocol);
-  } catch {
-    return false;
-  }
-}
-
 function publicProduct(data: Record<string, unknown>): Record<string, unknown> {
+  const normalized = normalizeProductInput(data);
   return {
     id: data.id,
-    name: data.name,
-    description: data.description || '',
-    imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : [],
-    priceMinor: data.priceMinor,
-    currency: data.currency,
-    active: data.active === true,
-    inventory: data.inventory === null || data.inventory === undefined ? null : Math.max(0, Number(data.inventory)),
+    name: normalized.name,
+    description: normalized.description,
+    imageUrls: normalized.imageUrls,
+    priceMinor: normalized.priceMinor,
+    currency: normalized.currency,
+    active: normalized.active,
+    inventory: normalized.inventory === null ? null : Math.max(0, Number(normalized.inventory)),
     availableQuantity: data.inventory === null || data.inventory === undefined
       ? null
       : Math.max(0, Number(data.inventory) - Number(data.inventoryReserved || 0))
@@ -947,92 +939,6 @@ function isSafePublicUrl(value: unknown, allowAnchor = false): value is string {
   } catch {
     return false;
   }
-}
-
-type BookingWindow = { enabled: boolean; start: string; end: string };
-type BookingService = { id: string; name: string; description?: string; durationMinutes: number; bufferMinutes?: number };
-type BookingConfig = {
-  enabled: boolean;
-  timezone: string;
-  services: BookingService[];
-  weeklyAvailability: Record<string, BookingWindow>;
-  blackoutDates: string[];
-  minNoticeMinutes: number;
-  bookingWindowDays: number;
-  bufferMinutes: number;
-  maxBookingsPerDay: number;
-  calendarProvider?: 'none' | 'google' | 'outlook';
-};
-
-const DEFAULT_BOOKING_CONFIG: BookingConfig = {
-  enabled: false,
-  timezone: 'UTC',
-  services: [],
-  weeklyAvailability: {
-    '0': { enabled: false, start: '09:00', end: '17:00' },
-    '1': { enabled: true, start: '09:00', end: '17:00' },
-    '2': { enabled: true, start: '09:00', end: '17:00' },
-    '3': { enabled: true, start: '09:00', end: '17:00' },
-    '4': { enabled: true, start: '09:00', end: '17:00' },
-    '5': { enabled: true, start: '09:00', end: '17:00' },
-    '6': { enabled: false, start: '09:00', end: '17:00' }
-  },
-  blackoutDates: [],
-  minNoticeMinutes: 120,
-  bookingWindowDays: 60,
-  bufferMinutes: 15,
-  maxBookingsPerDay: 20,
-  calendarProvider: 'none'
-};
-
-function normalizeBookingConfig(input: unknown): BookingConfig {
-  const source = input && typeof input === 'object' ? input as Record<string, unknown> : {};
-  const services = Array.isArray(source.services)
-    ? source.services.slice(0, 50).flatMap((service) => {
-        if (!service || typeof service !== 'object') return [];
-        const value = service as Record<string, unknown>;
-        const id = typeof value.id === 'string' ? value.id.trim().toLowerCase().slice(0, 64) : '';
-        const name = typeof value.name === 'string' ? value.name.trim().slice(0, 120) : '';
-        const durationMinutes = Number(value.durationMinutes);
-        if (!/^[a-z0-9_-]{1,64}$/.test(id) || !name || !Number.isInteger(durationMinutes) || durationMinutes < 15 || durationMinutes > 480) return [];
-        return [{
-          id,
-          name,
-          description: typeof value.description === 'string' ? value.description.trim().slice(0, 500) : undefined,
-          durationMinutes,
-          bufferMinutes: Number.isInteger(Number(value.bufferMinutes)) ? Math.min(120, Math.max(0, Number(value.bufferMinutes))) : 0
-        }];
-      })
-    : [];
-  const weeklyAvailability: Record<string, BookingWindow> = { ...DEFAULT_BOOKING_CONFIG.weeklyAvailability };
-  if (source.weeklyAvailability && typeof source.weeklyAvailability === 'object') {
-    for (const day of Object.keys(weeklyAvailability)) {
-      const value = (source.weeklyAvailability as Record<string, unknown>)[day];
-      if (!value || typeof value !== 'object') continue;
-      const window = value as Record<string, unknown>;
-      const start = typeof window.start === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(window.start) ? window.start : weeklyAvailability[day].start;
-      const end = typeof window.end === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(window.end) ? window.end : weeklyAvailability[day].end;
-      weeklyAvailability[day] = { enabled: window.enabled === true && start < end, start, end };
-    }
-  }
-  let timezone = typeof source.timezone === 'string' ? source.timezone.trim() : DEFAULT_BOOKING_CONFIG.timezone;
-  try { new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(); } catch { timezone = DEFAULT_BOOKING_CONFIG.timezone; }
-  const blackoutDates = Array.isArray(source.blackoutDates)
-    ? source.blackoutDates.filter((date): date is string => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)).slice(0, 366)
-    : [];
-  return {
-    ...DEFAULT_BOOKING_CONFIG,
-    enabled: source.enabled === true,
-    timezone,
-    services,
-    weeklyAvailability,
-    blackoutDates,
-    minNoticeMinutes: Number.isInteger(Number(source.minNoticeMinutes)) ? Math.min(10080, Math.max(0, Number(source.minNoticeMinutes))) : DEFAULT_BOOKING_CONFIG.minNoticeMinutes,
-    bookingWindowDays: Number.isInteger(Number(source.bookingWindowDays)) ? Math.min(365, Math.max(1, Number(source.bookingWindowDays))) : DEFAULT_BOOKING_CONFIG.bookingWindowDays,
-    bufferMinutes: Number.isInteger(Number(source.bufferMinutes)) ? Math.min(120, Math.max(0, Number(source.bufferMinutes))) : DEFAULT_BOOKING_CONFIG.bufferMinutes,
-    maxBookingsPerDay: Number.isInteger(Number(source.maxBookingsPerDay)) ? Math.min(100, Math.max(1, Number(source.maxBookingsPerDay))) : DEFAULT_BOOKING_CONFIG.maxBookingsPerDay,
-    calendarProvider: source.calendarProvider === 'google' || source.calendarProvider === 'outlook' ? source.calendarProvider : 'none'
-  };
 }
 
 function dateInTimeZone(date: Date, timeZone: string): string {
@@ -1062,7 +968,7 @@ async function bookingRecordsForHost(hostUserId: string, siteId?: string): Promi
   return snapshot.docs.map((document) => document.data()).filter((booking) => !siteId || String(booking.siteId || '') === siteId);
 }
 
-function availableSlots(config: BookingConfig, service: BookingService, fromDate: string, toDate: string, existing: Array<Record<string, unknown>>): Array<{ start: string; end: string; localDate: string; localTime: string; serviceId: string }> {
+function availableSlots(config: BookingConfig, service: BookingServiceConfig, fromDate: string, toDate: string, existing: Array<Record<string, unknown>>): Array<{ start: string; end: string; localDate: string; localTime: string; serviceId: string }> {
   const from = new Date(`${fromDate}T00:00:00.000Z`);
   const to = new Date(`${toDate}T00:00:00.000Z`);
   const now = Date.now();
@@ -3909,8 +3815,11 @@ app.post('/api/sites', async (req: Request, res: Response) => {
     revision: 1,
     updatedAt: new Date().toISOString()
   } as Record<string, any>;
+  const normalizedSite = normalizeSiteContent(site);
+  const siteSchema = validateSiteContent(normalizedSite);
+  if (!siteSchema.valid) return apiError(res, 400, 'INVALID_SITE_CONTENT', 'Site content does not match the shared content schema.', Object.fromEntries(siteSchema.issues.map((issue) => [issue.path, issue.message])));
+  Object.assign(site, canonicalSiteToLegacy(normalizedSite));
   if (site.links.some((link: any) => !link || typeof link !== 'object' || typeof link.id !== 'string' || typeof link.title !== 'string' || !isSafePublicUrl(link.url, true))) return apiError(res, 400, 'INVALID_LINKS', 'Every link must have valid text and a safe public URL.');
-  site.designTokens = normalizeDesignTokens(site.designTokens, site);
   const ownedMediaError = await validateOwnedMediaReferences(site, user.uid, siteId);
   if (ownedMediaError) return apiError(res, 400, 'INVALID_MEDIA_REFERENCE', ownedMediaError);
   const entitlement = validateSiteEntitlements(site, profile.data());
@@ -3977,6 +3886,10 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
     userId: user.uid,
     updatedAt: new Date().toISOString()
   } as Record<string, any>;
+  const normalizedMerged = normalizeSiteContent(merged);
+  const mergedSchema = validateSiteContent(normalizedMerged);
+  if (!mergedSchema.valid) return apiError(res, 400, 'INVALID_SITE_CONTENT', 'Site content does not match the shared content schema.', Object.fromEntries(mergedSchema.issues.map((issue) => [issue.path, issue.message])));
+  Object.assign(merged, canonicalSiteToLegacy(normalizedMerged));
   const handle = normalizeSiteSlug(merged.username);
   const handleValidation = validateSiteSlug(handle);
   if (!handleValidation.valid) return apiError(res, 400, handleValidation.code === 'reserved' ? 'RESERVED_HANDLE' : 'INVALID_HANDLE', handleValidation.code === 'reserved' ? 'That site handle is reserved.' : 'A valid site handle is required before saving a site.');
@@ -4000,8 +3913,7 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
     return apiError(res, 400, 'INVALID_SOCIAL_LINKS', 'Every social link must use a safe public URL.');
   }
   if (merged.bookingConfig !== undefined) merged.bookingConfig = normalizeBookingConfig(merged.bookingConfig);
-  merged.designTokens = normalizeDesignTokens(merged.designTokens, merged);
-  const allowedKeys = new Set(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'socials', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'designTokens', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'bookingConfig', 'updatedAt']);
+  const allowedKeys = new Set(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'bioAr', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'socials', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'designTokens', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'bookingConfig', 'updatedAt']);
   const sanitized = Object.fromEntries(Object.entries(merged).filter(([key]) => allowedKeys.has(key)));
   sanitized.revision = currentRevision + 1;
   const entitlement = validateSiteEntitlements(sanitized, profileData);
@@ -4087,13 +3999,10 @@ app.post('/api/creator/products', async (req: Request, res: Response) => {
   if (!isAdminConfigured() || !stripe) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
   const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
   if (!siteId || !(await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get()).exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
-  const name = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 120) : '';
-  const description = typeof req.body?.description === 'string' ? req.body.description.trim().slice(0, 2000) : '';
-  const imageUrls = Array.isArray(req.body?.imageUrls) ? req.body.imageUrls.filter(validProductImage).slice(0, 8) : [];
-  const priceMinor = Number(req.body?.priceMinor);
-  const currency = typeof req.body?.currency === 'string' ? req.body.currency.trim().toLowerCase() : '';
-  const inventory = req.body?.inventory === null || req.body?.inventory === undefined ? null : Number(req.body.inventory);
-  const active = req.body?.active !== false;
+  const productInput = normalizeProductInput(req.body);
+  const { name, description, imageUrls, priceMinor, currency, inventory, active } = productInput;
+  const productSchema = validateProductInput(req.body);
+  if (!productSchema.valid) return apiError(res, 400, 'INVALID_PRODUCT', 'Product data does not match the shared content schema.', Object.fromEntries(productSchema.issues.map((issue) => [issue.path, issue.message])));
   if (!name || !Number.isSafeInteger(priceMinor) || priceMinor < 50 || priceMinor > 10_000_000 || !PRODUCT_CURRENCIES.has(currency) || (inventory !== null && (!Number.isSafeInteger(inventory) || inventory < 0))) {
     return apiError(res, 400, 'INVALID_PRODUCT', 'Name, supported currency, valid price, and inventory are required.');
   }
@@ -4132,13 +4041,16 @@ app.patch('/api/creator/products/:productId', async (req: Request, res: Response
   const productSite = await getOwnedSite(user.uid, String(snapshot.data()?.siteId || ''));
   if (!productSite || (typeof req.body?.siteId === 'string' && productSite.id !== req.body.siteId.trim())) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
   const current = snapshot.data() || {};
-  const name = req.body?.name === undefined ? String(current.name || '') : typeof req.body.name === 'string' ? req.body.name.trim().slice(0, 120) : '';
-  const description = req.body?.description === undefined ? String(current.description || '') : typeof req.body.description === 'string' ? req.body.description.trim().slice(0, 2000) : '';
-  const imageUrls = req.body?.imageUrls === undefined ? (Array.isArray(current.imageUrls) ? current.imageUrls : []) : Array.isArray(req.body.imageUrls) ? req.body.imageUrls.filter(validProductImage).slice(0, 8) : [];
-  const priceMinor = req.body?.priceMinor === undefined ? Number(current.priceMinor) : Number(req.body.priceMinor);
-  const currency = req.body?.currency === undefined ? String(current.currency || '') : typeof req.body.currency === 'string' ? req.body.currency.trim().toLowerCase() : '';
-  const inventory = req.body?.inventory === undefined ? (current.inventory === null || current.inventory === undefined ? null : Number(current.inventory)) : req.body.inventory === null ? null : Number(req.body.inventory);
-  const active = req.body?.active === undefined ? current.active === true : req.body.active === true;
+  const normalizedProduct = normalizeProductInput({ ...current, ...req.body });
+  const productSchema = validateProductInput({ ...current, ...req.body });
+  if (!productSchema.valid) return apiError(res, 400, 'INVALID_PRODUCT', 'Product data does not match the shared content schema.', Object.fromEntries(productSchema.issues.map((issue) => [issue.path, issue.message])));
+  const name = req.body?.name === undefined ? String(current.name || '') : normalizedProduct.name;
+  const description = req.body?.description === undefined ? String(current.description || '') : normalizedProduct.description;
+  const imageUrls = req.body?.imageUrls === undefined ? (Array.isArray(current.imageUrls) ? current.imageUrls : []) : normalizedProduct.imageUrls;
+  const priceMinor = req.body?.priceMinor === undefined ? Number(current.priceMinor) : normalizedProduct.priceMinor;
+  const currency = req.body?.currency === undefined ? String(current.currency || '') : normalizedProduct.currency;
+  const inventory = req.body?.inventory === undefined ? (current.inventory === null || current.inventory === undefined ? null : Number(current.inventory)) : normalizedProduct.inventory;
+  const active = req.body?.active === undefined ? current.active === true : normalizedProduct.active;
   const reserved = Number(current.inventoryReserved || 0);
   if (!name || !Number.isSafeInteger(priceMinor) || priceMinor < 50 || priceMinor > 10_000_000 || !PRODUCT_CURRENCIES.has(currency) || (inventory !== null && (!Number.isSafeInteger(inventory) || inventory < reserved))) {
     return apiError(res, 400, 'INVALID_PRODUCT', 'Product fields are invalid or inventory is below currently reserved units.');

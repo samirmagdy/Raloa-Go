@@ -3,7 +3,7 @@ import { getAuth as getAdminAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import Stripe from 'stripe';
-import { normalizeDesignTokens } from './src/utils/designTokens';
+import { canonicalSiteToLegacy, normalizeSiteContent } from './src/lib/contentSchema';
 import { normalizeSiteSlug, validateSiteSlug } from './src/lib/siteSlug';
 
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0319129908';
@@ -100,10 +100,10 @@ function publicSiteData(
   cleanHandle: string
 ): Record<string, unknown> {
   const siteData = siteDocument.data() || {};
-  const { webhookUrl: _webhookUrl, ga4Id: _ga4Id, metaPixelId: _metaPixelId, ...publicSiteData } = siteData;
+  const normalizedSite = canonicalSiteToLegacy(normalizeSiteContent(siteData));
+  const { webhookUrl: _webhookUrl, ga4Id: _ga4Id, metaPixelId: _metaPixelId, ...publicSiteData } = normalizedSite;
   return {
     ...publicSiteData,
-    designTokens: normalizeDesignTokens(siteData.designTokens, siteData),
     userId: profileDocument.id,
     handle: cleanHandle,
     searchIndexing: profileDocument.data()?.privacyPreferences?.searchIndexing !== false,

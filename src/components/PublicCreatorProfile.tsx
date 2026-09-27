@@ -20,6 +20,7 @@ import { BookingSchedulerModal } from './modals/BookingSchedulerModal';
 import { ProductStoreModal } from './modals/ProductStoreModal';
 import { PublicBlockRenderer } from './PublicBlockRenderer';
 import { designCardGap, designCardStyle, designContentWidth, designFontFamily, designLayoutStyle, designTokensFromSite, designTypographyStyle } from '../utils/designTokens';
+import { normalizeSiteContent } from '../lib/contentSchema';
 
 interface PublicCreatorProfileProps {
   handle: string;
@@ -61,21 +62,22 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
         if (!response.ok) throw new Error('PUBLIC_SITE_NOT_FOUND');
         const payload = await response.json();
         const site = payload.site;
-        const links = Array.isArray(site.links) ? site.links : [];
-        const designTokens = designTokensFromSite(site);
+        const canonical = normalizeSiteContent(site);
+        const links = canonical.links;
+        const designTokens = canonical.designTokens;
         return {
           id: cleanHandle,
-          name: site.displayName || cleanHandle,
-          role: site.role || '',
+          name: canonical.displayName || cleanHandle,
+          role: canonical.role || '',
           category: 'Personal' as const,
-          avatar: site.avatar || '',
-          coverImage: site.coverImage || '',
-          bio: site.bio || '',
-          bioAr: site.bioAr || site.bio || '',
+          avatar: canonical.avatar || '',
+          coverImage: canonical.coverImage || '',
+          bio: canonical.bio || '',
+          bioAr: canonical.bioAr || '',
           themeColor: designTokens.accentColor,
           accentGradient: 'linear-gradient(135deg, #4F46E5, #7C3AED)',
-          metaTitle: typeof site.metaTitle === 'string' ? site.metaTitle : undefined,
-          metaDescription: typeof site.metaDescription === 'string' ? site.metaDescription : undefined,
+          metaTitle: canonical.metaTitle || undefined,
+          metaDescription: canonical.metaDescription || undefined,
           backgroundStyle: designTokens.background.style,
           designTokens,
           sampleLinks: links.map((link: any, index: number) => ({
@@ -89,7 +91,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
             galleryItems: Array.isArray(link.galleryItems) ? link.galleryItems as MediaGalleryItem[] : undefined,
             type: link.type || 'link'
           })),
-          socials: Array.isArray(site.socials) ? site.socials : []
+          socials: canonical.socials
         } as TemplateItem;
       })
       .then((nextCreator) => {

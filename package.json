@@ -26,7 +26,8 @@
     "test:multi-site": "tsx test-multi-site.ts",
     "test:site-slugs": "tsx test-site-slugs.ts",
     "test:media": "tsx test-media.ts",
-    "test:billing": "NODE_ENV=test tsx test-billing.ts"
+    "test:billing": "NODE_ENV=test tsx test-billing.ts",
+    "test:content-schema": "tsx test-content-schema.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
