@@ -140,7 +140,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   };
 
   const handleLinkSelect = (link: typeof creator.sampleLinks[0]) => {
-    recordLinkClick(link.id, link.title, cleanHandle);
+    recordLinkClick(link.id, link.url, cleanHandle);
     if (link.url.startsWith('#')) {
       alert(isRtl ? `فتح: ${isRtl ? link.titleAr : link.title}` : `Opening: ${link.title}`);
     } else {
@@ -245,7 +245,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
                 href={soc.url}
                 target="_blank"
                 rel="ugc nofollow noopener noreferrer"
-                onClick={() => recordLinkClick(`soc_${soc.platform}`, soc.platform, cleanHandle)}
+                onClick={() => recordLinkClick(`soc_${soc.platform}`, soc.url, cleanHandle)}
                 className="w-10 h-10 rounded-2xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95 shadow-2xs backdrop-blur-md"
                 style={{
                   backgroundColor: themeConfig.socialBg || 'rgba(255,255,255,0.1)',

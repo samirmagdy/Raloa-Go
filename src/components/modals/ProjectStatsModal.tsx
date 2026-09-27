@@ -39,40 +39,6 @@ interface StatDay {
   clicks: number;
 }
 
-// Helper to generate realistic simulated stats with seed variation
-function generateStatsData(daysCount: number, seed: number = 1): StatDay[] {
-  const result: StatDay[] = [];
-  const now = new Date();
-
-  // Pseudo-random deterministic factor based on seed
-  const rand = (min: number, max: number, offset: number) => {
-    const pseudo = Math.sin(seed * 997 + offset * 13) * 10000;
-    const norm = pseudo - Math.floor(pseudo);
-    return Math.floor(norm * (max - min + 1)) + min;
-  };
-
-  for (let i = daysCount - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    const dayLabel = d.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric'
-    });
-
-    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-    const baseViews = isWeekend ? 1400 : 950;
-    const views = baseViews + rand(-250, 450, i);
-    const clicks = Math.round(views * (0.32 + (rand(-6, 8, i + 50) / 100)));
-
-    result.push({
-      date: dayLabel,
-      views,
-      clicks
-    });
-  }
-
-  return result;
-}
 
 export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
   isOpen,
@@ -81,8 +47,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
   onOpenStudio
 }) => {
   const [period, setPeriod] = useState<7 | 14 | 30>(7);
-  const [seed, setSeed] = useState<number>(1);
-  const [liveMetrics, setLiveMetrics] = useState<{ totalVisits: number; totalClicks: number; activeSitesCount: number } | null>(null);
+  const [liveMetrics, setLiveMetrics] = useState<{ totalVisits: number; totalClicks: number; activeSitesCount: number; timeline: StatDay[] } | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const isRtl = locale === 'ar';
   const dialogRef = useModalA11y<HTMLDivElement>(isOpen);
@@ -90,7 +55,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
   const fetchMetrics = async () => {
     setLoadingMetrics(true);
     try {
-      const data = await fetchPlatformMetrics();
+      const data = await fetchPlatformMetrics(period === 7 ? '7' : period === 30 ? '30' : 'all');
       setLiveMetrics(data);
     } catch (err) {
       console.error('Error fetching live platform metrics:', err);
@@ -103,11 +68,11 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
     if (isOpen) {
       fetchMetrics();
     }
-  }, [isOpen]);
+  }, [isOpen, period]);
 
   const chartData = useMemo(() => {
-    return generateStatsData(period, seed);
-  }, [period, seed]);
+    return liveMetrics?.timeline || [];
+  }, [liveMetrics]);
 
   const totals = useMemo(() => {
     const totalViews = chartData.reduce((acc, d) => acc + d.views, 0);
@@ -123,32 +88,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const topLinks = [
-    {
-      title: isRtl ? 'رابط ملف بورتفوليو ٢٠٢٤' : '2024 Portfolio Showcase',
-      url: 'portfolio.pdf',
-      clicks: Math.round(totals.totalClicks * 0.42),
-      share: '42%'
-    },
-    {
-      title: isRtl ? 'حجز جلسة استشارية مباشرة' : 'Book 1-on-1 Consultation',
-      url: 'cal.com/meeting',
-      clicks: Math.round(totals.totalClicks * 0.28),
-      share: '28%'
-    },
-    {
-      title: isRtl ? 'تحميل كتالوج المنتجات الرقمية' : 'Digital Presets & LUTs Store',
-      url: 'shop.gumroad.com',
-      clicks: Math.round(totals.totalClicks * 0.18),
-      share: '18%'
-    },
-    {
-      title: isRtl ? 'حساب إنستغرام وقناة يوتيوب' : 'Instagram & YouTube Channel',
-      url: 'youtube.com/@channel',
-      clicks: Math.round(totals.totalClicks * 0.12),
-      share: '12%'
-    }
-  ];
+  const topLinks: Array<{ title: string; url: string; clicks: number; share: string }> = [];
 
   return (
     <div
@@ -189,10 +129,10 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setSeed((s) => s + 1)}
+              onClick={fetchMetrics}
               className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              title={isRtl ? 'توليد أرقام عشوائية جديدة' : 'Randomize / Re-roll data'}
-              aria-label={isRtl ? 'تحديث البيانات' : 'Randomize data'}
+              title={isRtl ? 'تحديث البيانات' : 'Refresh data'}
+              aria-label={isRtl ? 'تحديث البيانات' : 'Refresh data'}
             >
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -323,7 +263,7 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
                   {totals.ctr}%
                 </span>
                 <span className="inline-flex items-center text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
-                  {isRtl ? 'أداء متفوق' : 'Top Tier'}
+                  {isRtl ? 'من البيانات المسجلة' : 'Recorded data'}
                 </span>
               </div>
             </div>
@@ -422,7 +362,9 @@ export const ProjectStatsModal: React.FC<ProjectStatsModalProps> = ({
             </div>
 
             <div className="space-y-2">
-              {topLinks.map((link, idx) => (
+              {topLinks.length === 0 ? (
+                <p className="py-5 text-center text-xs text-slate-400">{isRtl ? 'لا توجد بيانات نقرات لكل رابط بعد.' : 'Per-link click data is not available yet.'}</p>
+              ) : topLinks.map((link, idx) => (
                 <div
                   key={idx}
                   className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between text-xs"

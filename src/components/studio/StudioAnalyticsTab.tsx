@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   TrendingUp,
   Eye,
@@ -17,6 +17,7 @@ import {
 } from 'recharts';
 import { Locale } from '../../types';
 import { StudioBlockItem } from './SortableBlockList';
+import { auth } from '../../lib/firebase';
 
 interface StudioAnalyticsTabProps {
   links: StudioBlockItem[];
@@ -30,59 +31,36 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({
   const isRtl = locale === 'ar';
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | 'all'>('30d');
 
-  // Dynamic analytics timeline datasets based on selected time range
-  const analyticsData = React.useMemo(() => {
-    if (timeRange === '7d') {
-      return [
-        { date: isRtl ? 'السبت' : 'Sat', views: 420, clicks: 148 },
-        { date: isRtl ? 'الأحد' : 'Sun', views: 530, clicks: 195 },
-        { date: isRtl ? 'الإثنين' : 'Mon', views: 610, clicks: 224 },
-        { date: isRtl ? 'الثلاثاء' : 'Tue', views: 790, clicks: 290 },
-        { date: isRtl ? 'الأربعاء' : 'Wed', views: 920, clicks: 340 },
-        { date: isRtl ? 'الخميس' : 'Thu', views: 880, clicks: 310 },
-        { date: isRtl ? 'الجمعة' : 'Fri', views: 1040, clicks: 382 }
-      ];
-    }
-    if (timeRange === 'all') {
-      return [
-        { date: 'Jan', views: 4500, clicks: 1200 },
-        { date: 'Mar', views: 6800, clicks: 1750 },
-        { date: 'May', views: 9200, clicks: 2400 },
-        { date: 'Jul', views: 13500, clicks: 3600 },
-        { date: 'Sep', views: 18420, clicks: 4280 }
-      ];
-    }
-    return [
-      { date: 'Aug 26', views: 820, clicks: 142 },
-      { date: 'Aug 29', views: 940, clicks: 178 },
-      { date: 'Sep 01', views: 1100, clicks: 210 },
-      { date: 'Sep 04', views: 1350, clicks: 280 },
-      { date: 'Sep 07', views: 1220, clicks: 245 },
-      { date: 'Sep 10', views: 1480, clicks: 310 },
-      { date: 'Sep 13', views: 1620, clicks: 355 },
-      { date: 'Sep 16', views: 1850, clicks: 420 },
-      { date: 'Sep 19', views: 2100, clicks: 490 },
-      { date: 'Sep 22', views: 2380, clicks: 540 },
-      { date: 'Sep 24', views: 2540, clicks: 590 }
-    ];
-  }, [timeRange, isRtl]);
+  const [analyticsData, setAnalyticsData] = useState<Array<{ date: string; views: number; clicks: number }>>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+        const response = await fetch(`/api/analytics/platform?days=${timeRange === 'all' ? 'all' : timeRange === '7d' ? '7' : '30'}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (!response.ok) throw new Error('ANALYTICS_UNAVAILABLE');
+        const payload = await response.json();
+        if (!cancelled) setAnalyticsData(Array.isArray(payload.timeline) ? payload.timeline : []);
+      } catch {
+        if (!cancelled) setAnalyticsData([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [timeRange]);
 
   const kpis = React.useMemo(() => {
     const totalViews = analyticsData.reduce((acc, curr) => acc + curr.views, 0);
     const totalClicks = analyticsData.reduce((acc, curr) => acc + curr.clicks, 0);
-    const uniqueVisitors = Math.round(totalViews * 0.66);
+    const uniqueVisitors = 0;
     const ctr = totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(1) : '0.0';
     return { totalViews, totalClicks, uniqueVisitors, ctr };
   }, [analyticsData]);
 
   // UTM tracking attribution breakdown
-  const utmSources = [
-    { source: 'Instagram Stories', medium: 'social_bio', campaign: 'fall_launch', clicks: 2420, percent: 45 },
-    { source: 'TikTok Profile', medium: 'social', campaign: 'creator_vlog', clicks: 1530, percent: 28 },
-    { source: 'Twitter / X', medium: 'post_link', campaign: 'thread_promo', clicks: 810, percent: 15 },
-    { source: 'Direct / QR Code', medium: 'offline_print', campaign: 'meetup_standee', clicks: 420, percent: 8 },
-    { source: 'YouTube Channel', medium: 'video_desc', campaign: 'tutorials', clicks: 220, percent: 4 }
-  ];
+  const utmSources: Array<{ source: string; medium: string; campaign: string; clicks: number; percent: number }> = [];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-150" dir={isRtl ? 'rtl' : 'ltr'}>
@@ -131,7 +109,7 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({
           </div>
           <p className="text-2xl font-black text-slate-900 dark:text-white">{kpis.ctr}%</p>
           <p className="text-[11px] text-slate-400 font-medium mt-1">
-            {isRtl ? 'معدل تفاعل ممتاز' : 'Top tier creator benchmark'}
+            {isRtl ? 'سيظهر بعد تفعيل تعريف الزوار' : 'Not collected yet'}
           </p>
         </div>
       </div>
@@ -224,9 +202,6 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({
             </div>
           ) : (
             links.slice(0, 5).map((l, index) => {
-              const simulatedClicks = [1840, 1120, 780, 420, 210][index] || 120;
-              const simulatedCtr = [34.2, 22.8, 16.4, 9.1, 4.5][index] || 3.2;
-
               return (
                 <div
                   key={l.id}
@@ -249,16 +224,16 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({
                   <div className="flex items-center gap-4 shrink-0 text-right rtl:text-left">
                     <div>
                       <span className="font-mono text-xs font-black text-slate-900 dark:text-white">
-                        {simulatedClicks.toLocaleString()}
+                        —
                       </span>
                       <span className="text-[10px] text-slate-400 block">{isRtl ? 'نقرة' : 'clicks'}</span>
                     </div>
                     <div className="w-16">
                       <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                        {simulatedCtr}%
+                        —
                       </span>
                       <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mt-1 overflow-hidden">
-                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(simulatedCtr * 2.5, 100)}%` }} />
+                        <div className="h-full bg-slate-300 dark:bg-slate-600 rounded-full" style={{ width: '0%' }} />
                       </div>
                     </div>
                   </div>
@@ -287,7 +262,9 @@ export const StudioAnalyticsTab: React.FC<StudioAnalyticsTabProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {utmSources.map((u, i) => (
+              {utmSources.length === 0 ? (
+                <tr><td colSpan={5} className="py-6 px-3.5 text-center text-slate-400">{isRtl ? 'لا توجد بيانات UTM مسجلة بعد.' : 'No UTM attribution data recorded yet.'}</td></tr>
+              ) : utmSources.map((u, i) => (
                 <tr key={i} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
                   <td className="py-2.5 px-3.5 font-bold text-slate-800 dark:text-slate-200">
                     {u.source}

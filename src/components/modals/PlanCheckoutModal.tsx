@@ -70,7 +70,8 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || 'CHECKOUT_FAILED');
+        const message = typeof payload.error === 'string' ? payload.error : 'CHECKOUT_FAILED';
+        throw new Error(message);
       }
 
       const payload = await response.json();
@@ -89,7 +90,9 @@ export const PlanCheckoutModal: React.FC<PlanCheckoutModalProps> = ({
       setError(
         err instanceof Error && err.message === 'AUTH_REQUIRED'
           ? (isRtl ? 'يرجى تسجيل الدخول أولاً.' : 'Please sign in before activating a plan.')
-          : (isRtl ? 'تعذر بدء الدفع. تحقق من إعدادات الحساب وحاول مرة أخرى.' : 'We could not start checkout. Please try again.')
+          : (err instanceof Error && err.message.includes('active subscription')
+            ? (isRtl ? 'لديك اشتراك نشط بالفعل. افتح بوابة الفوترة لإدارته.' : err.message)
+            : (isRtl ? 'تعذر بدء الدفع. تحقق من إعدادات الحساب وحاول مرة أخرى.' : 'We could not start checkout. Please try again.'))
       );
     } finally {
       setLoading(false);

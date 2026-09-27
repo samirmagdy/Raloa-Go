@@ -318,7 +318,7 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
                 <div className="p-3 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs rounded-xl flex items-center gap-2">
                   <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <div>
-                    <span className="font-bold">{isRtl ? 'تم تسجيل وتأكيد الطلب بنجاح في قاعدة البيانات!' : 'Order recorded & confirmed in Firestore!'}</span>
+                    <span className="font-bold">{isRtl ? 'تم بدء الدفع الآمن.' : 'Secure checkout started.'}</span>
                     {orderId && (
                       <span className="block text-[11px] opacity-80 font-mono mt-0.5">
                         {isRtl ? `معرّف الطلب: ${orderId}` : `Order ID: ${orderId}`}

@@ -107,8 +107,10 @@ export async function getPublishedSiteByHandle(handle: string): Promise<Record<s
     .get();
   if (!siteDocument.exists || siteDocument.data()?.isPublished !== true) return null;
 
+  const siteData = siteDocument.data() || {};
+  const { webhookUrl: _webhookUrl, ga4Id: _ga4Id, metaPixelId: _metaPixelId, ...publicSiteData } = siteData;
   return {
-    ...siteDocument.data(),
+    ...publicSiteData,
     userId: profileDocument.id,
     handle: cleanHandle,
     searchIndexing: profileDocument.data()?.privacyPreferences?.searchIndexing !== false,
@@ -220,6 +222,31 @@ export async function createPortalSession(uid: string): Promise<string> {
   return session.url;
 }
 
+export async function createOrderCheckoutSession(
+  buyerEmail: string,
+  orderId: string,
+  requestId: string
+): Promise<string> {
+  if (!stripe) throw new Error('STRIPE_NOT_CONFIGURED');
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    line_items: [{
+      price_data: {
+        currency: 'usd',
+        product_data: { name: 'Brutalist Shadow Study #03' },
+        unit_amount: 14000
+      },
+      quantity: 1
+    }],
+    customer_email: buyerEmail,
+    success_url: `${APP_URL}/?order=success&order_id=${encodeURIComponent(orderId)}`,
+    cancel_url: `${APP_URL}/?order=cancelled&order_id=${encodeURIComponent(orderId)}`,
+    metadata: { orderId, product: 'brutalist-shadow-study-03' }
+  }, { idempotencyKey: `order_checkout_${requestId}` });
+  if (!session.url) throw new Error('STRIPE_CHECKOUT_URL_MISSING');
+  return session.url;
+}
+
 export async function getBillingDetails(uid: string): Promise<{
   invoices: Array<{ id: string; number: string | null; status: string | null; amountPaid: number; currency: string; created: number; hostedInvoiceUrl: string | null }>;
   paymentMethod: { brand: string; last4: string; expMonth: number; expYear: number } | null;
@@ -276,7 +303,7 @@ export async function handleStripeWebhook(payload: string | Buffer, signature: s
     if (!shouldProcess) return;
   }
 
-  if (event.type === 'checkout.session.completed') {
+  if (['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(event.type)) {
     const session = event.data.object as Stripe.Checkout.Session;
     const uid = session.metadata?.uid;
     if (uid) {
@@ -287,6 +314,26 @@ export async function handleStripeWebhook(payload: string | Buffer, signature: s
         stripeSubscriptionId: typeof session.subscription === 'string' ? session.subscription : null,
         billingStatus: 'active'
       });
+    }
+    const orderId = session.metadata?.orderId;
+    if (orderId && isAdminConfigured()) {
+      await adminDb.collection('orders').doc(orderId).set({
+        status: session.payment_status === 'paid' ? 'paid' : 'pending',
+        stripeCheckoutSessionId: session.id,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
+  }
+
+  if (event.type === 'checkout.session.expired') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const orderId = session.metadata?.orderId;
+    if (orderId && isAdminConfigured()) {
+      await adminDb.collection('orders').doc(orderId).set({
+        status: 'cancelled',
+        stripeCheckoutSessionId: session.id,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
     }
   }
 

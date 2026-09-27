@@ -99,6 +99,27 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
   const cleanHandle = rawUsername.toLowerCase().replace(/[^a-z0-9_-]/g, '');
   const publicUrl = `https://raloa.app/@${cleanHandle}`;
   const plan = profile?.plan || 'free';
+  const [analyticsData, setAnalyticsData] = useState<Array<{ label: string; views: number; clicks: number }>>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = user ? await user.getIdToken() : '';
+        const response = await fetch(`/api/analytics/platform?days=${timeRange === 'all' ? 'all' : timeRange === '7d' ? '7' : '30'}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (!response.ok) throw new Error('ANALYTICS_UNAVAILABLE');
+        const payload = await response.json();
+        if (!cancelled) setAnalyticsData(Array.isArray(payload.timeline)
+          ? payload.timeline.map((day: { date: string; views: number; clicks: number }) => ({ label: day.date, views: day.views, clicks: day.clicks }))
+          : []);
+      } catch {
+        if (!cancelled) setAnalyticsData([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user, timeRange]);
 
   // Active template lookup
   const activeTemplate = useMemo(() => {
@@ -223,45 +244,11 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
     }
   }, [isRtl]);
 
-  // Analytics datasets depending on time range
-  const analyticsData = useMemo(() => {
-    if (timeRange === '7d') {
-      return [
-        { label: isRtl ? 'السبت' : 'Sat', views: 420, clicks: 148 },
-        { label: isRtl ? 'الأحد' : 'Sun', views: 530, clicks: 195 },
-        { label: isRtl ? 'الإثنين' : 'Mon', views: 610, clicks: 224 },
-        { label: isRtl ? 'الثلاثاء' : 'Tue', views: 790, clicks: 290 },
-        { label: isRtl ? 'الأربعاء' : 'Wed', views: 920, clicks: 340 },
-        { label: isRtl ? 'الخميس' : 'Thu', views: 880, clicks: 310 },
-        { label: isRtl ? 'الجمعة' : 'Fri', views: 1040, clicks: 382 }
-      ];
-    }
-    if (timeRange === '30d') {
-      return [
-        { label: 'W1', views: 2450, clicks: 890 },
-        { label: 'W2', views: 3120, clicks: 1140 },
-        { label: 'W3', views: 3890, clicks: 1420 },
-        { label: 'W4', views: 4620, clicks: 1780 }
-      ];
-    }
-    return [
-      { label: 'Jan', views: 5400, clicks: 1980 },
-      { label: 'Feb', views: 6800, clicks: 2450 },
-      { label: 'Mar', views: 8900, clicks: 3240 },
-      { label: 'Apr', views: 11400, clicks: 4210 },
-      { label: 'May', views: 14200, clicks: 5320 }
-    ];
-  }, [timeRange, isRtl]);
-
   const statsTotals = useMemo(() => {
-    if (timeRange === '7d') {
-      return { views: '5,190', visitors: '3,840', clicks: '1,889', ctr: '36.4%' };
-    }
-    if (timeRange === '30d') {
-      return { views: '14,080', visitors: '10,240', clicks: '5,230', ctr: '37.1%' };
-    }
-    return { views: '46,700', visitors: '32,150', clicks: '17,200', ctr: '36.8%' };
-  }, [timeRange]);
+    const views = analyticsData.reduce((total, day) => total + day.views, 0);
+    const clicks = analyticsData.reduce((total, day) => total + day.clicks, 0);
+    return { views: views.toLocaleString(), visitors: '—', clicks: clicks.toLocaleString(), ctr: views ? `${((clicks / views) * 100).toFixed(1)}%` : '—' };
+  }, [analyticsData]);
 
   // Onboarding progress items
   const onboardingSteps = useMemo(() => {
@@ -780,7 +767,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
             </div>
             <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-1">
               <TrendingUp className="w-3.5 h-3.5" />
-              <span>+18.4% {isRtl ? 'مقارنة بالسابق' : 'vs last period'}</span>
+              <span>{isRtl ? 'أحداث مسجلة' : 'Recorded events'}</span>
             </div>
           </div>
 
@@ -798,7 +785,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
             </div>
             <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-1">
               <TrendingUp className="w-3.5 h-3.5" />
-              <span>+12.9% {isRtl ? 'مقارنة بالسابق' : 'vs last period'}</span>
+              <span>{isRtl ? 'غير متاح حالياً' : 'Not collected yet'}</span>
             </div>
           </div>
 
@@ -816,7 +803,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
             </div>
             <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-1">
               <TrendingUp className="w-3.5 h-3.5" />
-              <span>+24.2% {isRtl ? 'مقارنة بالسابق' : 'vs last period'}</span>
+              <span>{isRtl ? 'أحداث مسجلة' : 'Recorded events'}</span>
             </div>
           </div>
 
@@ -834,7 +821,7 @@ export const AuthenticatedHome: React.FC<AuthenticatedHomeProps> = ({
             </div>
             <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-1">
               <TrendingUp className="w-3.5 h-3.5" />
-              <span>+4.1% {isRtl ? 'مقارنة بالسابق' : 'vs last period'}</span>
+              <span>{isRtl ? 'محسوب من البيانات المسجلة' : 'Calculated from recorded events'}</span>
             </div>
           </div>
 

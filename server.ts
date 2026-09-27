@@ -11,6 +11,7 @@ import {
   adminAuth,
   cloudflareRequest,
   createCheckoutSession,
+  createOrderCheckoutSession,
   createPortalSession,
   getBillingDetails,
   deleteDomain,
@@ -162,11 +163,15 @@ async function claimIdempotency(scope: string, key: string): Promise<{ replay: b
   await adminDb.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(ref);
     if (snapshot.exists) {
-      replay = true;
-      response = snapshot.data()?.response as Record<string, unknown> | undefined;
-      return;
+      const data = snapshot.data() || {};
+      const createdAt = Date.parse(String(data.createdAt || ''));
+      if (data.status === 'completed' || (data.status === 'processing' && createdAt > Date.now() - 10 * 60 * 1000)) {
+        replay = true;
+        response = data.response as Record<string, unknown> | undefined;
+        return;
+      }
     }
-    transaction.create(ref, { scope, status: 'processing', createdAt: new Date().toISOString() });
+    transaction.set(ref, { scope, status: 'processing', createdAt: new Date().toISOString(), response: null }, { merge: true });
   });
   return { replay, inProgress: replay && !response, response };
 }
@@ -1089,13 +1094,16 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
   const date = typeof req.body?.date === 'string' ? req.body.date : '';
   const timeSlot = typeof req.body?.timeSlot === 'string' ? req.body.timeSlot.trim() : '';
   const clientEmail = typeof req.body?.clientEmail === 'string' ? req.body.clientEmail.trim().toLowerCase() : '';
-  if (!/^[a-z0-9_-]{3,30}$/.test(hostHandle) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !timeSlot || !validEmail(clientEmail)) {
+  if (!/^[a-z0-9_-]{3,30}$/.test(hostHandle) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{1,2}:\d{2}\s?(AM|PM)$/i.test(timeSlot) || !validEmail(clientEmail)) {
     return res.status(400).json({ error: 'Valid host, date, time, and email are required' });
   }
-  const hostExists = isAdminConfigured()
-    ? Boolean(await getPublishedSiteByHandle(hostHandle).catch(() => null))
-    : templatesData.some((template) => template.id.toLowerCase() === hostHandle || template.name.toLowerCase() === hostHandle);
-  if (!hostExists) return res.status(404).json({ error: 'Published host not found' });
+  const parsedDate = Date.parse(`${date}T00:00:00Z`);
+  if (!Number.isFinite(parsedDate) || parsedDate < Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z')) {
+    return res.status(400).json({ error: 'Booking date must be in the future' });
+  }
+  if (!isAdminConfigured()) return res.status(503).json({ error: 'Booking service is not configured' });
+  const hostSite = await getPublishedSiteByHandle(hostHandle).catch(() => null);
+  if (!hostSite) return res.status(404).json({ error: 'Published host not found' });
   const rate = await enforcePublicRateLimit(req, 'booking', 10, 60 * 60 * 1000);
   if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many booking requests', retry_after: rate.retryAfter });
   const idempotencyKey = req.headers['idempotency-key'];
@@ -1104,14 +1112,19 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
     const claimed = await claimIdempotency('booking', idempotencyKey);
     if (claimed.inProgress) return apiError(res, 409, 'IDEMPOTENCY_IN_PROGRESS', 'A request with this idempotency key is already being processed.');
     if (claimed.replay && claimed.response) return res.status(201).json(claimed.response);
-    const booking = { hostHandle, date, timeSlot, clientEmail, status: 'pending', createdAt: new Date().toISOString() };
-    const reference = isAdminConfigured()
-      ? await adminDb.collection('bookings').add(booking)
-      : { id: `booking_${Date.now()}` };
+    const booking = { hostHandle, hostUserId: typeof hostSite === 'object' ? hostSite.userId : null, date, timeSlot, clientEmail, status: 'pending', createdAt: new Date().toISOString() };
+    const bookingId = crypto.createHash('sha256').update(`${hostHandle}:${date}:${timeSlot}`).digest('hex').slice(0, 32);
+    const reference = adminDb.collection('bookings').doc(bookingId);
+    await adminDb.runTransaction(async (transaction) => {
+      const existing = await transaction.get(reference);
+      if (existing.exists) throw new Error('BOOKING_SLOT_TAKEN');
+      transaction.create(reference, booking);
+    });
     const response = { id: reference.id, status: booking.status };
     await completeIdempotency('booking', idempotencyKey, response);
     return res.status(201).json(response);
   } catch (error) {
+    if (error instanceof Error && error.message === 'BOOKING_SLOT_TAKEN') return res.status(409).json({ error: 'That time slot is no longer available' });
     console.error('[Public booking]', error);
     return res.status(503).json({ error: 'Booking service is temporarily unavailable' });
   }
@@ -1127,32 +1140,39 @@ app.post('/api/v1/public/orders', async (req: Request, res: Response) => {
   if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many order requests', retry_after: rate.retryAfter });
   const idempotencyKey = req.headers['idempotency-key'];
   if (typeof idempotencyKey !== 'string') return res.status(400).json({ error: 'Idempotency-Key header is required' });
+  if (!isAdminConfigured() || !isStripeConfigured()) return res.status(503).json({ error: 'Checkout is not configured' });
+  let orderId = '';
   try {
     const claimed = await claimIdempotency('order', idempotencyKey);
     if (claimed.inProgress) return apiError(res, 409, 'IDEMPOTENCY_IN_PROGRESS', 'A request with this idempotency key is already being processed.');
     if (claimed.replay && claimed.response) return res.status(201).json(claimed.response);
-    const order = { itemTitle, price: 140, currency: 'USD', buyerEmail, status: 'pending', createdAt: new Date().toISOString() };
-    const reference = isAdminConfigured()
-      ? await adminDb.collection('orders').add(order)
-      : { id: `order_${Date.now()}` };
-    const response = { id: reference.id, status: order.status };
+    const reference = adminDb.collection('orders').doc();
+    orderId = reference.id;
+    const order = { id: reference.id, itemTitle, price: 140, currency: 'USD', buyerEmail, status: 'pending', createdAt: new Date().toISOString() };
+    await reference.create(order);
+    const url = await createOrderCheckoutSession(buyerEmail, reference.id, idempotencyKey);
+    const response = { id: reference.id, status: order.status, url };
     await completeIdempotency('order', idempotencyKey, response);
     return res.status(201).json(response);
   } catch (error) {
+    if (orderId) await adminDb.collection('orders').doc(orderId).delete().catch(() => undefined);
     console.error('[Public order]', error);
-    return res.status(503).json({ error: 'Order service is temporarily unavailable' });
+    return res.status(503).json({ error: 'Checkout is temporarily unavailable' });
   }
 });
 
 app.post('/api/v1/public/newsletter', async (req: Request, res: Response) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   if (!validEmail(email)) return res.status(400).json({ error: 'A valid email is required' });
+  const rate = await enforcePublicRateLimit(req, 'newsletter', 5, 60 * 60 * 1000);
+  if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many newsletter requests', retry_after: rate.retryAfter });
   try {
     const subscriber = { email, createdAt: new Date().toISOString() };
-    const reference = isAdminConfigured()
-      ? await adminDb.collection('newsletter_subscribers').add(subscriber)
-      : { id: `subscriber_${Date.now()}` };
-    return res.status(201).json({ id: reference.id });
+    if (!isAdminConfigured()) return res.status(503).json({ error: 'Newsletter service is not configured' });
+    const id = crypto.createHash('sha256').update(email).digest('hex').slice(0, 32);
+    const reference = adminDb.collection('newsletter_subscribers').doc(id);
+    await reference.set(subscriber, { merge: true });
+    return res.status(200).json({ id: reference.id });
   } catch (error) {
     console.error('[Newsletter signup]', error);
     return res.status(503).json({ error: 'Newsletter service is temporarily unavailable' });
@@ -1239,8 +1259,9 @@ app.post('/api/v1/public/telemetry/page-view', async (req: Request, res: Respons
     if (handle) {
       const site = await getPublishedSiteByHandle(handle);
       if (site && site.analyticsCollection === false) return res.status(202).json({ status: 'accepted' });
+      if (site) await adminDb.collection('page_views').add({ path: pathValue, siteOwnerId: site.userId, siteHandle: handle, userAgent, timestamp: new Date().toISOString() });
+      return res.status(202).json({ status: 'accepted' });
     }
-    await adminDb.collection('page_views').add({ path: pathValue, userAgent, timestamp: new Date().toISOString() });
   }
   return res.status(202).json({ status: 'accepted' });
 });
@@ -1260,7 +1281,14 @@ app.post('/api/v1/public/telemetry/link-click', async (req: Request, res: Respon
   if (isAdminConfigured()) {
     const site = await getPublishedSiteByHandle(siteHandle);
     if (!site || site.analyticsCollection === false) return res.status(202).json({ status: 'accepted' });
-    await adminDb.collection('link_clicks').add({ linkId, url, siteHandle, timestamp: new Date().toISOString() });
+    const links = Array.isArray(site.links) ? site.links as Array<Record<string, unknown>> : [];
+    const socials = Array.isArray(site.socials) ? site.socials as Array<Record<string, unknown>> : [];
+    const isSocial = linkId.startsWith('soc_');
+    const validTarget = isSocial
+      ? socials.some((social) => `soc_${String(social.platform || '')}` === linkId && social.url === url)
+      : links.some((link) => link.id === linkId && link.url === url);
+    if (!validTarget) return res.status(202).json({ status: 'accepted' });
+    await adminDb.collection('link_clicks').add({ linkId, url, siteHandle, siteOwnerId: site.userId, timestamp: new Date().toISOString() });
   }
   return res.status(202).json({ status: 'accepted' });
 });
@@ -2170,16 +2198,39 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured()) return apiError(res, 503, 'ANALYTICS_UNAVAILABLE', 'Platform analytics are temporarily unavailable.');
   try {
+    const range = req.query.days === '7' ? 7 : req.query.days === 'all' ? null : 30;
+    const cutoff = range ? Date.now() - range * 24 * 60 * 60 * 1000 : 0;
     const [views, clicks, sites] = await Promise.all([
-      adminDb.collection('page_views').limit(1000).get(),
-      adminDb.collection('link_clicks').limit(1000).get(),
-      adminDb.collectionGroup('sites').where('isPublished', '==', true).limit(1000).get()
+      adminDb.collection('page_views').where('siteOwnerId', '==', user.uid).limit(1000).get(),
+      adminDb.collection('link_clicks').where('siteOwnerId', '==', user.uid).limit(1000).get(),
+      adminDb.collection('users').doc(user.uid).collection('sites').where('isPublished', '==', true).limit(1000).get()
     ]);
+    const timeline = new Map<string, { date: string; views: number; clicks: number }>();
+    for (const document of views.docs) {
+      const timestamp = Date.parse(String(document.data().timestamp || ''));
+      if (!Number.isFinite(timestamp) || timestamp < cutoff) continue;
+      const date = new Date(timestamp).toISOString().slice(0, 10);
+      const current = timeline.get(date) || { date, views: 0, clicks: 0 };
+      current.views += 1;
+      timeline.set(date, current);
+    }
+    for (const document of clicks.docs) {
+      const timestamp = Date.parse(String(document.data().timestamp || ''));
+      if (!Number.isFinite(timestamp) || timestamp < cutoff) continue;
+      const date = new Date(timestamp).toISOString().slice(0, 10);
+      const current = timeline.get(date) || { date, views: 0, clicks: 0 };
+      current.clicks += 1;
+      timeline.set(date, current);
+    }
+    const timelineData = [...timeline.values()].sort((a, b) => a.date.localeCompare(b.date));
+    const totalVisits = timelineData.reduce((total, day) => total + day.views, 0);
+    const totalClicks = timelineData.reduce((total, day) => total + day.clicks, 0);
     return res.status(200).json({
-      totalVisits: views.size,
-      totalClicks: clicks.size,
+      totalVisits,
+      totalClicks,
       activeSitesCount: sites.size,
-      capped: views.size === 1000 || clicks.size === 1000 || sites.size === 1000
+      capped: views.size === 1000 || clicks.size === 1000 || sites.size === 1000,
+      timeline: timelineData
     });
   } catch (error) {
     console.error('[Platform analytics]', error);
@@ -2258,7 +2309,7 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
     !social || typeof social.platform !== 'string' || social.platform.length > 40 || !isSafePublicUrl(social.url)))) {
     return apiError(res, 400, 'INVALID_SOCIAL_LINKS', 'Every social link must use a safe public URL.');
   }
-  const allowedKeys = new Set(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'updatedAt']);
+  const allowedKeys = new Set(['id', 'userId', 'username', 'displayName', 'role', 'bio', 'avatar', 'coverImage', 'templateId', 'bgStyle', 'themeMode', 'links', 'socials', 'isPublished', 'accentColor', 'surfaceColor', 'cardRadius', 'cardShadow', 'borderStyle', 'customDomain', 'metaTitle', 'metaDescription', 'hidePoweredBy', 'sensitiveWarning', 'ga4Id', 'metaPixelId', 'webhookUrl', 'updatedAt']);
   const sanitized = Object.fromEntries(Object.entries(merged).filter(([key]) => allowedKeys.has(key)));
   if (profileData?.plan === 'free' && (sanitized.customDomain || sanitized.hidePoweredBy === true || sanitized.ga4Id || sanitized.metaPixelId || sanitized.webhookUrl)) {
     return apiError(res, 403, 'FEATURE_NOT_AVAILABLE', 'Upgrade your plan to use this site feature.');
@@ -2301,6 +2352,7 @@ app.post('/api/billing/checkout-session', async (req: Request, res: Response) =>
     console.error('[Billing checkout]', error);
     const message = error instanceof Error ? error.message : 'Checkout unavailable';
     console.error('[Billing checkout detail]', message);
+    if (message === 'STRIPE_SUBSCRIPTION_EXISTS') return res.status(409).json({ error: 'An active subscription already exists. Manage it from Billing Portal.' });
     return res.status(message.includes('NOT_CONFIGURED') ? 503 : 502).json({ error: 'Checkout is temporarily unavailable' });
   }
 });

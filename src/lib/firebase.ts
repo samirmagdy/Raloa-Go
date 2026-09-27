@@ -394,6 +394,9 @@ export async function syncUserProfile(
         updatedAt: new Date().toISOString(),
         ...customData
       };
+      if (auth.currentUser?.uid === user.uid) {
+        await reserveHandle(user, newProfile.handle);
+      }
       await setDoc(userDocRef, newProfile);
       await publishReferralCode(newProfile.handle || user.uid, user.uid);
       return newProfile;
@@ -412,6 +415,9 @@ export async function syncUserProfile(
         updatedAt: new Date().toISOString(),
         ...customData
       };
+      if (auth.currentUser?.uid === user.uid && updatedProfile.handle) {
+        await reserveHandle(user, updatedProfile.handle);
+      }
       await setDoc(userDocRef, updatedProfile, { merge: true });
       await publishReferralCode(updatedProfile.handle || user.uid, user.uid);
       return updatedProfile;
@@ -657,6 +663,7 @@ export async function saveStoreOrder(
   });
   if (!response.ok) throw new Error('ORDER_FAILED');
   const payload = await response.json();
+  if (payload.url && typeof window !== 'undefined') window.location.assign(payload.url);
   return payload.id;
 }
 
@@ -781,27 +788,31 @@ export async function recordLinkClick(
 /**
  * Fetch platform aggregate metrics from Firestore
  */
-export async function fetchPlatformMetrics(): Promise<{
+export async function fetchPlatformMetrics(days: '7' | '30' | 'all' = '30'): Promise<{
   totalVisits: number;
   totalClicks: number;
   activeSitesCount: number;
+  timeline: Array<{ date: string; views: number; clicks: number }>;
 }> {
   try {
-    const response = await fetch('/api/analytics/platform');
+    const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+    const response = await fetch(`/api/analytics/platform?days=${days}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     if (!response.ok) throw new Error('PLATFORM_METRICS_UNAVAILABLE');
-    const metrics = await response.json() as { totalVisits?: number; totalClicks?: number; activeSitesCount?: number };
+    const metrics = await response.json() as { totalVisits?: number; totalClicks?: number; activeSitesCount?: number; timeline?: Array<{ date: string; views: number; clicks: number }> };
 
     return {
       totalVisits: Number(metrics.totalVisits || 0),
       totalClicks: Number(metrics.totalClicks || 0),
-      activeSitesCount: Number(metrics.activeSitesCount || 0)
+      activeSitesCount: Number(metrics.activeSitesCount || 0),
+      timeline: Array.isArray(metrics.timeline) ? metrics.timeline : []
     };
   } catch (error) {
     console.error('Error fetching platform metrics:', error);
     return {
-      totalVisits: 14200,
-      totalClicks: 8400,
-      activeSitesCount: 2480
+      totalVisits: 0,
+      totalClicks: 0,
+      activeSitesCount: 0,
+      timeline: []
     };
   }
 }
