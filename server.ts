@@ -15,8 +15,6 @@ import {
   adminStorage,
   stripe,
   cloudflareRequest,
-  createCheckoutSession,
-  createPortalSession,
   getBillingDetails,
   getAuthoritativeBillingState,
   deleteDomain,
@@ -46,6 +44,8 @@ import { normalizeSiteSlug, RESERVED_SITE_SLUGS, validateSiteSlug } from './src/
 import { createDomainModules } from './server/modules';
 import { calendarProviders } from './server/adapters/calendar';
 import { stripeAdapter } from './server/adapters/stripe';
+import { cloudflareAdapter } from './server/adapters/cloudflare';
+import { createBillingController } from './server/domains/billing/controller';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,8 +56,10 @@ const app = express();
 export const domainModules = createDomainModules(adminDb, {
   resolvePublicSite: (handle) => getPublishedSiteByHandle(handle),
   billing: stripeAdapter,
+  cloudflare: cloudflareAdapter,
   providers: calendarProviders()
 });
+const billingController = createBillingController(domainModules.billing.service, (request) => getAuthenticatedUser(request));
 const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS || 1);
 app.set('trust proxy', Number.isInteger(trustedProxyHops) && trustedProxyHops >= 0 ? trustedProxyHops : 1);
 const PORT = Number(process.env.PORT) || 3000;
@@ -4416,26 +4418,7 @@ app.post('/api/billing/activate-free', async (req: Request, res: Response) => {
 });
 
 app.post('/api/billing/checkout-session', async (req: Request, res: Response) => {
-  const user = await getAuthenticatedUser(req);
-  if (!user) return res.status(401).json({ error: 'Authentication required' });
-
-  const plan = req.body?.plan === 'studio' || req.body?.plan === 'business' ? 'studio' : req.body?.plan;
-  const isYearly = req.body?.isYearly === true;
-  if (plan !== 'pro' && plan !== 'studio') return res.status(400).json({ error: 'A paid plan is required' });
-
-  try {
-    const idempotencyKey = typeof req.headers['idempotency-key'] === 'string'
-      ? req.headers['idempotency-key']
-      : undefined;
-    const url = await createCheckoutSession(user, plan, isYearly, idempotencyKey);
-    return res.status(200).json({ url });
-  } catch (error) {
-    console.error('[Billing checkout]', error);
-    const message = error instanceof Error ? error.message : 'Checkout unavailable';
-    console.error('[Billing checkout detail]', message);
-    if (message === 'STRIPE_SUBSCRIPTION_EXISTS') return res.status(409).json({ error: 'An active subscription already exists. Manage it from Billing Portal.' });
-    return res.status(message.includes('NOT_CONFIGURED') ? 503 : 502).json({ error: 'Checkout is temporarily unavailable' });
-  }
+  return billingController.checkout(req, res);
 });
 
 app.get('/api/billing/checkout-session', async (req: Request, res: Response) => {
@@ -4516,16 +4499,7 @@ app.post('/api/v1/referrals/qualify', async (req: Request, res: Response) => {
 });
 
 app.post('/api/billing/portal-session', async (req: Request, res: Response) => {
-  const user = await getAuthenticatedUser(req);
-  if (!user) return res.status(401).json({ error: 'Authentication required' });
-
-  try {
-    return res.status(200).json({ url: await createPortalSession(user.uid) });
-  } catch (error) {
-    console.error('[Billing portal]', error);
-    const message = error instanceof Error ? error.message : 'Billing portal unavailable';
-    return res.status(message.includes('NOT_FOUND') ? 404 : 503).json({ error: message });
-  }
+  return billingController.portal(req, res);
 });
 
 app.get('/api/integrations/providers', async (_req: Request, res: Response) => {

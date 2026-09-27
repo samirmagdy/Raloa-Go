@@ -10,16 +10,18 @@ import { createBillingModule, type BillingProvider } from './domains/billing';
 import { createDomainsModule } from './domains/domains';
 import { createMediaModule } from './domains/media';
 import { createIntegrationsModule, type ExternalProvider } from './domains/integrations';
+import type { CloudflareProvider } from './core/providers';
 
 export function createDomainModules(db: Firestore, dependencies: {
   resolvePublicSite: (handle: string) => Promise<Record<string, unknown> | null>;
   billing: BillingProvider;
+  cloudflare: CloudflareProvider;
   providers?: readonly ExternalProvider[];
 }) {
   return {
     sites: createSitesModule(db), publishing: createPublishingModule(dependencies.resolvePublicSite),
     audience: createAudienceModule(db), analytics: createAnalyticsModule(db), bookings: createBookingsModule(db),
     products: createProductsModule(db), orders: createOrdersModule(db), billing: createBillingModule(dependencies.billing),
-    domains: createDomainsModule(db), media: createMediaModule(db), integrations: createIntegrationsModule(dependencies.providers || [])
+    domains: createDomainsModule(db, dependencies.cloudflare), media: createMediaModule(db), integrations: createIntegrationsModule(dependencies.providers || [])
   };
 }
