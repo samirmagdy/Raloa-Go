@@ -6,6 +6,67 @@ info:
 servers:
   - url: https://raloa.app
 paths:
+  /api/creator/audience:
+    get:
+      operationId: get_get_api_creator_audience
+      parameters:
+        - { name: type, in: query, required: false, schema: { type: string, enum: [subscribers, submissions] } }
+        - { name: siteHandle, in: query, required: false, schema: { type: string } }
+        - { name: search, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string } }
+        - { name: from, in: query, required: false, schema: { type: string, format: date } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Owner-scoped audience records and calculated metrics }
+        '400': { description: Invalid audience filter }
+        '401': { description: Authentication required }
+        '404': { description: Owned site not found }
+        '503': { description: Audience persistence unavailable }
+  /api/creator/audience/subscribers:
+    post:
+      operationId: post_post_api_creator_audience_subscribers
+      responses:
+        '201': { description: Subscriber created or updated idempotently by creator/site/email }
+        '400': { description: Invalid email }
+        '401': { description: Authentication required }
+        '404': { description: Owned site not found }
+        '503': { description: Audience persistence unavailable }
+  /api/creator/audience/{kind}/{id}:
+    patch:
+      operationId: patch_patch_api_creator_audience_kind_id
+      parameters:
+        - { name: kind, in: path, required: true, schema: { type: string, enum: [subscribers, submissions] } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Audience record status updated }
+        '400': { description: Invalid type or status }
+        '401': { description: Authentication required }
+        '404': { description: Record not owned by creator or not found }
+        '503': { description: Audience persistence unavailable }
+    delete:
+      operationId: delete_delete_api_creator_audience_kind_id
+      parameters:
+        - { name: kind, in: path, required: true, schema: { type: string, enum: [subscribers, submissions] } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Audience record deleted }
+        '400': { description: Invalid audience type }
+        '401': { description: Authentication required }
+        '404': { description: Record not owned by creator or not found }
+        '503': { description: Audience persistence unavailable }
+  /api/creator/audience/export:
+    get:
+      operationId: get_get_api_creator_audience_export
+      parameters:
+        - { name: type, in: query, required: false, schema: { type: string, enum: [subscribers, submissions] } }
+        - { name: format, in: query, required: false, schema: { type: string, enum: [csv, json] } }
+        - { name: siteHandle, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { description: Owner-scoped CSV or JSON export }
+        '400': { description: Invalid audience type }
+        '401': { description: Authentication required }
+        '404': { description: Owned site not found }
+        '503': { description: Audience export unavailable }
   /api/integrations/providers:
     get:
       operationId: get_get_api_integrations_providers

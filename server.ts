@@ -1866,19 +1866,276 @@ app.post('/api/creator/bookings/:bookingId/cancel', async (req: Request, res: Re
 
 app.post('/api/v1/public/newsletter', async (req: Request, res: Response) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const siteHandle = typeof req.body?.siteHandle === 'string' ? req.body.siteHandle.trim().toLowerCase() : '';
   if (!validEmail(email)) return res.status(400).json({ error: 'A valid email is required' });
   const rate = await enforcePublicRateLimit(req, 'newsletter', 5, 60 * 60 * 1000);
   if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many newsletter requests', retry_after: rate.retryAfter });
   try {
-    const subscriber = { email, createdAt: new Date().toISOString() };
     if (!isAdminConfigured()) return res.status(503).json({ error: 'Newsletter service is not configured' });
+    if (siteHandle) {
+      const site = await getPublishedAudienceSite(siteHandle);
+      if (!site) return apiError(res, 404, 'PUBLIC_SITE_NOT_FOUND', 'Published site not found.');
+      const now = new Date().toISOString();
+      const id = crypto.createHash('sha256').update(`${site.userId}:${site.id}:${email}`).digest('hex').slice(0, 40);
+      const reference = adminDb.collection('audience_subscribers').doc(id);
+      const existing = await reference.get();
+      await reference.set({ creatorUserId: site.userId, siteId: site.id, siteHandle: site.handle, email, source: 'Public profile', status: 'active', createdAt: existing.data()?.createdAt || now, updatedAt: now }, { merge: true });
+      return res.status(200).json({ id: reference.id });
+    }
     const id = crypto.createHash('sha256').update(email).digest('hex').slice(0, 32);
     const reference = adminDb.collection('newsletter_subscribers').doc(id);
-    await reference.set(subscriber, { merge: true });
+    await reference.set({ email, createdAt: new Date().toISOString() }, { merge: true });
     return res.status(200).json({ id: reference.id });
   } catch (error) {
     console.error('[Newsletter signup]', error);
     return res.status(503).json({ error: 'Newsletter service is temporarily unavailable' });
+  }
+});
+
+type AudienceRecordKind = 'subscribers' | 'submissions';
+
+function audienceKind(value: unknown): AudienceRecordKind | null {
+  return value === 'subscribers' || value === 'submissions' ? value : null;
+}
+
+function validAudienceDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+async function getOwnedAudienceSite(user: AuthenticatedUser, requestedHandle?: string): Promise<{ id: string; handle: string } | null> {
+  if (!isAdminConfigured()) return null;
+  const profileRef = adminDb.collection('users').doc(user.uid);
+  const profile = await profileRef.get();
+  if (!profile.exists) return null;
+  const profileHandle = String(profile.data()?.handle || '').trim().toLowerCase();
+  const cleanHandle = String(requestedHandle || profileHandle).trim().toLowerCase();
+  if (!/^[a-z0-9_-]{3,30}$/.test(cleanHandle)) return null;
+
+  const sites = profileRef.collection('sites');
+  const siteSnapshot = requestedHandle
+    ? await sites.where('username', '==', cleanHandle).limit(1).get()
+    : await sites.doc('default').get().then((document) => ({ docs: document.exists ? [document] : [] } as any));
+  const site = siteSnapshot.docs[0];
+  if (!site) return null;
+  const siteHandle = String(site.data()?.username || '').trim().toLowerCase();
+  if (siteHandle !== cleanHandle || (profileHandle && profileHandle !== cleanHandle)) return null;
+  return { id: site.id, handle: cleanHandle };
+}
+
+async function getPublishedAudienceSite(handle: string): Promise<{ id: string; userId: string; handle: string } | null> {
+  if (!isAdminConfigured()) return null;
+  const published = await getPublishedSiteByHandle(handle);
+  if (!published?.userId) return null;
+  const cleanHandle = String(handle).trim().toLowerCase();
+  const sites = await adminDb.collection('users').doc(String(published.userId)).collection('sites').where('isPublished', '==', true).limit(100).get();
+  const site = sites.docs.find((document) => String(document.data()?.username || '').trim().toLowerCase() === cleanHandle);
+  return site ? { id: site.id, userId: String(published.userId), handle: cleanHandle } : null;
+}
+
+function audienceCollection(kind: AudienceRecordKind) {
+  return adminDb.collection(kind === 'subscribers' ? 'audience_subscribers' : 'audience_submissions');
+}
+
+function audienceRecordForResponse(kind: AudienceRecordKind, data: Record<string, unknown>, id: string): Record<string, unknown> {
+  if (kind === 'subscribers') {
+    return {
+      id,
+      email: String(data.email || ''),
+      source: String(data.source || 'Public profile'),
+      status: data.status === 'unsubscribed' ? 'unsubscribed' : 'active',
+      createdAt: data.createdAt || null,
+      updatedAt: data.updatedAt || null
+    };
+  }
+  return {
+    id,
+    name: String(data.fullName || ''),
+    email: String(data.email || ''),
+    subject: String(data.subject || ''),
+    message: String(data.message || ''),
+    status: ['new', 'read', 'archived'].includes(String(data.status)) ? data.status : 'new',
+    createdAt: data.createdAt || null,
+    updatedAt: data.updatedAt || null
+  };
+}
+
+async function listAudienceRecords(kind: AudienceRecordKind, site: { id: string; handle: string }, userId: string, search: string, status: string, from: string | null, to: string | null, limit: number) {
+  const snapshot = await audienceCollection(kind).where('creatorUserId', '==', userId).limit(5000).get();
+  const fromTime = from ? Date.parse(`${from}T00:00:00.000Z`) : 0;
+  const toTime = to ? Date.parse(`${to}T00:00:00.000Z`) + 86400000 : Number.POSITIVE_INFINITY;
+  const normalizedSearch = search.toLowerCase();
+  const records = snapshot.docs
+    .filter((document) => {
+      const data = document.data() as Record<string, unknown>;
+      if (String(data.siteId || '') !== site.id || String(data.siteHandle || '') !== site.handle) return false;
+      const createdAt = Date.parse(String(data.createdAt || ''));
+      if (!Number.isFinite(createdAt) || createdAt < fromTime || createdAt >= toTime) return false;
+      const recordStatus = String(data.status || (kind === 'subscribers' ? 'active' : 'new'));
+      if (status && recordStatus !== status) return false;
+      if (!normalizedSearch) return true;
+      const haystack = kind === 'subscribers'
+        ? `${data.email || ''} ${data.source || ''}`
+        : `${data.fullName || ''} ${data.email || ''} ${data.subject || ''} ${data.message || ''}`;
+      return haystack.toLowerCase().includes(normalizedSearch);
+    })
+    .sort((a, b) => String(b.data()?.createdAt || '').localeCompare(String(a.data()?.createdAt || '')));
+  return { total: records.length, records: records.slice(0, limit).map((document) => audienceRecordForResponse(kind, document.data() as Record<string, unknown>, document.id)), hasMore: records.length > limit };
+}
+
+app.get('/api/creator/audience', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
+  const kind = audienceKind(req.query.type || 'subscribers');
+  if (!kind) return apiError(res, 400, 'INVALID_AUDIENCE_TYPE', 'Audience type must be subscribers or submissions.');
+  const requestedHandle = typeof req.query.siteHandle === 'string' ? req.query.siteHandle : undefined;
+  const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 120) : '';
+  const status = typeof req.query.status === 'string' ? req.query.status.trim().slice(0, 30) : '';
+  const from = req.query.from ? (validAudienceDate(req.query.from) ? req.query.from : null) : null;
+  const to = req.query.to ? (validAudienceDate(req.query.to) ? req.query.to : null) : null;
+  if ((req.query.from && !from) || (req.query.to && !to) || (from && to && from > to)) return apiError(res, 400, 'INVALID_AUDIENCE_RANGE', 'Use a valid inclusive date range.');
+  const requestedLimit = Number(req.query.limit || 100);
+  const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 100;
+  try {
+    const site = await getOwnedAudienceSite(user, requestedHandle);
+    if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
+    const [list, subscriberSnapshot, submissionSnapshot, viewsSnapshot] = await Promise.all([
+      listAudienceRecords(kind, site, user.uid, search, status, from, to, limit),
+      audienceCollection('subscribers').where('creatorUserId', '==', user.uid).limit(5000).get(),
+      audienceCollection('submissions').where('creatorUserId', '==', user.uid).limit(5000).get(),
+      adminDb.collection('page_views').where('siteOwnerId', '==', user.uid).limit(10000).get()
+    ]);
+    const fromTime = from ? Date.parse(`${from}T00:00:00.000Z`) : 0;
+    const toTime = to ? Date.parse(`${to}T00:00:00.000Z`) + 86400000 : Number.POSITIVE_INFINITY;
+    const inSiteRange = (document: FirebaseFirestore.QueryDocumentSnapshot) => {
+      const data = document.data();
+      const createdAt = Date.parse(String(data.createdAt || ''));
+      return String(data.siteId || '') === site.id && String(data.siteHandle || '') === site.handle && Number.isFinite(createdAt) && createdAt >= fromTime && createdAt < toTime;
+    };
+    const subscribers = subscriberSnapshot.docs.filter(inSiteRange);
+    const submissions = submissionSnapshot.docs.filter(inSiteRange);
+    const activeSubscribers = subscribers.filter((document) => document.data().status !== 'unsubscribed').length;
+    const uniqueVisitors = new Set(viewsSnapshot.docs.filter((document) => {
+      const data = document.data();
+      const timestamp = Date.parse(String(data.timestamp || ''));
+      return String(data.siteHandle || '') === site.handle && Number.isFinite(timestamp) && timestamp >= fromTime && timestamp < toTime;
+    }).map((document) => String(document.data().visitorIdHash || document.id)));
+    const conversionRate = uniqueVisitors.size ? Number(((subscribers.length / uniqueVisitors.size) * 100).toFixed(2)) : null;
+    return res.status(200).json({
+      site,
+      data: list.records,
+      total: list.total,
+      hasMore: list.hasMore,
+      metrics: {
+        subscribers: subscribers.length,
+        activeSubscribers,
+        newSubscribers: subscribers.filter((document) => Date.parse(String(document.data().createdAt || '')) >= Date.now() - 30 * 86400000).length,
+        submissions: submissions.length,
+        newSubmissions: submissions.filter((document) => Date.parse(String(document.data().createdAt || '')) >= Date.now() - 30 * 86400000).length,
+        uniqueVisitors: uniqueVisitors.size,
+        conversionRate
+      },
+      dateRange: { from, to }
+    });
+  } catch (error) {
+    console.error('[Audience read]', error);
+    return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is temporarily unavailable.');
+  }
+});
+
+app.post('/api/creator/audience/subscribers', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const source = typeof req.body?.source === 'string' ? req.body.source.trim().slice(0, 120) : 'Manual Entry';
+  if (!validEmail(email)) return apiError(res, 400, 'INVALID_EMAIL', 'A valid email is required.');
+  try {
+    const site = await getOwnedAudienceSite(user, typeof req.body?.siteHandle === 'string' ? req.body.siteHandle : undefined);
+    if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
+    const now = new Date().toISOString();
+    const id = crypto.createHash('sha256').update(`${user.uid}:${site.id}:${email}`).digest('hex').slice(0, 40);
+    const reference = adminDb.collection('audience_subscribers').doc(id);
+    const existing = await reference.get();
+    await reference.set({ creatorUserId: user.uid, siteId: site.id, siteHandle: site.handle, email, source: source || 'Manual Entry', status: 'active', createdAt: existing.data()?.createdAt || now, updatedAt: now }, { merge: true });
+    return res.status(201).json({ data: audienceRecordForResponse('subscribers', { email, source: source || 'Manual Entry', status: 'active', createdAt: now, updatedAt: now }, id) });
+  } catch (error) {
+    console.error('[Audience subscriber create]', error);
+    return apiError(res, 503, 'AUDIENCE_WRITE_FAILED', 'The subscriber could not be saved.');
+  }
+});
+
+app.patch('/api/creator/audience/:kind/:id', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
+  const kind = audienceKind(req.params.kind);
+  if (!kind) return apiError(res, 400, 'INVALID_AUDIENCE_TYPE', 'Invalid audience type.');
+  const status = typeof req.body?.status === 'string' ? req.body.status : '';
+  const allowedStatuses = kind === 'subscribers' ? ['active', 'unsubscribed'] : ['new', 'read', 'archived'];
+  if (!allowedStatuses.includes(status)) return apiError(res, 400, 'INVALID_AUDIENCE_STATUS', 'Invalid audience status.');
+  try {
+    const reference = audienceCollection(kind).doc(String(req.params.id || ''));
+    const snapshot = await reference.get();
+    if (!snapshot.exists || snapshot.data()?.creatorUserId !== user.uid) return apiError(res, 404, 'AUDIENCE_RECORD_NOT_FOUND', 'Audience record not found.');
+    await reference.set({ status, updatedAt: new Date().toISOString(), ...(status === 'unsubscribed' ? { unsubscribedAt: new Date().toISOString() } : {}) }, { merge: true });
+    return res.status(200).json({ data: audienceRecordForResponse(kind, { ...snapshot.data(), status }, reference.id) });
+  } catch (error) {
+    console.error('[Audience status update]', error);
+    return apiError(res, 503, 'AUDIENCE_WRITE_FAILED', 'The audience record could not be updated.');
+  }
+});
+
+app.delete('/api/creator/audience/:kind/:id', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
+  const kind = audienceKind(req.params.kind);
+  if (!kind) return apiError(res, 400, 'INVALID_AUDIENCE_TYPE', 'Invalid audience type.');
+  try {
+    const reference = audienceCollection(kind).doc(String(req.params.id || ''));
+    const snapshot = await reference.get();
+    if (!snapshot.exists || snapshot.data()?.creatorUserId !== user.uid) return apiError(res, 404, 'AUDIENCE_RECORD_NOT_FOUND', 'Audience record not found.');
+    await reference.delete();
+    return res.status(204).send();
+  } catch (error) {
+    console.error('[Audience delete]', error);
+    return apiError(res, 503, 'AUDIENCE_WRITE_FAILED', 'The audience record could not be deleted.');
+  }
+});
+
+app.get('/api/creator/audience/export', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
+  const kind = audienceKind(req.query.type || 'subscribers');
+  if (!kind) return apiError(res, 400, 'INVALID_AUDIENCE_TYPE', 'Invalid audience type.');
+  try {
+    const site = await getOwnedAudienceSite(user, typeof req.query.siteHandle === 'string' ? req.query.siteHandle : undefined);
+    if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
+    const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 120) : '';
+    const status = typeof req.query.status === 'string' ? req.query.status.trim().slice(0, 30) : '';
+    const from = req.query.from && validAudienceDate(req.query.from) ? req.query.from : null;
+    const to = req.query.to && validAudienceDate(req.query.to) ? req.query.to : null;
+    const result = await listAudienceRecords(kind, site, user.uid, search, status, from, to, 5000);
+    const format = req.query.format === 'csv' ? 'csv' : 'json';
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="raloa-${site.handle}-${kind}-${stamp}.json"`);
+      return res.status(200).send(JSON.stringify(result.records, null, 2));
+    }
+    const columns = kind === 'subscribers' ? ['id', 'email', 'source', 'status', 'createdAt'] : ['id', 'name', 'email', 'subject', 'message', 'status', 'createdAt'];
+    const csvEscape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const csv = [columns.join(','), ...result.records.map((record) => columns.map((column) => csvEscape(record[column])).join(','))].join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="raloa-${site.handle}-${kind}-${stamp}.csv"`);
+    return res.status(200).send(`\ufeff${csv}`);
+  } catch (error) {
+    console.error('[Audience export]', error);
+    return apiError(res, 503, 'AUDIENCE_EXPORT_FAILED', 'The audience export could not be generated.');
   }
 });
 
@@ -1930,6 +2187,25 @@ app.post('/api/v1/public/contact', async (req: Request, res: Response) => {
   };
   if (isAdminConfigured()) {
     try {
+      const siteHandle = typeof req.body?.siteHandle === 'string' ? req.body.siteHandle.trim().toLowerCase() : '';
+      if (siteHandle) {
+        const site = await getPublishedAudienceSite(siteHandle);
+        if (!site) return apiError(res, 404, 'PUBLIC_SITE_NOT_FOUND', 'Published site not found.');
+        const reference = adminDb.collection('audience_submissions').doc();
+        await reference.set({
+          creatorUserId: site.userId,
+          siteId: site.id,
+          siteHandle: site.handle,
+          fullName: submission.fullName,
+          email: submission.email,
+          subject: submission.subject,
+          message: submission.message,
+          status: 'new',
+          createdAt: submission.createdAt,
+          updatedAt: submission.createdAt
+        });
+        return res.status(200).json({ status: 'success', message: 'Inquiry successfully received', data: { id: reference.id } });
+      }
       await adminDb.collection('contacts').add(submission);
     } catch (error) {
       console.error('[Contact persistence]', error);

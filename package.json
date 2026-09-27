@@ -14,6 +14,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:entrypoint": "NODE_ENV=test tsx test-entrypoint.ts",
+    "test:audience": "tsx test-audience.ts",
     "test:public-fallback": "tsx test-public-fallback.ts",
     "test:analytics": "NODE_ENV=test tsx test-analytics.ts",
     "test:entitlements": "NODE_ENV=test tsx test-plan-entitlements.ts",

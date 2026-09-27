@@ -41,6 +41,11 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
+  const [audienceMode, setAudienceMode] = useState<'newsletter' | 'contact' | null>(null);
+  const [audienceEmail, setAudienceEmail] = useState('');
+  const [audienceName, setAudienceName] = useState('');
+  const [audienceMessage, setAudienceMessage] = useState('');
+  const [audienceStatus, setAudienceStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const recordedPageView = useRef<string | null>(null);
 
   // Public pages must be populated by the server's persisted published record.
@@ -151,12 +156,18 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
 
   const handleLinkSelect = (link: typeof creator.sampleLinks[0]) => {
     recordLinkClick(link.id, link.url, cleanHandle);
-    if (link.type === 'booking' && !/^https?:\/\//i.test(link.url)) {
+    const linkType = String(link.type || 'link');
+    if (linkType === 'booking' && !/^https?:\/\//i.test(link.url)) {
       setBookingOpen(true);
       return;
     }
-    if (link.type === 'shop' && !/^https?:\/\//i.test(link.url)) {
+    if (linkType === 'shop' && !/^https?:\/\//i.test(link.url)) {
       setStoreOpen(true);
+      return;
+    }
+    if ((linkType === 'newsletter' || linkType === 'contact') && !/^https?:\/\//i.test(link.url)) {
+      setAudienceMode(linkType as 'newsletter' | 'contact');
+      setAudienceStatus('idle');
       return;
     }
     if (link.type === 'gallery') return;
@@ -164,6 +175,26 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
       return;
     } else {
       window.open(link.url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const submitAudienceCapture = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!audienceMode) return;
+    setAudienceStatus('loading');
+    try {
+      const endpoint = audienceMode === 'newsletter' ? '/api/v1/public/newsletter' : '/api/v1/public/contact';
+      const body = audienceMode === 'newsletter'
+        ? { siteHandle: cleanHandle, email: audienceEmail }
+        : { siteHandle: cleanHandle, fullName: audienceName, email: audienceEmail, subject: 'Public profile inquiry', message: audienceMessage };
+      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!response.ok) throw new Error('AUDIENCE_CAPTURE_FAILED');
+      setAudienceStatus('success');
+      setAudienceEmail('');
+      setAudienceName('');
+      setAudienceMessage('');
+    } catch (_) {
+      setAudienceStatus('error');
     }
   };
 
@@ -375,6 +406,27 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
         />
       )}
       {storeOpen && <ProductStoreModal handle={cleanHandle} locale={locale} onClose={() => setStoreOpen(false)} />}
+      {audienceMode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="audience-capture-title">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h2 id="audience-capture-title" className="text-lg font-bold text-slate-900 dark:text-white">{audienceMode === 'newsletter' ? (isRtl ? 'اشترك في النشرة' : 'Subscribe to the newsletter') : (isRtl ? 'أرسل رسالة' : 'Send a message')}</h2>
+              <button type="button" onClick={() => setAudienceMode(null)} aria-label={isRtl ? 'إغلاق' : 'Close'} className="text-slate-400 hover:text-slate-700 dark:hover:text-white"><ArrowLeft className="w-5 h-5 rotate-45" /></button>
+            </div>
+            {audienceStatus === 'success' ? (
+              <div className="py-8 text-center text-sm text-emerald-600 dark:text-emerald-400">{audienceMode === 'newsletter' ? (isRtl ? 'تم الاشتراك بنجاح.' : 'You are subscribed.') : (isRtl ? 'تم إرسال رسالتك.' : 'Your message was sent.')}</div>
+            ) : (
+              <form onSubmit={(event) => void submitAudienceCapture(event)} className="space-y-3">
+                {audienceMode === 'contact' && <input required value={audienceName} onChange={(event) => setAudienceName(event.target.value)} placeholder={isRtl ? 'الاسم' : 'Name'} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />}
+                <input required type="email" value={audienceEmail} onChange={(event) => setAudienceEmail(event.target.value)} placeholder={isRtl ? 'البريد الإلكتروني' : 'Email address'} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+                {audienceMode === 'contact' && <textarea required value={audienceMessage} onChange={(event) => setAudienceMessage(event.target.value)} placeholder={isRtl ? 'رسالتك' : 'Your message'} rows={4} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />}
+                {audienceStatus === 'error' && <p role="alert" className="text-xs text-rose-600">{isRtl ? 'تعذر الإرسال. حاول مرة أخرى.' : 'Could not submit. Please try again.'}</p>}
+                <button type="submit" disabled={audienceStatus === 'loading'} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60">{audienceStatus === 'loading' ? (isRtl ? 'جار الإرسال...' : 'Sending...') : (isRtl ? 'إرسال' : 'Submit')}</button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

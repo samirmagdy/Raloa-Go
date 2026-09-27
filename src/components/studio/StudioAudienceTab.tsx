@@ -1,474 +1,163 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Mail,
-  MessageSquare,
-  Download,
-  Search,
-  TrendingUp,
-  FileSpreadsheet,
-  CheckCircle2,
-  Plus,
-  Trash2,
-  X
-} from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Loader2, Mail, MessageSquare, Plus, Search, Trash2, X } from 'lucide-react';
 import { Locale } from '../../types';
+import { auth } from '../../lib/firebase';
 
-interface SubscriberItem {
-  id: string;
-  email: string;
-  date: string;
-  source: string;
-  status: 'active' | 'unsubscribed';
+type AudienceTab = 'subscribers' | 'submissions';
+type SubscriberStatus = 'active' | 'unsubscribed';
+type SubmissionStatus = 'new' | 'read' | 'archived';
+
+interface SubscriberItem { id: string; email: string; createdAt: string | null; source: string; status: SubscriberStatus; }
+interface SubmissionItem { id: string; name: string; email: string; subject: string; message: string; createdAt: string | null; status: SubmissionStatus; }
+interface AudienceMetrics { subscribers: number; activeSubscribers: number; newSubscribers: number; submissions: number; newSubmissions: number; uniqueVisitors: number; conversionRate: number | null; }
+interface AudienceResponse { data: SubscriberItem[] | SubmissionItem[]; total: number; hasMore: boolean; metrics: AudienceMetrics; }
+
+interface StudioAudienceTabProps { handle: string; locale: Locale; }
+
+function formatDate(value: string | null, locale: Locale): string {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return '—';
+  return parsed.toLocaleDateString(locale === 'ar' ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-interface FormResponseItem {
-  id: string;
-  name: string;
-  email: string;
-  message: string;
-  date: string;
-}
-
-interface StudioAudienceTabProps {
-  handle: string;
-  locale: Locale;
-}
-
-const DEFAULT_SUBSCRIBERS: SubscriberItem[] = [
-  { id: 'sub-1', email: 'sara.designer@gmail.com', date: '2026-09-23', source: 'Bio Link #1', status: 'active' },
-  { id: 'sub-2', email: 'kareem.tech@outlook.com', date: '2026-09-22', source: 'Newsletter Card', status: 'active' },
-  { id: 'sub-3', email: 'mark.founder@craft.io', date: '2026-09-20', source: 'Direct Profile', status: 'active' },
-  { id: 'sub-4', email: 'nora.arts@gmail.com', date: '2026-09-19', source: 'Portfolio Page', status: 'active' },
-  { id: 'sub-5', email: 'adam.sound@icloud.com', date: '2026-09-18', source: 'Bio Link #2', status: 'active' }
-];
-
-const DEFAULT_FORMS: FormResponseItem[] = [
-  { id: 'fr-1', name: 'Leila Vance', email: 'leila@creativeagency.de', message: 'Interested in booking you for a 3-week design consultation project starting next month.', date: '2026-09-23' },
-  { id: 'fr-2', name: 'Tariq Mansour', email: 'tariq@startuphub.ae', message: 'Loved your podcast episode. Would like to invite you as a keynote speaker at our creator summit.', date: '2026-09-21' },
-  { id: 'fr-3', name: 'Maya Chen', email: 'maya@studiofocus.com', message: 'Question about your Lightroom presets licensing for commercial photography campaigns.', date: '2026-09-17' }
-];
-
-export const StudioAudienceTab: React.FC<StudioAudienceTabProps> = ({
-  handle,
-  locale
-}) => {
+export const StudioAudienceTab: React.FC<StudioAudienceTabProps> = ({ handle, locale }) => {
   const isRtl = locale === 'ar';
-  const [activeSubTab, setActiveSubTab] = useState<'subscribers' | 'forms'>('subscribers');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<AudienceTab>('subscribers');
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newSource, setNewSource] = useState('Manual Entry');
+  const [subscribers, setSubscribers] = useState<SubscriberItem[]>([]);
+  const [submissions, setSubmissions] = useState<SubmissionItem[]>([]);
+  const [metrics, setMetrics] = useState<AudienceMetrics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const storageKeySubs = `raloa_audience_subs_${handle || 'creator'}`;
-  const storageKeyForms = `raloa_audience_forms_${handle || 'creator'}`;
-
-  // Persisted state loaded from localStorage or initialized with realistic data
-  const [subscribers, setSubscribers] = useState<SubscriberItem[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem(storageKeySubs);
-        if (stored) return JSON.parse(stored);
-      } catch (err) {
-        console.error('Error loading subscribers:', err);
-      }
+  const request = useCallback(async (url: string, init?: RequestInit): Promise<Response> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error(isRtl ? 'يرجى تسجيل الدخول لإدارة الجمهور.' : 'Sign in to manage your audience.');
+    const token = await currentUser.getIdToken();
+    const response = await fetch(url, {
+      ...init,
+      headers: { Authorization: `Bearer ${token}`, ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...(init?.headers || {}) }
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.message || payload?.error?.message || payload?.error || (isRtl ? 'تعذر تحميل بيانات الجمهور.' : 'Audience request failed.'));
     }
-    return DEFAULT_SUBSCRIBERS;
-  });
+    return response;
+  }, [isRtl]);
 
-  const [formResponses, setFormResponses] = useState<FormResponseItem[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem(storageKeyForms);
-        if (stored) return JSON.parse(stored);
-      } catch (err) {
-        console.error('Error loading forms:', err);
-      }
-    }
-    return DEFAULT_FORMS;
-  });
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams({ type: activeTab, siteHandle: handle, limit: '500' });
+    if (search.trim()) params.set('search', search.trim());
+    if (status) params.set('status', status);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    return params.toString();
+  }, [activeTab, from, handle, search, status, to]);
 
-  // Save changes to localStorage
+  const loadAudience = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await request(`/api/creator/audience?${queryString}`);
+      const payload = await response.json() as AudienceResponse;
+      setMetrics(payload.metrics || null);
+      if (activeTab === 'subscribers') setSubscribers(payload.data as SubscriberItem[]);
+      else setSubmissions(payload.data as SubmissionItem[]);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : (isRtl ? 'تعذر تحميل بيانات الجمهور.' : 'Could not load audience data.'));
+    } finally { setLoading(false); }
+  }, [activeTab, isRtl, queryString, request]);
+
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(storageKeySubs, JSON.stringify(subscribers));
-      } catch (err) {
-        console.error('Failed to save subscribers:', err);
-      }
-    }
-  }, [subscribers, storageKeySubs]);
+    const timer = window.setTimeout(() => { void loadAudience(); }, search ? 250 : 0);
+    return () => window.clearTimeout(timer);
+  }, [loadAudience, search]);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(storageKeyForms, JSON.stringify(formResponses));
-      } catch (err) {
-        console.error('Failed to save forms:', err);
-      }
-    }
-  }, [formResponses, storageKeyForms]);
-
-  const filteredSubscribers = subscribers.filter((s) =>
-    s.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.source.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const filteredForms = formResponses.filter((f) =>
-    f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    f.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    f.message.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const handleAddSubscriber = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newEmail.trim() || !newEmail.includes('@')) return;
-
-    const newSub: SubscriberItem = {
-      id: `sub-${Date.now()}`,
-      email: newEmail.trim(),
-      date: new Date().toISOString().split('T')[0],
-      source: newSource.trim() || 'Manual Entry',
-      status: 'active'
-    };
-
-    setSubscribers((prev) => [newSub, ...prev]);
-    setNewEmail('');
-    setShowAddModal(false);
+  const deleteRecord = async (kind: AudienceTab, id: string) => {
+    if (!window.confirm(isRtl ? 'هل تريد حذف هذا السجل نهائياً؟' : 'Delete this record permanently?')) return;
+    setBusyId(id);
+    try { await request(`/api/creator/audience/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE' }); await loadAudience(); }
+    catch (deleteError) { setError(deleteError instanceof Error ? deleteError.message : (isRtl ? 'تعذر الحذف.' : 'Could not delete the record.')); }
+    finally { setBusyId(null); }
   };
 
-  const handleDeleteSubscriber = (id: string) => {
-    setSubscribers((prev) => prev.filter((s) => s.id !== id));
+  const updateStatus = async (kind: AudienceTab, id: string, nextStatus: string) => {
+    setBusyId(id);
+    try { await request(`/api/creator/audience/${kind}/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ status: nextStatus }) }); await loadAudience(); }
+    catch (statusError) { setError(statusError instanceof Error ? statusError.message : (isRtl ? 'تعذر تحديث الحالة.' : 'Could not update status.')); }
+    finally { setBusyId(null); }
   };
 
-  const handleDeleteFormResponse = (id: string) => {
-    setFormResponses((prev) => prev.filter((f) => f.id !== id));
+  const addSubscriber = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusyId('new');
+    try {
+      await request('/api/creator/audience/subscribers', { method: 'POST', body: JSON.stringify({ siteHandle: handle, email: newEmail, source: newSource }) });
+      setNewEmail(''); setNewSource('Manual Entry'); setShowAddModal(false); setActiveTab('subscribers'); await loadAudience();
+    } catch (addError) { setError(addError instanceof Error ? addError.message : (isRtl ? 'تعذر إضافة المشترك.' : 'Could not add subscriber.')); }
+    finally { setBusyId(null); }
   };
 
-  const handleExportCsv = () => {
-    let csvContent = 'data:text/csv;charset=utf-8,';
-    if (activeSubTab === 'subscribers') {
-      csvContent += 'Email,Date,Source,Status\n';
-      filteredSubscribers.forEach((s) => {
-        csvContent += `"${s.email}","${s.date}","${s.source}","${s.status}"\n`;
-      });
-    } else {
-      csvContent += 'Name,Email,Message,Date\n';
-      filteredForms.forEach((f) => {
-        csvContent += `"${f.name}","${f.email}","${f.message.replace(/"/g, '""')}","${f.date}"\n`;
-      });
-    }
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `raloa-${handle}-${activeSubTab}-export.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleExportJson = () => {
-    const dataToExport = activeSubTab === 'subscribers' ? filteredSubscribers : filteredForms;
-    const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `raloa-${handle}-${activeSubTab}-export.json`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const exportAudience = async (format: 'csv' | 'json') => {
+    setBusyId(`export-${format}`);
+    try {
+      const response = await request(`/api/creator/audience/export?${queryString}&format=${format}`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a'); link.href = url; link.download = `raloa-${handle}-${activeTab}-export.${format}`; link.click(); URL.revokeObjectURL(url);
+    } catch (exportError) { setError(exportError instanceof Error ? exportError.message : (isRtl ? 'تعذر التصدير.' : 'Could not export audience data.')); }
+    finally { setBusyId(null); }
   };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-150" dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* 1. Audience Metrics Overview */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">{isRtl ? 'المشتركون بالبريد' : 'Subscribers'}</span>
-            <Mail className="w-4 h-4 text-indigo-500" />
-          </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">{subscribers.length.toLocaleString()}</p>
-          <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
-            +18.4% {isRtl ? 'هذا الشهر' : 'this month'}
-          </p>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">{isRtl ? 'رسائل النماذج' : 'Form Leads'}</span>
-            <MessageSquare className="w-4 h-4 text-blue-500" />
-          </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">{formResponses.length.toLocaleString()}</p>
-          <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
-            +12.1% {isRtl ? 'معدل الرد' : 'response rate'}
-          </p>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">{isRtl ? 'معدل التحويل' : 'Conversion'}</span>
-            <TrendingUp className="w-4 h-4 text-emerald-500" />
-          </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">4.8%</p>
-          <p className="text-[11px] text-slate-400 font-medium mt-1">
-            {isRtl ? 'من إجمالي الزوار الفريدين' : 'from unique visitors'}
-          </p>
-        </div>
+        <MetricCard label={isRtl ? 'المشتركون' : 'Subscribers'} value={metrics?.subscribers ?? 0} detail={metrics ? `+${metrics.newSubscribers} ${isRtl ? 'آخر 30 يوماً' : 'last 30 days'}` : '—'} icon={<Mail className="w-4 h-4 text-indigo-500" />} />
+        <MetricCard label={isRtl ? 'رسائل النماذج' : 'Form leads'} value={metrics?.submissions ?? 0} detail={metrics ? `+${metrics.newSubmissions} ${isRtl ? 'آخر 30 يوماً' : 'last 30 days'}` : '—'} icon={<MessageSquare className="w-4 h-4 text-blue-500" />} />
+        <MetricCard label={isRtl ? 'معدل التحويل' : 'Conversion'} value={metrics?.conversionRate === null || metrics?.conversionRate === undefined ? '—' : `${metrics.conversionRate}%`} detail={metrics ? `${metrics.uniqueVisitors.toLocaleString()} ${isRtl ? 'زائر فريد' : 'unique visitors'}` : (isRtl ? 'لا توجد بيانات' : 'No data yet')} icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} />
       </div>
 
-      {/* 2. Sub-tab Selector & Export Controls */}
       <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Sub-tab Pills */}
           <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700">
-            <button
-              type="button"
-              onClick={() => setActiveSubTab('subscribers')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                activeSubTab === 'subscribers'
-                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Mail className="w-3.5 h-3.5" />
-              <span>{isRtl ? 'المشتركون في النشرة' : 'Subscribers'}</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 dark:bg-slate-600 font-mono">
-                {subscribers.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveSubTab('forms')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                activeSubTab === 'forms'
-                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>{isRtl ? 'رسائل النماذج' : 'Form Responses'}</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 dark:bg-slate-600 font-mono">
-                {formResponses.length}
-              </span>
-            </button>
+            <AudienceTabButton active={activeTab === 'subscribers'} onClick={() => { setActiveTab('subscribers'); setStatus(''); }} icon={<Mail className="w-3.5 h-3.5" />} label={isRtl ? 'المشتركون' : 'Subscribers'} count={metrics?.subscribers ?? 0} />
+            <AudienceTabButton active={activeTab === 'submissions'} onClick={() => { setActiveTab('submissions'); setStatus(''); }} icon={<MessageSquare className="w-3.5 h-3.5" />} label={isRtl ? 'رسائل النماذج' : 'Form responses'} count={metrics?.submissions ?? 0} />
           </div>
-
-          {/* Export & Action Buttons */}
           <div className="flex items-center gap-2">
-            {activeSubTab === 'subscribers' && (
-              <button
-                type="button"
-                onClick={() => setShowAddModal(true)}
-                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{isRtl ? 'إضافة مشترك' : 'Add Subscriber'}</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-              <span>{isRtl ? 'تصدير CSV' : 'Export CSV'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleExportJson}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5 text-indigo-600" />
-              <span>{isRtl ? 'تصدير JSON' : 'Export JSON'}</span>
-            </button>
+            {activeTab === 'subscribers' && <button type="button" onClick={() => setShowAddModal(true)} className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" />{isRtl ? 'إضافة مشترك' : 'Add subscriber'}</button>}
+            <button type="button" disabled={Boolean(busyId)} onClick={() => void exportAudience('csv')} className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"><FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />CSV</button>
+            <button type="button" disabled={Boolean(busyId)} onClick={() => void exportAudience('json')} className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"><Download className="w-3.5 h-3.5 text-indigo-600" />JSON</button>
           </div>
         </div>
 
-        {/* Search Filter Input */}
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3.5 rtl:left-auto rtl:right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={
-              activeSubTab === 'subscribers'
-                ? isRtl ? 'بحث في البريد الإلكتروني أو المصدر...' : 'Search by email or source...'
-                : isRtl ? 'بحث في الاسم أو الرسالة...' : 'Search by name or message content...'
-            }
-            className="w-full pl-9 rtl:pl-3.5 rtl:pr-9 pr-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2">
+          <label className="relative"><Search className="w-4 h-4 absolute left-3.5 rtl:left-auto rtl:right-3.5 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={activeTab === 'subscribers' ? (isRtl ? 'بحث بالبريد أو المصدر...' : 'Search email or source...') : (isRtl ? 'بحث بالاسم أو الرسالة...' : 'Search name, email, or message...')} className="w-full pl-9 rtl:pl-3.5 rtl:pr-9 pr-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-xs" /></label>
+          <select value={status} onChange={(event) => setStatus(event.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-xs"><option value="">{isRtl ? 'كل الحالات' : 'All statuses'}</option>{activeTab === 'subscribers' ? <><option value="active">{isRtl ? 'نشط' : 'Active'}</option><option value="unsubscribed">{isRtl ? 'غير مشترك' : 'Unsubscribed'}</option></> : <><option value="new">{isRtl ? 'جديد' : 'New'}</option><option value="read">{isRtl ? 'مقروء' : 'Read'}</option><option value="archived">{isRtl ? 'مؤرشف' : 'Archived'}</option></>}</select>
+          <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} aria-label={isRtl ? 'من تاريخ' : 'From date'} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-xs" />
+          <input type="date" value={to} onChange={(event) => setTo(event.target.value)} aria-label={isRtl ? 'إلى تاريخ' : 'To date'} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-xs" />
         </div>
 
-        {/* 3. Subscribers Table */}
-        {activeSubTab === 'subscribers' && (
-          <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800">
-            <table className="w-full text-left rtl:text-right border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/80 dark:border-slate-800 text-slate-400 uppercase text-[10px] font-bold tracking-wider">
-                  <th className="py-2.5 px-3.5">{isRtl ? 'البريد الإلكتروني' : 'Email Address'}</th>
-                  <th className="py-2.5 px-3.5">{isRtl ? 'المصدر' : 'Source'}</th>
-                  <th className="py-2.5 px-3.5">{isRtl ? 'تاريخ الانضمام' : 'Joined Date'}</th>
-                  <th className="py-2.5 px-3.5">{isRtl ? 'الحالة' : 'Status'}</th>
-                  <th className="py-2.5 px-3.5 text-right rtl:text-left">{isRtl ? 'إجراءات' : 'Actions'}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredSubscribers.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-8 text-center text-slate-400">
-                      {isRtl ? 'لا يوجد مشتركون مطابقون' : 'No subscribers found'}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredSubscribers.map((s) => (
-                    <tr key={s.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="py-2.5 px-3.5 font-mono font-medium text-slate-800 dark:text-slate-200">
-                        {s.email}
-                      </td>
-                      <td className="py-2.5 px-3.5 text-slate-500">
-                        {s.source}
-                      </td>
-                      <td className="py-2.5 px-3.5 font-mono text-[11px] text-slate-400">
-                        {s.date}
-                      </td>
-                      <td className="py-2.5 px-3.5">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
-                          <CheckCircle2 className="w-2.5 h-2.5" />
-                          <span>{s.status}</span>
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3.5 text-right rtl:text-left">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSubscriber(s.id)}
-                          className="p-1 rounded text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                          title={isRtl ? 'حذف المشترك' : 'Delete subscriber'}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* 4. Form Responses Table */}
-        {activeSubTab === 'forms' && (
-          <div className="space-y-2.5">
-            {filteredForms.length === 0 ? (
-              <div className="py-8 text-center text-slate-400 text-xs">
-                {isRtl ? 'لا توجد رسائل نماذج مطابقة' : 'No form responses found'}
-              </div>
-            ) : (
-              filteredForms.map((f) => (
-                <div
-                  key={f.id}
-                  className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/30 space-y-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-bold text-xs text-slate-900 dark:text-white">
-                        {f.name}
-                      </span>
-                      <span className="text-[11px] font-mono text-slate-400 ml-2 rtl:ml-0 rtl:mr-2">
-                        {f.email}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-mono text-slate-400">
-                        {f.date}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFormResponse(f.id)}
-                        className="p-1 rounded text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                        title={isRtl ? 'حذف الرسالة' : 'Delete response'}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-white dark:bg-slate-800 p-2.5 rounded-lg border border-slate-100 dark:border-slate-700">
-                    {f.message}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-        )}
+        {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"><AlertCircle className="w-4 h-4 shrink-0" /><span>{error}</span><button type="button" onClick={() => setError('')} className="ml-auto underline">{isRtl ? 'إغلاق' : 'Dismiss'}</button></div>}
+        {loading ? <div className="py-12 flex items-center justify-center text-xs text-slate-400"><Loader2 className="w-4 h-4 animate-spin mr-2" />{isRtl ? 'جار التحميل...' : 'Loading audience data...'}</div> : activeTab === 'subscribers' ? <SubscriberTable items={subscribers} locale={locale} busyId={busyId} onDelete={(id) => void deleteRecord('subscribers', id)} onStatus={(id, next) => void updateStatus('subscribers', id, next)} /> : <SubmissionList items={submissions} locale={locale} busyId={busyId} onDelete={(id) => void deleteRecord('submissions', id)} onStatus={(id, next) => void updateStatus('submissions', id, next)} />}
       </div>
 
-      {/* 5. Add Subscriber Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                {isRtl ? 'إضافة مشترك جديد يدوياً' : 'Add New Subscriber Manually'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowAddModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddSubscriber} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  {isRtl ? 'البريد الإلكتروني' : 'Email Address'}
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder="subscriber@example.com"
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  {isRtl ? 'المصدر' : 'Source'}
-                </label>
-                <input
-                  type="text"
-                  value={newSource}
-                  onChange={(e) => setNewSource(e.target.value)}
-                  placeholder="e.g. Bio Link, In-Person Event"
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  {isRtl ? 'إلغاء' : 'Cancel'}
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-xs font-bold text-white shadow-sm"
-                >
-                  {isRtl ? 'إضافة المشترك' : 'Save Subscriber'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {showAddModal && <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60" role="dialog" aria-modal="true"><div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-5 space-y-4"><div className="flex items-center justify-between"><h3 className="text-sm font-bold">{isRtl ? 'إضافة مشترك' : 'Add subscriber'}</h3><button type="button" onClick={() => setShowAddModal(false)} aria-label={isRtl ? 'إغلاق' : 'Close'}><X className="w-4 h-4" /></button></div><form onSubmit={(event) => void addSubscriber(event)} className="space-y-3"><input type="email" required value={newEmail} onChange={(event) => setNewEmail(event.target.value)} placeholder="subscriber@example.com" className="w-full px-3 py-2 rounded-xl border text-sm" /><input value={newSource} onChange={(event) => setNewSource(event.target.value)} placeholder={isRtl ? 'المصدر' : 'Source'} className="w-full px-3 py-2 rounded-xl border text-sm" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setShowAddModal(false)} className="px-3 py-2 rounded-xl border text-xs">{isRtl ? 'إلغاء' : 'Cancel'}</button><button type="submit" disabled={busyId === 'new'} className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs disabled:opacity-50">{busyId === 'new' ? (isRtl ? 'جار الحفظ...' : 'Saving...') : (isRtl ? 'حفظ' : 'Save')}</button></div></form></div></div>}
     </div>
   );
 };
+
+const MetricCard: React.FC<{ label: string; value: number | string; detail: string; icon: React.ReactNode }> = ({ label, value, detail, icon }) => <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800"><div className="flex items-center justify-between text-slate-400 mb-1"><span className="text-[11px] font-bold uppercase tracking-wider">{label}</span>{icon}</div><p className="text-2xl font-black text-slate-900 dark:text-white">{typeof value === 'number' ? value.toLocaleString() : value}</p><p className="text-[11px] text-slate-500 mt-1">{detail}</p></div>;
+
+const AudienceTabButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string; count: number }> = ({ active, onClick, icon, label, count }) => <button type="button" onClick={onClick} className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 ${active ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs' : 'text-slate-500'}`}>{icon}{label}<span className="px-1.5 rounded-full text-[10px] bg-slate-200 dark:bg-slate-600">{count}</span></button>;
+
+const SubscriberTable: React.FC<{ items: SubscriberItem[]; locale: Locale; busyId: string | null; onDelete: (id: string) => void; onStatus: (id: string, status: SubscriberStatus) => void }> = ({ items, locale, busyId, onDelete, onStatus }) => <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800"><table className="w-full text-left rtl:text-right text-xs"><thead><tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-400 uppercase text-[10px]"><th className="py-2.5 px-3.5">Email</th><th className="py-2.5 px-3.5">Source</th><th className="py-2.5 px-3.5">Joined</th><th className="py-2.5 px-3.5">Status</th><th className="py-2.5 px-3.5 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{items.length === 0 ? <tr><td colSpan={5} className="py-10 text-center text-slate-400">{locale === 'ar' ? 'لا توجد بيانات جمهور محفوظة.' : 'No audience records found.'}</td></tr> : items.map((item) => <tr key={item.id}><td className="py-2.5 px-3.5 font-mono">{item.email}</td><td className="py-2.5 px-3.5 text-slate-500">{item.source}</td><td className="py-2.5 px-3.5 text-slate-400">{formatDate(item.createdAt, locale)}</td><td className="py-2.5 px-3.5"><select value={item.status} disabled={busyId === item.id} onChange={(event) => onStatus(item.id, event.target.value as SubscriberStatus)} className="rounded-lg border px-2 py-1 text-[11px] bg-transparent"><option value="active">Active</option><option value="unsubscribed">Unsubscribed</option></select></td><td className="py-2.5 px-3.5 text-right"><button type="button" disabled={busyId === item.id} onClick={() => onDelete(item.id)} aria-label="Delete subscriber" className="text-slate-400 hover:text-rose-600 disabled:opacity-50"><Trash2 className="w-3.5 h-3.5" /></button></td></tr>)}</tbody></table></div>;
+
+const SubmissionList: React.FC<{ items: SubmissionItem[]; locale: Locale; busyId: string | null; onDelete: (id: string) => void; onStatus: (id: string, status: SubmissionStatus) => void }> = ({ items, locale, busyId, onDelete, onStatus }) => <div className="space-y-2.5">{items.length === 0 ? <div className="py-10 text-center text-xs text-slate-400">{locale === 'ar' ? 'لا توجد رسائل محفوظة.' : 'No form submissions found.'}</div> : items.map((item) => <article key={item.id} className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-2"><div className="flex flex-wrap items-center justify-between gap-2"><div><strong className="text-xs">{item.name || '—'}</strong><span className="text-[11px] font-mono text-slate-400 ml-2">{item.email}</span>{item.subject && <p className="text-[11px] text-slate-500 mt-1">{item.subject}</p>}</div><div className="flex items-center gap-2"><span className="text-[10px] text-slate-400">{formatDate(item.createdAt, locale)}</span><select value={item.status} disabled={busyId === item.id} onChange={(event) => onStatus(item.id, event.target.value as SubmissionStatus)} className="rounded-lg border px-2 py-1 text-[11px] bg-transparent"><option value="new">New</option><option value="read">Read</option><option value="archived">Archived</option></select><button type="button" disabled={busyId === item.id} onClick={() => onDelete(item.id)} aria-label="Delete submission" className="text-slate-400 hover:text-rose-600 disabled:opacity-50"><Trash2 className="w-3.5 h-3.5" /></button></div></div><p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-lg">{item.message}</p></article>)}</div>;
