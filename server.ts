@@ -608,6 +608,22 @@ async function getAuthenticatedUser(req: Request): Promise<AuthenticatedUser | n
     : null;
 }
 
+type OwnedSite = {
+  id: string;
+  userId: string;
+  data: Record<string, any>;
+  snapshot: DocumentSnapshot;
+};
+
+/** Resolve site ownership from the authenticated UID, never from client claims. */
+async function getOwnedSite(userId: string, siteId: string): Promise<OwnedSite | null> {
+  const normalizedSiteId = String(siteId || '').trim();
+  if (!userId || !/^[a-zA-Z0-9_-]{1,64}$/.test(normalizedSiteId)) return null;
+  const snapshot = await adminDb.collection('users').doc(userId).collection('sites').doc(normalizedSiteId).get();
+  if (!snapshot.exists) return null;
+  return { id: snapshot.id, userId, data: snapshot.data() || {}, snapshot };
+}
+
 type OAuthProvider = 'github';
 type StoredIntegration = {
   provider: OAuthProvider;
@@ -2038,7 +2054,8 @@ app.post('/api/creator/bookings/:bookingId/confirm', async (req: Request, res: R
   const bookingSnapshot = await bookingRef.get();
   if (!bookingSnapshot.exists || bookingSnapshot.data()?.hostUserId !== user.uid) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   const booking = bookingSnapshot.data() || {};
-  if (typeof req.query.siteId === 'string' && String(booking.siteId || '') !== req.query.siteId) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
+  const bookingSite = await getOwnedSite(user.uid, String(booking.siteId || ''));
+  if (!bookingSite || (typeof req.query.siteId === 'string' && bookingSite.id !== req.query.siteId.trim())) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   if (booking.status === 'cancelled') return apiError(res, 409, 'BOOKING_CANCELLED', 'Cancelled bookings cannot be confirmed.');
   if (booking.status !== 'confirmed') await bookingRef.set({ status: 'confirmed', confirmationStatus: 'confirmed', confirmedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true });
   const customerEmail = String(booking.customerEmail || '');
@@ -2061,7 +2078,8 @@ app.post('/api/creator/bookings/:bookingId/cancel', async (req: Request, res: Re
   const existing = await bookingRef.get();
   if (!existing.exists || existing.data()?.hostUserId !== user.uid) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   const booking = existing.data() || {};
-  if (typeof req.query.siteId === 'string' && String(booking.siteId || '') !== req.query.siteId) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
+  const bookingSite = await getOwnedSite(user.uid, String(booking.siteId || ''));
+  if (!bookingSite || (typeof req.query.siteId === 'string' && bookingSite.id !== req.query.siteId.trim())) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   if (booking.status === 'cancelled') return res.json({ id: bookingRef.id, status: 'cancelled', confirmationStatus: 'cancelled' });
   await adminDb.runTransaction(async (transaction) => {
     const current = await transaction.get(bookingRef);
@@ -2130,8 +2148,9 @@ async function getOwnedAudienceSite(user: AuthenticatedUser, requestedHandle?: s
   if (!/^[a-z0-9_-]{3,30}$/.test(cleanHandle)) return null;
 
   const sites = profileRef.collection('sites');
+  const ownedRequestedSite = requestedSiteId ? await getOwnedSite(user.uid, requestedSiteId) : null;
   const siteSnapshot = requestedSiteId
-    ? await sites.doc(requestedSiteId).get().then((document) => ({ docs: document.exists ? [document] : [] } as any))
+    ? { docs: ownedRequestedSite ? [ownedRequestedSite.snapshot] : [] } as any
     : await sites.where('username', '==', cleanHandle).limit(1).get();
   const site = siteSnapshot.docs[0];
   if (!site) return null;
@@ -2297,6 +2316,9 @@ app.patch('/api/creator/audience/:kind/:id', async (req: Request, res: Response)
     const reference = audienceCollection(kind).doc(String(req.params.id || ''));
     const snapshot = await reference.get();
     if (!snapshot.exists || snapshot.data()?.creatorUserId !== user.uid) return apiError(res, 404, 'AUDIENCE_RECORD_NOT_FOUND', 'Audience record not found.');
+    const recordSite = await getOwnedSite(user.uid, String(snapshot.data()?.siteId || ''));
+    const requestedSiteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
+    if (!recordSite || (requestedSiteId && requestedSiteId !== recordSite.id)) return apiError(res, 404, 'AUDIENCE_RECORD_NOT_FOUND', 'Audience record not found.');
     await reference.set({ status, updatedAt: new Date().toISOString(), ...(status === 'unsubscribed' ? { unsubscribedAt: new Date().toISOString() } : {}) }, { merge: true });
     return res.status(200).json({ data: audienceRecordForResponse(kind, { ...snapshot.data(), status }, reference.id) });
   } catch (error) {
@@ -2315,6 +2337,9 @@ app.delete('/api/creator/audience/:kind/:id', async (req: Request, res: Response
     const reference = audienceCollection(kind).doc(String(req.params.id || ''));
     const snapshot = await reference.get();
     if (!snapshot.exists || snapshot.data()?.creatorUserId !== user.uid) return apiError(res, 404, 'AUDIENCE_RECORD_NOT_FOUND', 'Audience record not found.');
+    const recordSite = await getOwnedSite(user.uid, String(snapshot.data()?.siteId || ''));
+    const requestedSiteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
+    if (!recordSite || (requestedSiteId && requestedSiteId !== recordSite.id)) return apiError(res, 404, 'AUDIENCE_RECORD_NOT_FOUND', 'Audience record not found.');
     await reference.delete();
     return res.status(204).send();
   } catch (error) {
@@ -3494,9 +3519,9 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
     const cutoff = fromDate ? Date.parse(`${fromDate}T00:00:00.000Z`) : 0;
     const endExclusive = Date.parse(`${toDate}T00:00:00.000Z`) + 86400000;
     const requestedSiteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
-    const sitesSnapshot = await adminDb.collection('users').doc(user.uid).collection('sites').where('isPublished', '==', true).get();
+    const sitesSnapshot = await adminDb.collection('users').doc(user.uid).collection('sites').get();
     const selectedSite = requestedSiteId ? sitesSnapshot.docs.find((document) => document.id === requestedSiteId) : null;
-    if (requestedSiteId && !selectedSite) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found or is not published.');
+    if (requestedSiteId && !(await getOwnedSite(user.uid, requestedSiteId))) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
     const rollupMetrics = await analyticsFromRollups(user.uid, sitesSnapshot.docs, requestedSiteId, fromDate, toDate);
     if (rollupMetrics) return res.status(200).json(rollupMetrics);
     const [viewsSnapshot, clicksSnapshot] = await Promise.all([
@@ -3695,9 +3720,11 @@ app.get('/api/media/:mediaId/url', async (req: Request, res: Response) => {
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   try {
     const document = await adminDb.collection('media_assets').doc(String(req.params.mediaId || '')).get();
-    if (!document.exists || document.data()?.userId !== user.uid || document.data()?.status !== 'ready') return apiError(res, 404, 'MEDIA_NOT_FOUND', 'Media asset not found.');
+    const data = document.data();
+    const ownedSite = data?.siteId ? await getOwnedSite(user.uid, String(data.siteId)) : null;
+    if (!document.exists || data?.userId !== user.uid || !ownedSite || data?.status !== 'ready') return apiError(res, 404, 'MEDIA_NOT_FOUND', 'Media asset not found.');
     const variant = req.query.variant === 'thumbnail' ? 'thumbnailPath' : 'originalPath';
-    return res.json({ url: await signedMediaUrl(String(document.data()?.[variant] || '')), expiresAt: new Date(Date.now() + MEDIA_SIGNED_URL_TTL_MS).toISOString() });
+    return res.json({ url: await signedMediaUrl(String(data?.[variant] || '')), expiresAt: new Date(Date.now() + MEDIA_SIGNED_URL_TTL_MS).toISOString() });
   } catch (error) {
     console.error('[Media signed URL]', error);
     return apiError(res, 503, 'MEDIA_URL_UNAVAILABLE', 'The media URL is temporarily unavailable.');
@@ -3709,13 +3736,14 @@ app.delete('/api/media/:mediaId', async (req: Request, res: Response) => {
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   const siteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
   try {
+    const ownedSite = await getOwnedSite(user.uid, siteId);
+    if (!ownedSite) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
     const document = await adminDb.collection('media_assets').doc(String(req.params.mediaId || '')).get();
     const data = document.data();
     if (!document.exists || data?.userId !== user.uid || data?.siteId !== siteId) return apiError(res, 404, 'MEDIA_NOT_FOUND', 'Media asset not found.');
-    const site = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
     const products = await adminDb.collection('creator_products').where('creatorId', '==', user.uid).where('siteId', '==', siteId).limit(500).get();
     const productUses = products.docs.some((product) => collectMediaIds({ imageUrls: product.data()?.imageUrls }).includes(document.id));
-    if (collectMediaIds(site.data() || {}).includes(document.id) || productUses) return apiError(res, 409, 'MEDIA_IN_USE', 'Remove this media from the site or product before deleting it.');
+    if (collectMediaIds(ownedSite.data).includes(document.id) || productUses) return apiError(res, 409, 'MEDIA_IN_USE', 'Remove this media from the site or product before deleting it.');
     await deleteMediaAsset(document);
     return res.status(204).send();
   } catch (error) {
@@ -3730,6 +3758,7 @@ app.post('/api/media/cleanup', async (req: Request, res: Response) => {
   const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
   if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
   try {
+    if (!(await getOwnedSite(user.uid, siteId))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
     const removed = await cleanupOrphanMedia(user.uid, siteId);
     return res.json({ removed });
   } catch (error) {
@@ -4100,7 +4129,8 @@ app.patch('/api/creator/products/:productId', async (req: Request, res: Response
   const reference = adminDb.collection('creator_products').doc(productId);
   const snapshot = await reference.get();
   if (!snapshot.exists || snapshot.data()?.creatorId !== user.uid) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
-  if (typeof req.body?.siteId === 'string' && String(snapshot.data()?.siteId || '') !== req.body.siteId) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
+  const productSite = await getOwnedSite(user.uid, String(snapshot.data()?.siteId || ''));
+  if (!productSite || (typeof req.body?.siteId === 'string' && productSite.id !== req.body.siteId.trim())) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
   const current = snapshot.data() || {};
   const name = req.body?.name === undefined ? String(current.name || '') : typeof req.body.name === 'string' ? req.body.name.trim().slice(0, 120) : '';
   const description = req.body?.description === undefined ? String(current.description || '') : typeof req.body.description === 'string' ? req.body.description.trim().slice(0, 2000) : '';
@@ -4142,7 +4172,8 @@ app.delete('/api/creator/products/:productId', async (req: Request, res: Respons
   const reference = adminDb.collection('creator_products').doc(String(req.params.productId || ''));
   const snapshot = await reference.get();
   if (!snapshot.exists || snapshot.data()?.creatorId !== user.uid) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
-  if (typeof req.query.siteId === 'string' && String(snapshot.data()?.siteId || '') !== req.query.siteId) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
+  const productSite = await getOwnedSite(user.uid, String(snapshot.data()?.siteId || ''));
+  if (!productSite || (typeof req.query.siteId === 'string' && productSite.id !== req.query.siteId.trim())) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
   try {
     await stripe.products.update(String(snapshot.data()?.stripeProductId), { active: false });
     if (snapshot.data()?.stripePriceId) await stripe.prices.update(String(snapshot.data()?.stripePriceId), { active: false });
@@ -4236,7 +4267,7 @@ app.get('/api/creator/orders', async (req: Request, res: Response) => {
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured()) return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Order management is not configured.');
   const requestedSiteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
-  if (requestedSiteId && !(await adminDb.collection('users').doc(user.uid).collection('sites').doc(requestedSiteId).get()).exists) {
+  if (requestedSiteId && !(await getOwnedSite(user.uid, requestedSiteId))) {
     return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
   }
   try {
@@ -4269,6 +4300,15 @@ app.patch('/api/creator/orders/:orderId/fulfillment', async (req: Request, res: 
   const requestedSiteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
   const reference = adminDb.collection('orders').doc(orderId);
   try {
+    const existingOrder = await reference.get();
+    if (!existingOrder.exists || existingOrder.data()?.creatorId !== user.uid) throw new Error('ORDER_NOT_FOUND');
+    const existingOrderData = existingOrder.data() || {};
+    let resolvedOrderSiteId = String(existingOrderData.siteId || '');
+    if (!resolvedOrderSiteId && existingOrderData.productId) {
+      const productSnapshot = await adminDb.collection('creator_products').doc(String(existingOrderData.productId)).get();
+      if (productSnapshot.exists && productSnapshot.data()?.creatorId === user.uid) resolvedOrderSiteId = String(productSnapshot.data()?.siteId || '');
+    }
+    if (!resolvedOrderSiteId || !(await getOwnedSite(user.uid, resolvedOrderSiteId)) || (requestedSiteId && requestedSiteId !== resolvedOrderSiteId)) throw new Error('ORDER_NOT_FOUND');
     const result = await adminDb.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(reference);
       if (!snapshot.exists || snapshot.data()?.creatorId !== user.uid) throw new Error('ORDER_NOT_FOUND');
@@ -4636,7 +4676,11 @@ app.get('/api/domains', async (req: Request, res: Response) => {
   if (!isAdminConfigured()) return res.status(200).json({ domains: [] });
 
   const snapshot = await adminDb.collection('custom_domains').where('userId', '==', user.uid).get();
-  return res.status(200).json({ domains: snapshot.docs.map((document) => document.data()) });
+  const domains = (await Promise.all(snapshot.docs.map(async (document) => {
+    const domain = document.data();
+    return await getOwnedSite(user.uid, String(domain.siteId || '')) ? domain : null;
+  }))).filter(Boolean);
+  return res.status(200).json({ domains });
 });
 
 app.post('/api/domains/provision', async (req: Request, res: Response) => {
@@ -4664,7 +4708,10 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
 
   const existing = await findDomainByHostname(hostname);
   if (existing && existing.userId !== user.uid) return res.status(409).json({ error: 'Domain is already attached' });
-  if (existing) return res.status(200).json({ domain: existing });
+  if (existing) {
+    if (!(await getOwnedSite(user.uid, existing.siteId))) return res.status(409).json({ error: 'Domain is already attached to an invalid site' });
+    return res.status(200).json({ domain: existing });
+  }
 
   let reservedDomainId = '';
   try {
@@ -4741,6 +4788,7 @@ app.post('/api/domains/verify', async (req: Request, res: Response) => {
   const domainId = typeof req.body?.domainId === 'string' ? req.body.domainId : '';
   const domain = await findDomainById(domainId);
   if (!domain || domain.userId !== user.uid) return res.status(404).json({ error: 'Domain not found' });
+  if (!(await getOwnedSite(user.uid, domain.siteId))) return res.status(404).json({ error: 'Domain site not found' });
   if (!domain.cloudflareHostnameId) return res.status(409).json({ error: 'Cloudflare hostname is missing' });
 
   try {
@@ -4777,6 +4825,7 @@ app.delete('/api/domains/:domainId', async (req: Request, res: Response) => {
   if (!isAdminConfigured()) return res.status(503).json({ error: 'Domain deletion is not configured' });
   const domain = await findDomainById(req.params.domainId);
   if (!domain || domain.userId !== user.uid) return res.status(404).json({ error: 'Domain not found' });
+  if (!(await getOwnedSite(user.uid, domain.siteId))) return res.status(404).json({ error: 'Domain site not found' });
 
   try {
     const config = getCloudflareConfig();
