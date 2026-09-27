@@ -12,6 +12,7 @@ const isPublicProfile = /^\/(?:@|public-render\/)[a-zA-Z0-9._-]+$/.test(path)
   || (window.location.hostname !== 'raloa.app' && window.location.hostname !== 'www.raloa.app' && !window.location.hostname.endsWith('.raloa.app') && path === '/');
 
 const appImport = isPublicProfile ? import('./PublicPageApp.tsx') : import('./App.tsx');
+if (!isPublicProfile) void import('./observability/sentry.ts').then(({ initializeFrontendSentry }) => initializeFrontendSentry());
 appImport.then(({ default: App }) => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>

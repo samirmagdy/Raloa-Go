@@ -35,6 +35,7 @@ export class ErrorBoundary extends Component<Props, State> {
     this.setState({ errorInfo });
     // Log to console for diagnostic reporting
     console.error('RALOA ErrorBoundary caught an unexpected runtime crash:', error, errorInfo);
+    void import('../observability/sentry').then(({ captureFrontendException }) => captureFrontendException(error, { component: 'ErrorBoundary' }));
   }
 
   private handleReload = (): void => {

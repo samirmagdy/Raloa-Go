@@ -58,11 +58,15 @@ import { createPublicCreatorAdapter } from './server/public-site';
 import { MemoryCacheStore } from './server/infrastructure/cache/memory';
 import { cacheKey } from './server/infrastructure/cache/policy';
 import { apiErrorSchema } from './src/shared/schema';
+import { createStructuredLogger, InMemoryMetrics, traceIdFromHeaders } from './server/infrastructure/observability/logger';
+import { captureServerException, initializeServerSentry } from './server/infrastructure/observability/sentry';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+initializeServerSentry();
+const observabilityMetrics = new InMemoryMetrics();
 // Composition root for bounded contexts. The legacy handlers below remain the
 // compatibility shell while routes are migrated to module controllers.
 export const domainModules = createDomainModules(adminDb, {
@@ -94,7 +98,7 @@ export const backgroundJobs = createBackgroundJobService(createFirestoreBackgrou
   domain_verification: async () => undefined,
   oauth_refresh: async () => undefined,
   analytics_rollup: async () => undefined
-});
+}, { metrics: observabilityMetrics });
 export const domainEventBus = createDomainEventBus();
 const enqueueEventJobs = (kind: JobKind) => async (event: DomainEvent): Promise<void> => { await backgroundJobs.enqueue({ kind, idempotencyKey: `event:${event.id}:${kind}`, payload: { ...event.payload, eventId: event.id, eventType: event.type } }); };
 domainEventBus.subscribe(DOMAIN_EVENTS.BookingCreated, enqueueEventJobs('email_delivery'));
@@ -142,18 +146,17 @@ const DEFAULT_PRIVACY_PREFERENCES = {
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const requestId = req.headers['x-request-id']?.toString() || crypto.randomUUID();
+  const traceId = traceIdFromHeaders(req.headers);
+  const siteId = typeof req.query.siteId === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(req.query.siteId) ? req.query.siteId : undefined;
+  const logger = createStructuredLogger({ requestId, traceId, siteId });
   const startedAt = Date.now();
   res.setHeader('X-Request-ID', requestId);
   res.on('finish', () => {
     if (req.path.startsWith('/assets/')) return;
-    console.log(JSON.stringify({
-      requestId,
-      method: req.method,
-      path: req.path,
-      status: res.statusCode,
-      durationMs: Date.now() - startedAt,
-      timestamp: new Date().toISOString()
-    }));
+    const durationMs = Date.now() - startedAt;
+    observabilityMetrics.increment('http.requests', { method: req.method, route: req.route?.path || req.path, status: res.statusCode });
+    observabilityMetrics.observe('http.duration_ms', durationMs, { method: req.method, route: req.route?.path || req.path });
+    logger.info('http.request', { method: req.method, path: req.path, status: res.statusCode, durationMs });
   });
   next();
 });
@@ -163,9 +166,13 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
   if (typeof signature !== 'string') return res.status(400).json({ error: 'Missing Stripe signature' });
 
   try {
+    observabilityMetrics.increment('webhook.received', { provider: 'stripe' });
     await handleStripeWebhook(req.body as Buffer, signature);
+    observabilityMetrics.increment('webhook.processed', { provider: 'stripe', status: 'success' });
     return res.status(200).json({ received: true });
   } catch (error) {
+    observabilityMetrics.increment('webhook.failed', { provider: 'stripe', status: 'error' });
+    captureServerException(error, { requestId: String(res.getHeader('X-Request-ID') || ''), provider: 'stripe', webhookId: typeof req.headers['stripe-signature'] === 'string' ? 'stripe' : undefined });
     console.error('[Stripe webhook]', error);
     return res.status(400).json({ error: 'Webhook verification failed' });
   }
@@ -5249,13 +5256,10 @@ app.post('/internal/outbox/publish', async (req: Request, res: Response) => {
 
 app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
   const requestId = res.getHeader('X-Request-ID');
-  console.error(JSON.stringify({
-    requestId,
-    method: req.method,
-    path: req.path,
-    error: error.message,
-    stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
-  }));
+  const logger = createStructuredLogger({ requestId: String(requestId || ''), traceId: traceIdFromHeaders(req.headers) });
+  observabilityMetrics.increment('http.errors', { method: req.method, route: req.path });
+  logger.error('http.unhandled_error', { method: req.method, path: req.path, error });
+  captureServerException(error, { requestId: String(requestId || ''), traceId: traceIdFromHeaders(req.headers) });
   if (res.headersSent) return;
   res.status(500).json({ status: 'error', error: 'INTERNAL_ERROR', code: 'INTERNAL_ERROR', message: 'Internal server error', requestId });
 });

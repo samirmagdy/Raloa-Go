@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { BackgroundJob, BackgroundJobHandler, BackgroundJobRepository, JobDispatcher, JobKind } from './types';
 import { validateWorkerPayload } from '../../src/shared/schema';
+import type { ObservabilityMetrics } from '../infrastructure/observability/types';
 
 const DEFAULT_MAX_ATTEMPTS = 8;
 const LEASE_MS = 5 * 60 * 1000;
@@ -13,13 +14,14 @@ function retryDelay(attempts: number): number {
   return Math.min(6 * 60 * 60 * 1000, 30_000 * (2 ** Math.min(attempts - 1, 8)));
 }
 
-export function createBackgroundJobService(repository: BackgroundJobRepository, dispatcher: JobDispatcher, handlers: Partial<Record<JobKind, BackgroundJobHandler>>) {
+export function createBackgroundJobService(repository: BackgroundJobRepository, dispatcher: JobDispatcher, handlers: Partial<Record<JobKind, BackgroundJobHandler>>, observability?: { metrics?: ObservabilityMetrics }) {
   const log = (event: string, job: BackgroundJob, details: Record<string, unknown> = {}) => console.log(JSON.stringify({ event, jobId: job.id, kind: job.kind, attempts: job.attempts, ...details }));
   return {
     async enqueue(input: { kind: JobKind; idempotencyKey: string; payload: Record<string, unknown>; maxAttempts?: number }): Promise<BackgroundJob> {
       const now = new Date().toISOString();
       const job = await repository.create({ id: jobId(input.kind, input.idempotencyKey), kind: input.kind, payload: input.payload, idempotencyKey: input.idempotencyKey, status: 'pending', attempts: 0, maxAttempts: input.maxAttempts || DEFAULT_MAX_ATTEMPTS, availableAt: now, createdAt: now, updatedAt: now });
       await dispatcher.dispatch(job);
+      observability?.metrics?.increment('jobs.enqueued', { kind: job.kind });
       log('background_job_enqueued', job);
       return job;
     },
@@ -34,11 +36,13 @@ export function createBackgroundJobService(repository: BackgroundJobRepository, 
         claimed.payload = validateWorkerPayload(claimed.kind, claimed.payload);
         await handler(claimed);
         await repository.complete(id, new Date().toISOString());
+        observability?.metrics?.increment('jobs.completed', { kind: claimed.kind });
         log('background_job_completed', claimed);
       } catch (error) {
         const at = new Date().toISOString();
         const deadLetter = claimed.attempts >= claimed.maxAttempts;
         await repository.fail(id, { error: error instanceof Error ? error.message : 'JOB_FAILED', deadLetter, availableAt: deadLetter ? undefined : new Date(Date.now() + retryDelay(claimed.attempts)).toISOString(), at });
+        observability?.metrics?.increment(deadLetter ? 'jobs.dead_lettered' : 'jobs.failed', { kind: claimed.kind });
         log(deadLetter ? 'background_job_dead_lettered' : 'background_job_retrying', claimed, { error: error instanceof Error ? error.message : 'JOB_FAILED' });
         if (!deadLetter) {
           const delayMs = retryDelay(claimed.attempts);
