@@ -12,6 +12,7 @@ import {
 import { BookingConfig, Locale } from '../../types';
 import { auth } from '../../lib/firebase';
 import { StudioSchedulingSettings } from './StudioSchedulingSettings';
+import { StudioProductsSettings } from './StudioProductsSettings';
 
 interface StudioSettingsTabProps {
   handle: string;
@@ -371,6 +372,7 @@ export const StudioSettingsTab: React.FC<StudioSettingsTabProps> = ({
           </div>
 
           <StudioSchedulingSettings value={bookingConfig} onChange={onBookingConfigChange} locale={locale} />
+          <StudioProductsSettings locale={locale} />
 
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">

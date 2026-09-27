@@ -236,29 +236,55 @@ export async function createPortalSession(uid: string): Promise<string> {
   return session.url;
 }
 
-export async function createOrderCheckoutSession(
-  buyerEmail: string,
+export async function reconcileCreatorOrderFromCheckout(
   orderId: string,
-  requestId: string
-): Promise<string> {
-  if (!stripe) throw new Error('STRIPE_NOT_CONFIGURED');
-  const session = await stripe.checkout.sessions.create({
-    mode: 'payment',
-    line_items: [{
-      price_data: {
-        currency: 'usd',
-        product_data: { name: 'Brutalist Shadow Study #03' },
-        unit_amount: 14000
-      },
-      quantity: 1
-    }],
-    customer_email: buyerEmail,
-    success_url: `${APP_URL}/?order=success&order_id=${encodeURIComponent(orderId)}`,
-    cancel_url: `${APP_URL}/?order=cancelled&order_id=${encodeURIComponent(orderId)}`,
-    metadata: { orderId, product: 'brutalist-shadow-study-03' }
-  }, { idempotencyKey: `order_checkout_${requestId}` });
-  if (!session.url) throw new Error('STRIPE_CHECKOUT_URL_MISSING');
-  return session.url;
+  session: Stripe.Checkout.Session,
+  outcome: 'paid' | 'cancelled' | 'payment_failed' | 'pending_payment'
+): Promise<void> {
+  if (!isAdminConfigured()) return;
+  const orderRef = adminDb.collection('orders').doc(orderId);
+  await adminDb.runTransaction(async (transaction) => {
+    const orderSnapshot = await transaction.get(orderRef);
+    if (!orderSnapshot.exists) return;
+    const order = orderSnapshot.data() || {};
+    const currentStatus = String(order.status || 'pending_payment');
+    if (currentStatus === 'paid' || currentStatus === 'refunded') return;
+    const productId = String(order.productId || session.metadata?.productId || '');
+    const productRef = productId ? adminDb.collection('creator_products').doc(productId) : null;
+    const productSnapshot = productRef ? await transaction.get(productRef) : null;
+    const reservedQuantity = Math.max(0, Number(order.inventoryReservation || 0));
+    const now = new Date().toISOString();
+    const updates: Record<string, unknown> = {
+      status: outcome,
+      stripeCheckoutSessionId: session.id,
+      updatedAt: now
+    };
+    if (outcome === 'pending_payment') {
+      updates.status = 'pending_payment';
+    } else if (outcome === 'paid') {
+      updates.fulfillmentStatus = 'unfulfilled';
+      updates.inventoryReservation = 0;
+      if (reservedQuantity > 0 && productRef && productSnapshot?.exists) {
+        const product = productSnapshot.data() || {};
+        const reserved = Math.max(0, Number(product.inventoryReserved || 0) - reservedQuantity);
+        const inventory = product.inventory === null || product.inventory === undefined
+          ? null
+          : Math.max(0, Number(product.inventory) - reservedQuantity);
+        transaction.update(productRef, { inventory, inventoryReserved: reserved, updatedAt: now });
+      }
+    } else {
+      updates.fulfillmentStatus = 'cancelled';
+      updates.inventoryReservation = 0;
+      if (reservedQuantity > 0 && productRef && productSnapshot?.exists) {
+        const product = productSnapshot.data() || {};
+        transaction.update(productRef, {
+          inventoryReserved: Math.max(0, Number(product.inventoryReserved || 0) - reservedQuantity),
+          updatedAt: now
+        });
+      }
+    }
+    transaction.update(orderRef, updates);
+  });
 }
 
 export async function getBillingDetails(uid: string): Promise<{
@@ -330,25 +356,21 @@ export async function handleStripeWebhook(payload: string | Buffer, signature: s
       });
     }
     const orderId = session.metadata?.orderId;
-    if (orderId && isAdminConfigured()) {
-      await adminDb.collection('orders').doc(orderId).set({
-        status: session.payment_status === 'paid' ? 'paid' : 'pending',
-        stripeCheckoutSessionId: session.id,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
+    if (orderId) {
+      await reconcileCreatorOrderFromCheckout(orderId, session, session.payment_status === 'paid' ? 'paid' : 'pending_payment');
     }
   }
 
   if (event.type === 'checkout.session.expired') {
     const session = event.data.object as Stripe.Checkout.Session;
     const orderId = session.metadata?.orderId;
-    if (orderId && isAdminConfigured()) {
-      await adminDb.collection('orders').doc(orderId).set({
-        status: 'cancelled',
-        stripeCheckoutSessionId: session.id,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-    }
+    if (orderId) await reconcileCreatorOrderFromCheckout(orderId, session, 'cancelled');
+  }
+
+  if (event.type === 'checkout.session.async_payment_failed') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const orderId = session.metadata?.orderId;
+    if (orderId) await reconcileCreatorOrderFromCheckout(orderId, session, 'payment_failed');
   }
 
   if (event.type.startsWith('customer.subscription.')) {

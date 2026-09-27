@@ -614,33 +614,6 @@ export async function saveNewsletterSubscription(email: string): Promise<string>
   return payload.id;
 }
 
-export interface StoreOrder {
-  id?: string;
-  itemTitle: string;
-  price: number;
-  currency: string;
-  buyerEmail?: string;
-  status: 'paid' | 'pending';
-  createdAt?: string;
-}
-
-/**
- * Record an order or purchase in Firestore
- */
-export async function saveStoreOrder(
-  data: Omit<StoreOrder, 'id' | 'status' | 'createdAt'>
-): Promise<string> {
-  const response = await fetch('/api/v1/public/orders', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
-    body: JSON.stringify(data)
-  });
-  if (!response.ok) throw new Error('ORDER_FAILED');
-  const payload = await response.json();
-  if (payload.url && typeof window !== 'undefined') window.location.assign(payload.url);
-  return payload.id;
-}
-
 export interface ReferralStats {
   completedCount: number;
   targetInvites: number;

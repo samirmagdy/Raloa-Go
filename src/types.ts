@@ -29,6 +29,43 @@ export interface BookingConfig {
   calendarProvider?: 'none' | 'google' | 'outlook';
 }
 
+export interface CreatorProduct {
+  id: string;
+  creatorId: string;
+  name: string;
+  description: string;
+  imageUrls: string[];
+  priceMinor: number;
+  currency: string;
+  active: boolean;
+  inventory: number | null;
+  inventoryReserved: number;
+  stripeProductId: string;
+  stripePriceId: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type OrderStatus = 'pending_payment' | 'paid' | 'cancelled' | 'payment_failed' | 'refunded';
+export type FulfillmentStatus = 'unfulfilled' | 'processing' | 'fulfilled' | 'cancelled';
+
+export interface CreatorOrder {
+  id: string;
+  creatorId: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPriceMinor: number;
+  currency: string;
+  totalMinor: number;
+  customerEmail: string;
+  status: OrderStatus;
+  fulfillmentStatus: FulfillmentStatus;
+  stripeCheckoutSessionId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TemplateBackgroundProperties {
   backgroundColor?: string;
   backgroundImage?: string;

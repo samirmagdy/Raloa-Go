@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import { X, Check, ShoppingBag, ArrowRight, Printer, Loader2 } from 'lucide-react';
 import { Locale } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
-import { useAuth } from '../../hooks/useAuth';
-import { saveStoreOrder } from '../../lib/firebase';
 import { SafeImage } from '../SafeImage';
 
 interface MiniSiteDemoModalProps {
@@ -19,36 +17,16 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
   locale,
   onStartOwnPage
 }) => {
-  const { user } = useAuth();
   const isRtl = locale === 'ar';
   const dialogRef = useModalA11y<HTMLDivElement>(Boolean(type));
-  const [orderLoading, setOrderLoading] = useState(false);
-  const [orderError, setOrderError] = useState('');
-  const [orderId, setOrderId] = useState('');
-  const [cartSuccess, setCartSuccess] = useState(false);
+  const [orderLoading] = useState(false);
+  const [orderError] = useState('');
+  const [orderId] = useState('');
+  const [cartSuccess] = useState(false);
 
   const handleOrderPurchase = async () => {
-    setOrderLoading(true);
-    setOrderError('');
-    try {
-      const id = await saveStoreOrder({
-        itemTitle: 'Brutalist Shadow Study #03',
-        price: 140,
-        currency: 'USD',
-        buyerEmail: user?.email || 'collector@raloa.app'
-      });
-      setOrderId(id);
-      setCartSuccess(true);
-    } catch (err) {
-      console.error('Error processing store order:', err);
-      setOrderError(
-        isRtl
-          ? 'تعذر حفظ طلب الشراء. يرجى المحاولة مرة أخرى.'
-          : 'Could not process order. Please try again.'
-      );
-    } finally {
-      setOrderLoading(false);
-    }
+    onClose();
+    onStartOwnPage?.('creator');
   };
 
   if (!type) return null;
@@ -175,15 +153,15 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="font-extrabold text-base text-slate-900 dark:text-white">
-                    {isRtl ? 'مطبوعة "دراسة الظل المعماري #٠٣"' : '"Brutalist Shadow Study #03"'}
+                    {isRtl ? 'معاينة منتج المتجر' : 'Store product preview'}
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     Hahnemühle Photo Rag 308gsm Archival Cotton
                   </p>
                 </div>
                 <div className="text-right">
-                  <span className="text-lg font-extrabold text-slate-900 dark:text-white">$140</span>
-                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">{isRtl ? 'شحن مجاني' : 'Free Shipping'}</p>
+                  <span className="text-lg font-extrabold text-slate-900 dark:text-white">{isRtl ? 'سعرك' : 'Your price'}</span>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">{isRtl ? 'إعداد من لوحة التحكم' : 'Configured in Studio'}</p>
                 </div>
               </div>
 
@@ -191,10 +169,10 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
                 <div className="p-3 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs rounded-xl flex items-center gap-2">
                   <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <div>
-                    <span className="font-bold">{isRtl ? 'تم بدء الدفع الآمن.' : 'Secure checkout started.'}</span>
+                    <span className="font-bold">{isRtl ? 'يتم إعداد المنتجات من لوحة التحكم.' : 'Products are managed from Studio.'}</span>
                     {orderId && (
                       <span className="block text-[11px] opacity-80 font-mono mt-0.5">
-                        {isRtl ? `معرّف الطلب: ${orderId}` : `Order ID: ${orderId}`}
+                        {isRtl ? 'لا تتم معالجة طلبات المعاينة.' : 'Preview mode — no order was created.'}
                       </span>
                     )}
                   </div>
@@ -219,7 +197,7 @@ export const MiniSiteDemoModal: React.FC<MiniSiteDemoModalProps> = ({
                     ) : (
                       <>
                         <ShoppingBag className="w-4 h-4" />
-                        <span>{isRtl ? 'طلب المطبوعة الآن ($١٤٠)' : 'Buy Archival Print ($140)'}</span>
+                      <span>{isRtl ? 'إعداد منتج حقيقي' : 'Configure a real product'}</span>
                       </>
                     )}
                   </button>

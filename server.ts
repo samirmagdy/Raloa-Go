@@ -9,9 +9,9 @@ import {
   APP_URL,
   adminDb,
   adminAuth,
+  stripe,
   cloudflareRequest,
   createCheckoutSession,
-  createOrderCheckoutSession,
   createPortalSession,
   getBillingDetails,
   deleteDomain,
@@ -604,6 +604,39 @@ function normalizeHostname(value: unknown): string | null {
 
 function validEmail(value: string): boolean {
   return value.length <= 320 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
+}
+
+const PRODUCT_CURRENCIES = new Set(['usd', 'eur', 'gbp', 'sar', 'aed', 'cad', 'aud']);
+
+function validProductImage(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 2000) return false;
+  try {
+    const url = new URL(value);
+    return ['https:', 'http:'].includes(url.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function publicProduct(data: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: data.id,
+    name: data.name,
+    description: data.description || '',
+    imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : [],
+    priceMinor: data.priceMinor,
+    currency: data.currency,
+    active: data.active === true,
+    inventory: data.inventory === null || data.inventory === undefined ? null : Math.max(0, Number(data.inventory)),
+    availableQuantity: data.inventory === null || data.inventory === undefined
+      ? null
+      : Math.max(0, Number(data.inventory) - Number(data.inventoryReserved || 0))
+  };
+}
+
+async function creatorProducts(userId: string) {
+  const snapshot = await adminDb.collection('creator_products').where('creatorId', '==', userId).limit(200).get();
+  return snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
 }
 
 function isSafePublicUrl(value: unknown, allowAnchor = false): value is string {
@@ -1426,37 +1459,6 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
     if (error instanceof Error && error.message === 'BOOKING_SLOT_TAKEN') return apiError(res, 409, 'SLOT_UNAVAILABLE', 'That slot is no longer available.');
     console.error('[Public booking]', error);
     return apiError(res, 503, 'BOOKING_UNAVAILABLE', 'Booking service is temporarily unavailable.');
-  }
-});
-
-app.post('/api/v1/public/orders', async (req: Request, res: Response) => {
-  const itemTitle = typeof req.body?.itemTitle === 'string' ? req.body.itemTitle.trim() : '';
-  const buyerEmail = typeof req.body?.buyerEmail === 'string' ? req.body.buyerEmail.trim().toLowerCase() : '';
-  if (itemTitle !== 'Brutalist Shadow Study #03' || !validEmail(buyerEmail)) {
-    return res.status(400).json({ error: 'A valid product and buyer email are required' });
-  }
-  const rate = await enforcePublicRateLimit(req, 'order', 10, 60 * 60 * 1000);
-  if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many order requests', retry_after: rate.retryAfter });
-  const idempotencyKey = req.headers['idempotency-key'];
-  if (typeof idempotencyKey !== 'string') return res.status(400).json({ error: 'Idempotency-Key header is required' });
-  if (!isAdminConfigured() || !isStripeConfigured()) return res.status(503).json({ error: 'Checkout is not configured' });
-  let orderId = '';
-  try {
-    const claimed = await claimIdempotency('order', idempotencyKey);
-    if (claimed.inProgress) return apiError(res, 409, 'IDEMPOTENCY_IN_PROGRESS', 'A request with this idempotency key is already being processed.');
-    if (claimed.replay && claimed.response) return res.status(201).json(claimed.response);
-    const reference = adminDb.collection('orders').doc();
-    orderId = reference.id;
-    const order = { id: reference.id, itemTitle, price: 140, currency: 'USD', buyerEmail, status: 'pending', createdAt: new Date().toISOString() };
-    await reference.create(order);
-    const url = await createOrderCheckoutSession(buyerEmail, reference.id, idempotencyKey);
-    const response = { id: reference.id, status: order.status, url };
-    await completeIdempotency('order', idempotencyKey, response);
-    return res.status(201).json(response);
-  } catch (error) {
-    if (orderId) await adminDb.collection('orders').doc(orderId).delete().catch(() => undefined);
-    console.error('[Public order]', error);
-    return res.status(503).json({ error: 'Checkout is temporarily unavailable' });
   }
 });
 
@@ -2629,6 +2631,203 @@ app.put('/api/sites/:siteId', async (req: Request, res: Response) => {
   }
   await existingRef.set(sanitized, { merge: true });
   return res.status(existing.exists ? 200 : 201).json({ site: sanitized });
+});
+
+app.get('/api/creator/products', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product persistence is not configured.');
+  try {
+    const products = await creatorProducts(user.uid);
+    return res.status(200).json({ products: products.map((product) => publicProduct(product)) });
+  } catch (error) {
+    console.error('[Creator products list]', error);
+    return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Products are temporarily unavailable.');
+  }
+});
+
+app.post('/api/creator/products', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured() || !stripe) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 120) : '';
+  const description = typeof req.body?.description === 'string' ? req.body.description.trim().slice(0, 2000) : '';
+  const imageUrls = Array.isArray(req.body?.imageUrls) ? req.body.imageUrls.filter(validProductImage).slice(0, 8) : [];
+  const priceMinor = Number(req.body?.priceMinor);
+  const currency = typeof req.body?.currency === 'string' ? req.body.currency.trim().toLowerCase() : '';
+  const inventory = req.body?.inventory === null || req.body?.inventory === undefined ? null : Number(req.body.inventory);
+  const active = req.body?.active !== false;
+  if (!name || !Number.isSafeInteger(priceMinor) || priceMinor < 50 || priceMinor > 10_000_000 || !PRODUCT_CURRENCIES.has(currency) || (inventory !== null && (!Number.isSafeInteger(inventory) || inventory < 0))) {
+    return apiError(res, 400, 'INVALID_PRODUCT', 'Name, supported currency, valid price, and inventory are required.');
+  }
+  if (Array.isArray(req.body?.imageUrls) && imageUrls.length !== req.body.imageUrls.length) return apiError(res, 400, 'INVALID_PRODUCT_IMAGES', 'Every product image must be an HTTP(S) URL.');
+  let stripeProductId = '';
+  let stripePriceId = '';
+  try {
+    const stripeProduct = await stripe.products.create({ name, description, images: imageUrls, active }, { idempotencyKey: `creator_product_${user.uid}_${crypto.randomUUID()}` });
+    stripeProductId = stripeProduct.id;
+    const stripePrice = await stripe.prices.create({ product: stripeProduct.id, unit_amount: priceMinor, currency, active }, { idempotencyKey: `creator_price_${user.uid}_${crypto.randomUUID()}` });
+    stripePriceId = stripePrice.id;
+    const reference = adminDb.collection('creator_products').doc();
+    const now = new Date().toISOString();
+    const product = { id: reference.id, creatorId: user.uid, name, description, imageUrls, priceMinor, currency, active, inventory, inventoryReserved: 0, stripeProductId: stripeProduct.id, stripePriceId: stripePrice.id, createdAt: now, updatedAt: now };
+    await reference.create(product);
+    return res.status(201).json({ product: publicProduct(product) });
+  } catch (error) {
+    if (stripePriceId) await stripe.prices.update(stripePriceId, { active: false }).catch(() => undefined);
+    if (stripeProductId) await stripe.products.update(stripeProductId, { active: false }).catch(() => undefined);
+    console.error('[Creator product create]', error);
+    return apiError(res, 503, 'PRODUCT_CREATE_FAILED', 'Product could not be created.');
+  }
+});
+
+app.patch('/api/creator/products/:productId', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured() || !stripe) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
+  const productId = String(req.params.productId || '').trim();
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(productId)) return apiError(res, 400, 'INVALID_PRODUCT_ID', 'Invalid product ID.');
+  const reference = adminDb.collection('creator_products').doc(productId);
+  const snapshot = await reference.get();
+  if (!snapshot.exists || snapshot.data()?.creatorId !== user.uid) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
+  const current = snapshot.data() || {};
+  const name = req.body?.name === undefined ? String(current.name || '') : typeof req.body.name === 'string' ? req.body.name.trim().slice(0, 120) : '';
+  const description = req.body?.description === undefined ? String(current.description || '') : typeof req.body.description === 'string' ? req.body.description.trim().slice(0, 2000) : '';
+  const imageUrls = req.body?.imageUrls === undefined ? (Array.isArray(current.imageUrls) ? current.imageUrls : []) : Array.isArray(req.body.imageUrls) ? req.body.imageUrls.filter(validProductImage).slice(0, 8) : [];
+  const priceMinor = req.body?.priceMinor === undefined ? Number(current.priceMinor) : Number(req.body.priceMinor);
+  const currency = req.body?.currency === undefined ? String(current.currency || '') : typeof req.body.currency === 'string' ? req.body.currency.trim().toLowerCase() : '';
+  const inventory = req.body?.inventory === undefined ? (current.inventory === null || current.inventory === undefined ? null : Number(current.inventory)) : req.body.inventory === null ? null : Number(req.body.inventory);
+  const active = req.body?.active === undefined ? current.active === true : req.body.active === true;
+  const reserved = Number(current.inventoryReserved || 0);
+  if (!name || !Number.isSafeInteger(priceMinor) || priceMinor < 50 || priceMinor > 10_000_000 || !PRODUCT_CURRENCIES.has(currency) || (inventory !== null && (!Number.isSafeInteger(inventory) || inventory < reserved))) {
+    return apiError(res, 400, 'INVALID_PRODUCT', 'Product fields are invalid or inventory is below currently reserved units.');
+  }
+  if (req.body?.imageUrls !== undefined && imageUrls.length !== req.body.imageUrls.length) return apiError(res, 400, 'INVALID_PRODUCT_IMAGES', 'Every product image must be an HTTP(S) URL.');
+  try {
+    await stripe.products.update(String(current.stripeProductId), { name, description, images: imageUrls, active });
+    let stripePriceId = String(current.stripePriceId || '');
+    if (priceMinor !== Number(current.priceMinor) || currency !== String(current.currency)) {
+      const nextPrice = await stripe.prices.create({ product: String(current.stripeProductId), unit_amount: priceMinor, currency, active }, { idempotencyKey: `creator_price_update_${productId}_${crypto.randomUUID()}` });
+      if (stripePriceId) await stripe.prices.update(stripePriceId, { active: false });
+      stripePriceId = nextPrice.id;
+    } else if (stripePriceId) {
+      await stripe.prices.update(stripePriceId, { active });
+    }
+    const updated = { ...current, id: productId, name, description, imageUrls, priceMinor, currency, active, inventory, stripePriceId, updatedAt: new Date().toISOString() };
+    await reference.set(updated, { merge: true });
+    return res.status(200).json({ product: publicProduct(updated) });
+  } catch (error) {
+    console.error('[Creator product update]', error);
+    return apiError(res, 503, 'PRODUCT_UPDATE_FAILED', 'Product could not be updated.');
+  }
+});
+
+app.delete('/api/creator/products/:productId', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured() || !stripe) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
+  const reference = adminDb.collection('creator_products').doc(String(req.params.productId || ''));
+  const snapshot = await reference.get();
+  if (!snapshot.exists || snapshot.data()?.creatorId !== user.uid) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
+  try {
+    await stripe.products.update(String(snapshot.data()?.stripeProductId), { active: false });
+    if (snapshot.data()?.stripePriceId) await stripe.prices.update(String(snapshot.data()?.stripePriceId), { active: false });
+    await reference.set({ active: false, updatedAt: new Date().toISOString() }, { merge: true });
+    return res.status(200).json({ id: reference.id, active: false });
+  } catch (error) {
+    console.error('[Creator product archive]', error);
+    return apiError(res, 503, 'PRODUCT_ARCHIVE_FAILED', 'Product could not be archived.');
+  }
+});
+
+app.get('/api/v1/public/products/:handle', async (req: Request, res: Response) => {
+  const handle = String(req.params.handle || '').trim().toLowerCase();
+  if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return apiError(res, 400, 'INVALID_HANDLE', 'Invalid creator handle.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Products are not configured.');
+  const site = await getPublishedSiteByHandle(handle).catch(() => null);
+  if (!site) return apiError(res, 404, 'CREATOR_NOT_FOUND', 'Creator page not found.');
+  const products = await adminDb.collection('creator_products').where('creatorId', '==', String(site.userId)).where('active', '==', true).limit(100).get();
+  return res.status(200).json({ products: products.docs.map((document) => publicProduct({ id: document.id, ...document.data() })) });
+});
+
+app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: Response) => {
+  const handle = String(req.params.handle || '').trim().toLowerCase();
+  const productId = typeof req.body?.productId === 'string' ? req.body.productId.trim() : '';
+  const quantity = Number(req.body?.quantity || 1);
+  const customerEmail = typeof req.body?.customerEmail === 'string' ? req.body.customerEmail.trim().toLowerCase() : '';
+  if (!/^[a-z0-9_-]{3,30}$/.test(handle) || !/^[A-Za-z0-9_-]{1,128}$/.test(productId) || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 20 || !validEmail(customerEmail)) return apiError(res, 400, 'INVALID_ORDER', 'A valid product, quantity, and email are required.');
+  if (!isAdminConfigured() || !stripe) return apiError(res, 503, 'CHECKOUT_UNAVAILABLE', 'Checkout is not configured.');
+  const rate = await enforcePublicRateLimit(req, 'product-checkout', 10, 60 * 60 * 1000);
+  if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many checkout attempts', retry_after: rate.retryAfter });
+  const idempotencyKey = req.headers['idempotency-key'];
+  if (typeof idempotencyKey !== 'string' || idempotencyKey.length < 16 || idempotencyKey.length > 200) return apiError(res, 400, 'IDEMPOTENCY_REQUIRED', 'Idempotency-Key header is required.');
+  const site = await getPublishedSiteByHandle(handle).catch(() => null);
+  if (!site) return apiError(res, 404, 'CREATOR_NOT_FOUND', 'Creator page not found.');
+  const productRef = adminDb.collection('creator_products').doc(productId);
+  const orderRef = adminDb.collection('orders').doc();
+  const now = new Date().toISOString();
+  try {
+    const claimed = await claimIdempotency('product-checkout', idempotencyKey);
+    if (claimed.inProgress) return apiError(res, 409, 'IDEMPOTENCY_IN_PROGRESS', 'This checkout is already being processed.');
+    if (claimed.replay && claimed.response) return res.status(201).json(claimed.response);
+    const order = await adminDb.runTransaction(async (transaction) => {
+      const productSnapshot = await transaction.get(productRef);
+      if (!productSnapshot.exists || productSnapshot.data()?.creatorId !== String(site.userId) || productSnapshot.data()?.active !== true) throw new Error('PRODUCT_NOT_FOUND');
+      const product = productSnapshot.data() || {};
+      const available = product.inventory === null || product.inventory === undefined ? null : Number(product.inventory) - Number(product.inventoryReserved || 0);
+      if (available !== null && available < quantity) throw new Error('OUT_OF_STOCK');
+      const unitPriceMinor = Number(product.priceMinor);
+      const orderData = { id: orderRef.id, creatorId: String(site.userId), creatorHandle: handle, productId, productName: String(product.name), quantity, unitPriceMinor, currency: String(product.currency), totalMinor: unitPriceMinor * quantity, customerEmail, status: 'pending_payment', fulfillmentStatus: 'unfulfilled', inventoryReservation: quantity, createdAt: now, updatedAt: now };
+      transaction.update(productRef, { inventoryReserved: Number(product.inventoryReserved || 0) + quantity, updatedAt: now });
+      transaction.create(orderRef, orderData);
+      return { orderData, stripePriceId: String(product.stripePriceId) };
+    });
+    const session = await stripe.checkout.sessions.create({ mode: 'payment', line_items: [{ price: order.stripePriceId, quantity }], customer_email: customerEmail, success_url: `${APP_URL}/?order=success&order_id=${encodeURIComponent(orderRef.id)}`, cancel_url: `${APP_URL}/?order=cancelled&order_id=${encodeURIComponent(orderRef.id)}`, metadata: { orderId: orderRef.id, productId, creatorId: String(site.userId), creatorHandle: handle } }, { idempotencyKey: `creator_order_${idempotencyKey}` });
+    if (!session.url) throw new Error('STRIPE_CHECKOUT_URL_MISSING');
+    await orderRef.set({ stripeCheckoutSessionId: session.id, updatedAt: new Date().toISOString() }, { merge: true });
+    const response = { id: orderRef.id, status: 'pending_payment', url: session.url };
+    await completeIdempotency('product-checkout', idempotencyKey, response);
+    return res.status(201).json(response);
+  } catch (error) {
+    if (error instanceof Error && ['PRODUCT_NOT_FOUND', 'OUT_OF_STOCK'].includes(error.message)) return apiError(res, error.message === 'OUT_OF_STOCK' ? 409 : 404, error.message, error.message === 'OUT_OF_STOCK' ? 'The requested quantity is no longer available.' : 'Product not found.');
+    await adminDb.runTransaction(async (transaction) => {
+      const [orderSnapshot, productSnapshot] = await Promise.all([transaction.get(orderRef), transaction.get(productRef)]);
+      if (orderSnapshot.exists && orderSnapshot.data()?.status === 'pending_payment') transaction.delete(orderRef);
+      if (productSnapshot.exists && productSnapshot.data()?.creatorId === String(site.userId)) transaction.update(productRef, { inventoryReserved: Math.max(0, Number(productSnapshot.data()?.inventoryReserved || 0) - quantity), updatedAt: new Date().toISOString() });
+    }).catch(() => undefined);
+    console.error('[Public product checkout]', error);
+    return apiError(res, 503, 'CHECKOUT_UNAVAILABLE', 'Checkout is temporarily unavailable.');
+  }
+});
+
+app.get('/api/account/orders', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Order history is not configured.');
+  const profile = await adminDb.collection('users').doc(user.uid).get();
+  const email = String(user.email || profile.data()?.email || '').toLowerCase();
+  const [creatorOrders, customerOrders] = await Promise.all([
+    adminDb.collection('orders').where('creatorId', '==', user.uid).limit(100).get(),
+    email ? adminDb.collection('orders').where('customerEmail', '==', email).limit(100).get() : Promise.resolve({ docs: [] } as any)
+  ]);
+  const unique = new Map<string, Record<string, unknown>>();
+  [...creatorOrders.docs, ...customerOrders.docs].forEach((document) => unique.set(document.id, { id: document.id, ...document.data() }));
+  return res.status(200).json({ orders: [...unique.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
+});
+
+app.patch('/api/creator/orders/:orderId/fulfillment', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!isAdminConfigured()) return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Order management is not configured.');
+  const fulfillmentStatus = req.body?.fulfillmentStatus;
+  if (!['processing', 'fulfilled', 'cancelled'].includes(fulfillmentStatus)) return apiError(res, 400, 'INVALID_FULFILLMENT_STATUS', 'Invalid fulfillment status.');
+  const reference = adminDb.collection('orders').doc(String(req.params.orderId || ''));
+  const snapshot = await reference.get();
+  if (!snapshot.exists || snapshot.data()?.creatorId !== user.uid) return apiError(res, 404, 'ORDER_NOT_FOUND', 'Order not found.');
+  const order = snapshot.data() || {};
+  if (order.status !== 'paid' && fulfillmentStatus !== 'cancelled') return apiError(res, 409, 'ORDER_NOT_PAID', 'Only paid orders can be fulfilled.');
+  await reference.set({ fulfillmentStatus, updatedAt: new Date().toISOString() }, { merge: true });
+  return res.status(200).json({ id: reference.id, fulfillmentStatus });
 });
 
 app.post('/api/billing/activate-free', async (req: Request, res: Response) => {

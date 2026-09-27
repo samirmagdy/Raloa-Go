@@ -6,6 +6,74 @@ info:
 servers:
   - url: https://raloa.app
 paths:
+  /api/account/orders:
+    get:
+      operationId: get_get_api_account_orders
+      responses:
+        '200': { description: Order history }
+        '401': { description: Authentication required }
+        '503': { description: Orders unavailable }
+  /api/creator/products:
+    get:
+      operationId: get_get_api_creator_products
+      responses:
+        '200': { description: Creator products }
+        '401': { description: Authentication required }
+        '503': { description: Products unavailable }
+    post:
+      operationId: post_post_api_creator_products
+      responses:
+        '201': { description: Product created }
+        '400': { description: Invalid product }
+        '401': { description: Authentication required }
+        '503': { description: Products unavailable }
+  /api/creator/products/{productId}:
+    patch:
+      operationId: patch_patch_api_creator_products_productId
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Product updated }
+        '400': { description: Invalid product }
+        '401': { description: Authentication required }
+        '404': { description: Product not found }
+    delete:
+      operationId: delete_delete_api_creator_products_productId
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Product archived }
+        '401': { description: Authentication required }
+        '404': { description: Product not found }
+  /api/creator/orders/{orderId}/fulfillment:
+    patch:
+      operationId: patch_patch_api_creator_orders_orderId_fulfillment
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Fulfillment updated }
+        '400': { description: Invalid fulfillment status }
+        '401': { description: Authentication required }
+        '404': { description: Order not found }
+  /api/v1/public/products/{handle}:
+    get:
+      operationId: get_get_api_v1_public_products_handle
+      parameters:
+        - { name: handle, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Active public creator products }
+        '404': { description: Creator not found }
+        '503': { description: Products unavailable }
+  /api/v1/public/products/{handle}/checkout:
+    post:
+      operationId: post_post_api_v1_public_products_handle_checkout
+      parameters:
+        - { name: handle, in: path, required: true, schema: { type: string } }
+      responses:
+        '201': { description: Stripe Checkout session created }
+        '400': { description: Invalid order }
+        '409': { description: Out of stock or idempotency conflict }
+        '503': { description: Checkout unavailable }
   /api/account/billing:
     get:
       operationId: get_get_api_account_billing
@@ -441,16 +509,6 @@ paths:
   /api/v1/public/newsletter:
     post:
       operationId: post_post_api_v1_public_newsletter
-      responses:
-        '200':
-          description: Successful response
-        '400':
-          description: Invalid request
-        '401':
-          description: Authentication required
-  /api/v1/public/orders:
-    post:
-      operationId: post_post_api_v1_public_orders
       responses:
         '200':
           description: Successful response

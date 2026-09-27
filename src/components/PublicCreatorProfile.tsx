@@ -18,6 +18,7 @@ import { recordLinkClick, recordPageView } from '../lib/firebase';
 import { usePageSEO } from '../hooks/usePageSEO';
 import { SafeImage } from './SafeImage';
 import { BookingSchedulerModal } from './modals/BookingSchedulerModal';
+import { ProductStoreModal } from './modals/ProductStoreModal';
 
 interface PublicCreatorProfileProps {
   handle: string;
@@ -39,6 +40,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [bookingOpen, setBookingOpen] = useState(false);
+  const [storeOpen, setStoreOpen] = useState(false);
 
   const fixtureCreator = templatesData.find(
     (t) => t.id.toLowerCase() === cleanHandle || t.name.toLowerCase() === cleanHandle
@@ -145,6 +147,10 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
     recordLinkClick(link.id, link.url, cleanHandle);
     if (link.type === 'booking' && !/^https?:\/\//i.test(link.url)) {
       setBookingOpen(true);
+      return;
+    }
+    if (link.type === 'shop' && !/^https?:\/\//i.test(link.url)) {
+      setStoreOpen(true);
       return;
     }
     if (link.url.startsWith('#')) {
@@ -350,6 +356,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
           onClose={() => setBookingOpen(false)}
         />
       )}
+      {storeOpen && <ProductStoreModal handle={cleanHandle} locale={locale} onClose={() => setStoreOpen(false)} />}
     </div>
   );
 };
