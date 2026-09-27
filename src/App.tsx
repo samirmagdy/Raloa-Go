@@ -20,7 +20,6 @@ import { ScrollSpyDots } from './components/ScrollSpyDots';
 import { BackToTop } from './components/BackToTop';
 import { FadeInSection } from './components/FadeInSection';
 import { NotFound } from './components/NotFound';
-import { PublicCreatorProfile } from './components/PublicCreatorProfile';
 import { InvalidSslFallback } from './components/InvalidSslFallback';
 import { AuthenticatedHome } from './components/AuthenticatedHome';
 import { useAuth } from './hooks/useAuth';
@@ -48,6 +47,7 @@ function lazyWithChunkRecovery<T extends ComponentType<any>>(loader: () => Promi
 // lazyWithChunkRecovery refreshes once so the browser receives the current manifest.
 const CommandPaletteModal = lazyWithChunkRecovery(() => import('./components/modals/CommandPaletteModal').then((m) => ({ default: m.CommandPaletteModal })), 'command-palette');
 const StudioModal = lazyWithChunkRecovery(() => import('./components/modals/StudioModal').then((m) => ({ default: m.StudioModal })), 'studio');
+const PublicCreatorProfile = lazyWithChunkRecovery(() => import('./components/PublicCreatorProfile').then((m) => ({ default: m.PublicCreatorProfile })), 'public-profile');
 const TemplatePreviewModal = lazyWithChunkRecovery(() => import('./components/modals/TemplatePreviewModal').then((m) => ({ default: m.TemplatePreviewModal })), 'template-preview');
 const PlanCheckoutModal = lazyWithChunkRecovery(() => import('./components/modals/PlanCheckoutModal').then((m) => ({ default: m.PlanCheckoutModal })), 'plan-checkout');
 const AuthModal = lazyWithChunkRecovery(() => import('./components/modals/AuthModal').then((m) => ({ default: m.AuthModal })), 'auth');
@@ -720,19 +720,21 @@ function MainApp() {
           onSelectTemplate={handleSelectTemplate}
         />
       ) : currentRoute === 'profile' ? (
-        <PublicCreatorProfile
-          handle={profileHandle}
-          locale={locale}
-          onClaimHandle={(handle) => {
-            setStudioUsername(handle);
-            setAuthModal({ open: true, mode: 'signup' });
-          }}
-          onReturnHome={handleReturnHome}
-          onNotFound={(handle) => {
-            setCurrentRoute('404');
-            setAttemptedPath(`/@${handle}`);
-          }}
-        />
+        <Suspense fallback={<LoadingOverlay isLoading locale={locale} theme={theme} />}>
+          <PublicCreatorProfile
+            handle={profileHandle}
+            locale={locale}
+            onClaimHandle={(handle) => {
+              setStudioUsername(handle);
+              setAuthModal({ open: true, mode: 'signup' });
+            }}
+            onReturnHome={handleReturnHome}
+            onNotFound={(handle) => {
+              setCurrentRoute('404');
+              setAttemptedPath(`/@${handle}`);
+            }}
+          />
+        </Suspense>
       ) : currentRoute === 'ssl_error' ? (
         <InvalidSslFallback
           locale={locale}
