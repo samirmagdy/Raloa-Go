@@ -940,8 +940,25 @@ function entitlementError(res: Response, feature: string, message: string, detai
 function siteMediaCount(site: Record<string, any>): number {
   const urls = new Set<string>();
   for (const value of [site.avatar, site.coverImage]) if (typeof value === 'string' && value.trim()) urls.add(value.trim());
-  if (Array.isArray(site.links)) for (const link of site.links) if (typeof link?.thumbnail === 'string' && link.thumbnail.trim()) urls.add(link.thumbnail.trim());
+  if (Array.isArray(site.links)) for (const link of site.links) {
+    if (typeof link?.thumbnail === 'string' && link.thumbnail.trim()) urls.add(link.thumbnail.trim());
+    if (Array.isArray(link?.galleryItems)) for (const item of link.galleryItems) {
+      if (typeof item?.src === 'string' && item.src.trim()) urls.add(item.src.trim());
+      if (typeof item?.thumbnail === 'string' && item.thumbnail.trim()) urls.add(item.thumbnail.trim());
+    }
+  }
   return urls.size;
+}
+
+function validGalleryItem(item: unknown): boolean {
+  if (!item || typeof item !== 'object') return false;
+  const value = item as Record<string, unknown>;
+  return typeof value.id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value.id)
+    && typeof value.src === 'string' && value.src.length <= 4000 && isSafePublicUrl(value.src)
+    && (value.thumbnail === undefined || (typeof value.thumbnail === 'string' && value.thumbnail.length <= 4000 && isSafePublicUrl(value.thumbnail)))
+    && (value.alt === undefined || (typeof value.alt === 'string' && value.alt.length <= 300))
+    && (value.caption === undefined || (typeof value.caption === 'string' && value.caption.length <= 500))
+    && (value.type === undefined || value.type === 'image' || value.type === 'video');
 }
 
 export function validateSiteEntitlements(site: Record<string, any>, profile: DocumentData | undefined): { feature: string; message: string; details?: Record<string, string> } | null {
@@ -957,6 +974,8 @@ export function validateSiteEntitlements(site: Record<string, any>, profile: Doc
     if (site[field] !== undefined && !allowed.includes(site[field])) return { feature: field, message: `This ${field} option is not included in your plan.`, details: { value: String(site[field]) } };
   }
   if (Array.isArray(site.links)) {
+    const invalidGallery = site.links.find((link) => link?.type === 'gallery' && (!Array.isArray(link.galleryItems) || link.galleryItems.length < 1 || link.galleryItems.length > 50 || link.galleryItems.some((item: unknown) => !validGalleryItem(item)) || new Set(link.galleryItems.map((item: any) => item.id)).size !== link.galleryItems.length));
+    if (invalidGallery) return { feature: 'gallery', message: 'Each gallery must contain 1 to 50 valid image or video items.' };
     const blocked = site.links.find((link) => !capabilities.allowedBlockTypes.includes(String(link?.type || 'link')));
     if (blocked) return { feature: 'blockType', message: 'This block type is not included in your plan.', details: { value: String(blocked.type || 'link') } };
   }

@@ -424,6 +424,7 @@ export const StudioModal: React.FC<StudioModalProps> = ({
       subtitle: l.subtitle,
       subtitleAr: l.subtitle,
       url: l.url,
+      galleryItems: l.galleryItems,
       type: l.type as any
     }))
   };

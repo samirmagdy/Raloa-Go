@@ -9,7 +9,7 @@ import {
   Mail,
   Check
 } from 'lucide-react';
-import { TemplateItem, Locale } from '../types';
+import { TemplateItem, Locale, MediaGalleryItem } from '../types';
 import { templatesData } from '../data/content';
 import { resolveTemplateTheme, getTemplateBackgroundContainerProperties } from '../utils/templateThemes';
 import { PlatformIcon, PlatformIconName } from './brand/PlatformIcon';
@@ -19,6 +19,7 @@ import { usePageSEO } from '../hooks/usePageSEO';
 import { SafeImage } from './SafeImage';
 import { BookingSchedulerModal } from './modals/BookingSchedulerModal';
 import { ProductStoreModal } from './modals/ProductStoreModal';
+import { MediaGallery } from './MediaGallery';
 
 interface PublicCreatorProfileProps {
   handle: string;
@@ -77,6 +78,7 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
             subtitleAr: link.subtitleAr || link.subtitle || '',
             url: link.url || '#',
             thumbnail: link.thumbnail,
+            galleryItems: Array.isArray(link.galleryItems) ? link.galleryItems as MediaGalleryItem[] : undefined,
             type: link.type || 'link'
           })),
           socials: Array.isArray(site.socials) ? site.socials : []
@@ -155,8 +157,9 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
       setStoreOpen(true);
       return;
     }
+    if (link.type === 'gallery') return;
     if (link.url.startsWith('#')) {
-      alert(isRtl ? `فتح: ${isRtl ? link.titleAr : link.title}` : `Opening: ${link.title}`);
+      return;
     } else {
       window.open(link.url, '_blank', 'noopener,noreferrer');
     }
@@ -321,6 +324,17 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
             </motion.button>
           ))}
         </div>
+
+        {creator.sampleLinks.filter((link) => link.type === 'gallery' && link.galleryItems?.length).map((link) => (
+          <div key={`${link.id}-gallery`} className="mb-8 w-full">
+            <MediaGallery items={link.galleryItems || []} title={isRtl ? link.titleAr : link.title} isRtl={isRtl} />
+          </div>
+        ))}
+        {creator.sampleLinks.some((link) => link.type === 'gallery' && !link.galleryItems?.length) && (
+          <p className="mb-8 w-full rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-center text-xs opacity-70">
+            {isRtl ? 'لا توجد وسائط في هذا المعرض بعد.' : 'This gallery has no media yet.'}
+          </p>
+        )}
 
         {/* Branded CTA Banner: Claim your handle / Create your own */}
         <div className="w-full pt-4 pb-2">

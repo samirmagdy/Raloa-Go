@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Locale } from '../../types';
 import { SortableBlockList, StudioBlockItem } from './SortableBlockList';
+import { optimizedMediaUrl } from '../MediaGallery';
 
 interface StudioContentTabProps {
   displayName: string;
@@ -68,6 +69,7 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
   const [newTitle, setNewTitle] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [newSubtitle, setNewSubtitle] = useState('');
+  const [newGalleryItems, setNewGalleryItems] = useState('');
 
   // Setup checklist calculation
   const hasHandle = Boolean(username && username.length > 2);
@@ -88,18 +90,29 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
 
   const handleCreateBlock = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newUrl.trim()) return;
+    if (!newTitle.trim() || (newBlockType !== 'gallery' && !newUrl.trim())) return;
     if (typeof maxLinks === 'number' && links.length >= maxLinks) {
       onEntitlementError?.('Your current plan has reached its link limit.');
       return;
     }
 
+    const galleryItems = newBlockType === 'gallery'
+      ? newGalleryItems.split('\n').map((line, index) => {
+        const [src, caption] = line.split('|').map((part) => part.trim());
+        return src ? { id: `media-${Date.now()}-${index}`, src, thumbnail: optimizedMediaUrl(src, 600), alt: newTitle.trim(), caption: caption || undefined, type: 'image' as const } : null;
+      }).filter((item): item is NonNullable<typeof item> => Boolean(item)).slice(0, 50)
+      : [];
+    if (newBlockType === 'gallery' && galleryItems.length === 0) {
+      onEntitlementError?.('Add at least one image URL to create a gallery.');
+      return;
+    }
     const block: StudioBlockItem = {
       id: `block-${Date.now()}`,
       title: newTitle.trim(),
-      url: newUrl.trim(),
+      url: newBlockType === 'gallery' ? `#gallery-${Date.now()}` : newUrl.trim(),
       subtitle: newSubtitle.trim() || undefined,
-      type: newBlockType
+      type: newBlockType,
+      ...(newBlockType === 'gallery' ? { thumbnail: galleryItems[0].thumbnail, galleryItems } : {})
     };
 
     if (allowedBlockTypes && !allowedBlockTypes.includes(newBlockType)) {
@@ -110,6 +123,7 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
     setNewTitle('');
     setNewUrl('');
     setNewSubtitle('');
+    setNewGalleryItems('');
     setAddBlockModalOpen(false);
 
     if (links.length === 2) {
@@ -418,16 +432,10 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  {isRtl ? 'الرابط أو الوجهة' : 'Destination URL'}
+                  {newBlockType === 'gallery' ? (isRtl ? 'روابط الصور (رابط واحد لكل سطر)' : 'Image URLs (one per line)') : (isRtl ? 'الرابط أو الوجهة' : 'Destination URL')}
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={newUrl}
-                  onChange={(e) => setNewUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+                {newBlockType === 'gallery' ? <textarea required value={newGalleryItems} onChange={(e) => setNewGalleryItems(e.target.value)} placeholder="https://image.example/one.jpg | Caption\nhttps://image.example/two.jpg | Another caption" rows={4} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" /> : <input type="text" required value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://..." className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />}
+                {newBlockType === 'gallery' && <p className="mt-1 text-[10px] text-slate-400">{isRtl ? 'اختياري: أضف وصفاً بعد | لكل صورة.' : 'Optional: add a caption after | for each image.'}</p>}
               </div>
 
               <div>

@@ -2,6 +2,17 @@ export type Locale = 'en' | 'ar';
 
 export type BackgroundStyle = 'signature' | 'banner' | 'immersive' | 'gradient' | 'minimal';
 
+export type GalleryMediaType = 'image' | 'video';
+
+export interface MediaGalleryItem {
+  id: string;
+  src: string;
+  thumbnail?: string;
+  alt?: string;
+  caption?: string;
+  type?: GalleryMediaType;
+}
+
 export interface BookingServiceConfig {
   id: string;
   name: string;
@@ -126,6 +137,7 @@ export interface TemplateItem {
     subtitleAr?: string;
     url: string;
     thumbnail?: string;
+    galleryItems?: MediaGalleryItem[];
     type?: 'link' | 'gallery' | 'booking' | 'shop';
   }[];
   socials: {
@@ -184,6 +196,7 @@ export interface MiniSiteUserConfig {
     title: string;
     url: string;
     subtitle?: string;
+    galleryItems?: MediaGalleryItem[];
     type?: 'link' | 'gallery' | 'booking' | 'shop';
   }[];
   socials: {

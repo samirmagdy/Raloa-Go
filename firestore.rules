@@ -37,7 +37,7 @@ service cloud.firestore {
     }
     function validLink(link) {
       return link is map
-        && link.keys().hasOnly(['id', 'title', 'titleAr', 'subtitle', 'subtitleAr', 'url', 'thumbnail', 'type'])
+        && link.keys().hasOnly(['id', 'title', 'titleAr', 'subtitle', 'subtitleAr', 'url', 'thumbnail', 'galleryItems', 'type'])
         && link.id is string && link.id.size() <= 200
         && link.title is string && link.title.size() <= 200
         && link.url is string && link.url.size() <= 2000
@@ -46,7 +46,19 @@ service cloud.firestore {
         && (!('subtitle' in link) || link.subtitle is string)
         && (!('subtitleAr' in link) || link.subtitleAr is string)
         && (!('thumbnail' in link) || link.thumbnail is string)
+        && (!('galleryItems' in link) || link.galleryItems is list && link.galleryItems.size() >= 1 && link.galleryItems.size() <= 50 && link.galleryItems.all(item, validGalleryItem(item)))
+        && (!('type' in link) || link.type != 'gallery' || ('galleryItems' in link && link.galleryItems is list && link.galleryItems.size() >= 1))
         && (!('type' in link) || link.type in ['link', 'gallery', 'booking', 'shop']);
+    }
+    function validGalleryItem(item) {
+      return item is map
+        && item.keys().hasOnly(['id', 'src', 'thumbnail', 'alt', 'caption', 'type'])
+        && item.id is string && item.id.size() <= 128
+        && item.src is string && item.src.size() <= 4000 && item.src.matches('^https?://')
+        && (!('thumbnail' in item) || item.thumbnail is string && item.thumbnail.size() <= 4000 && item.thumbnail.matches('^https?://'))
+        && (!('alt' in item) || item.alt is string && item.alt.size() <= 300)
+        && (!('caption' in item) || item.caption is string && item.caption.size() <= 500)
+        && (!('type' in item) || item.type in ['image', 'video']);
     }
     function validBookingService(service) {
       return service is map

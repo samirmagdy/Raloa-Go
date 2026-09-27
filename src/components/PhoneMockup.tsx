@@ -8,6 +8,7 @@ import { PremiumMark } from './brand/PremiumMark';
 import { SafeImage } from './SafeImage';
 import { PlatformIcon, PlatformIconName } from './brand/PlatformIcon';
 import { TemplateItem, BackgroundStyle } from '../types';
+import { MediaGallery } from './MediaGallery';
 import { RaloaMark } from './brand/RaloaLogo';
 import { resolveTemplateTheme, getTemplateBackgroundContainerProperties } from '../utils/templateThemes';
 
@@ -176,9 +177,9 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
     setClickedItem(link.id);
     setTimeout(() => setClickedItem(null), 350);
 
+    if (link.type === 'gallery') return;
     if (onOpenAction) {
-      if (link.type === 'gallery') onOpenAction('portfolio', link);
-      else if (link.type === 'booking') onOpenAction('booking', link);
+      if (link.type === 'booking') onOpenAction('booking', link);
       else if (link.type === 'shop') onOpenAction('shop', link);
       else onOpenAction('gear', link);
     }
@@ -318,7 +319,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
 
             {/* Mini-site interactive links */}
             <div className="w-full space-y-2.5 mt-1">
-              {template.sampleLinks.map((link) => {
+            {template.sampleLinks.map((link) => {
                 const isClicked = clickedItem === link.id;
                 const cardDynamicStyle = getCardStyle();
                 const radiusClass = getRadiusClass();
@@ -394,8 +395,15 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
                     </div>
                   </button>
                 );
-              })}
-            </div>
+            })}
+          </div>
+
+          <div className="mt-4 w-full space-y-4">
+            {template.sampleLinks.filter((link) => link.type === 'gallery' && link.galleryItems?.length).map((link) => (
+              <MediaGallery key={`${link.id}-gallery`} items={link.galleryItems || []} title={isRtl ? link.titleAr : link.title} isRtl={isRtl} compact />
+            ))}
+            {template.sampleLinks.some((link) => link.type === 'gallery' && !link.galleryItems?.length) && <p className="rounded-xl border border-black/10 px-3 py-2 text-center text-[10px] opacity-60">{isRtl ? 'لا توجد وسائط في المعرض بعد.' : 'This gallery has no media yet.'}</p>}
+          </div>
 
             {/* Interactive Hint */}
             <div className={`mt-4 pt-3 border-t border-black/10 dark:border-white/10 w-full flex items-center justify-center gap-1.5 text-[10px] font-medium ${themeConfig.footerText}`}>

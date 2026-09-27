@@ -31,7 +31,7 @@ import {
   Image as ImageIcon,
   Link2
 } from 'lucide-react';
-import { Locale } from '../../types';
+import { Locale, MediaGalleryItem } from '../../types';
 import { PremiumMark } from '../brand/PremiumMark';
 
 export interface StudioBlockItem {
@@ -41,6 +41,7 @@ export interface StudioBlockItem {
   subtitle?: string;
   type?: 'link' | 'gallery' | 'booking' | 'shop' | string;
   thumbnail?: string;
+  galleryItems?: MediaGalleryItem[];
 }
 
 interface SortableBlockListProps {
