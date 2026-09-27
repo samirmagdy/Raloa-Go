@@ -186,12 +186,12 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
 
   return (
     <div
-      className={`relative mx-auto w-[295px] sm:w-[320px] md:w-[340px] rounded-[48px] p-3 border-[6px] select-none transition-all duration-300 hover:scale-[1.01] raloa-phone-mockup ${className}`}
+      className={`relative mx-auto w-full max-w-[340px] rounded-[48px] p-3 border-[6px] select-none transition-all duration-300 hover:scale-[1.01] raloa-phone-mockup ${className}`}
       style={bgContainerProps.phoneShellStyle}
     >
       {/* Screen Frame with Dynamic Template Background Container Properties */}
       <div
-        className="relative rounded-[38px] overflow-hidden flex flex-col min-h-[580px] max-h-[640px] shadow-inner raloa-phone-screen transition-all duration-300"
+        className="relative rounded-[38px] overflow-hidden flex flex-col min-h-[540px] sm:min-h-[580px] max-h-[640px] shadow-inner raloa-phone-screen transition-all duration-300"
         style={bgContainerProps.screenContainerStyle}
       >
         {/* Ambient Glow for Template (Signature / Gradient mode) */}
@@ -231,8 +231,8 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
         {/* Scrollable Screen Content */}
         <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar flex flex-col items-center text-center">
           
-          {/* Header Cover Banner (Signature or Banner style) */}
-          {(currentBgStyle === 'signature' || currentBgStyle === 'banner') && coverImg && (
+          {/* Header Cover Banner (Banner style only) */}
+          {currentBgStyle === 'banner' && coverImg && (
             <div className="relative w-full h-28 sm:h-32 overflow-hidden shrink-0 select-none">
               <SafeImage
                 src={coverImg}
@@ -250,7 +250,7 @@ export const PhoneMockup: React.FC<PhoneMockupProps> = ({
           )}
 
           {/* Main profile content container */}
-          <div className={`w-full px-4 pb-6 flex flex-col items-center ${(currentBgStyle === 'signature' || currentBgStyle === 'banner') && coverImg ? '-mt-11' : 'pt-2'}`}>
+          <div className={`w-full px-4 pb-6 flex flex-col items-center ${currentBgStyle === 'banner' && coverImg ? '-mt-11' : 'pt-2'}`}>
             
             {/* Avatar with verified badge */}
             <div className="relative mb-3 z-10">

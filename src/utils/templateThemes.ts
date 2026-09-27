@@ -304,7 +304,9 @@ export function resolveTemplateTheme(
     config.ambientGlow = undefined;
   } else if (backgroundStyle === 'gradient') {
     const themeHex = template.themeColor || '#6366F1';
-    config.bgCustomStyle = `linear-gradient(160deg, ${themeHex}33 0%, ${finalMode === 'dark' ? '#090D16' : '#FFFFFF'} 60%)`;
+    config.bgCustomStyle = finalMode === 'dark'
+      ? `linear-gradient(135deg, ${themeHex}66 0%, #7C3AED55 48%, #090D16 100%)`
+      : `linear-gradient(135deg, ${themeHex}45 0%, #C4B5FD 48%, #FFFFFF 100%)`;
   }
 
   return config;
@@ -344,7 +346,9 @@ export function getTemplateBackgroundContainerProperties(
     backgroundImage: backgroundStyle === 'minimal'
       ? 'none'
       : backgroundStyle === 'gradient'
-      ? `linear-gradient(160deg, ${themeColor}24 0%, ${isDark ? '#090D16' : '#F8FAFC'} 70%)`
+      ? isDark
+        ? `linear-gradient(135deg, ${themeColor}4D 0%, #7C3AED33 48%, #090D16 100%)`
+        : `linear-gradient(135deg, ${themeColor}35 0%, #C4B5FD66 48%, #F8FAFC 100%)`
       : isDark
       ? `radial-gradient(ellipse at 50% 25%, ${themeColor}28 0%, rgba(11, 15, 25, 0.95) 75%), radial-gradient(circle at 10% 80%, ${themeColor}1A 0%, transparent 60%)`
       : `radial-gradient(ellipse at 50% 25%, ${themeColor}18 0%, #F1F5F9 75%), radial-gradient(circle at 90% 85%, ${themeColor}12 0%, transparent 60%)`,
@@ -366,7 +370,9 @@ export function getTemplateBackgroundContainerProperties(
       ? `linear-gradient(to bottom, rgba(0,0,0,0.38), rgba(9,13,22,0.82) 60%, rgba(9,13,22,0.98)), url("${cssCoverImg}")`
       : `linear-gradient(to bottom, rgba(255,255,255,0.38), rgba(248,250,252,0.82) 60%, rgba(248,250,252,0.98)), url("${cssCoverImg}")`;
   } else if (backgroundStyle === 'gradient') {
-    screenBgImage = `linear-gradient(160deg, ${themeColor}38 0%, ${isDark ? '#090D16' : '#FFFFFF'} 65%)`;
+    screenBgImage = isDark
+      ? `linear-gradient(135deg, ${themeColor}66 0%, #7C3AED55 48%, #090D16 100%)`
+      : `linear-gradient(135deg, ${themeColor}45 0%, #C4B5FD 48%, #FFFFFF 100%)`;
   } else if (backgroundStyle === 'signature') {
     screenBgImage = isDark
       ? `radial-gradient(circle at 50% 12%, ${themeColor}32 0%, ${screenBg} 75%)`
