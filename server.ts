@@ -4,7 +4,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import type { DocumentData, DocumentReference, DocumentSnapshot } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
+import type { DocumentData, DocumentReference, DocumentSnapshot, Query, QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import multer from 'multer';
 import sharp from 'sharp';
 import {
@@ -811,10 +812,46 @@ function analyticsDimensions(req: Request, body: Record<string, unknown>): Analy
   };
 }
 
+async function persistAnalyticsRollup(collection: 'page_views' | 'link_clicks', siteOwnerId: string, siteId: string, dimensions: AnalyticsDimensions, data: Record<string, unknown>): Promise<void> {
+  if (!siteId) return;
+  const timestamp = String(data.timestamp || new Date().toISOString());
+  const day = timestamp.slice(0, 10);
+  const base = { siteOwnerId, siteId, date: day, updatedAt: new Date().toISOString() };
+  const batch = adminDb.batch();
+  const rollups = adminDb.collection('analytics_rollups');
+  const summaryRef = rollups.doc(crypto.createHash('sha256').update(`${siteOwnerId}:${siteId}:${day}:summary`).digest('hex'));
+  batch.set(summaryRef, { ...base, kind: 'summary', pageViews: collection === 'page_views' ? FieldValue.increment(1) : FieldValue.increment(0), linkClicks: collection === 'link_clicks' ? FieldValue.increment(1) : FieldValue.increment(0) }, { merge: true });
+  const incrementDimension = (dimension: string, key: string | null) => {
+    if (!key) return;
+    const ref = rollups.doc(crypto.createHash('sha256').update(`${siteOwnerId}:${siteId}:${day}:dimension:${dimension}:${key}`).digest('hex'));
+    batch.set(ref, { ...base, kind: 'dimension', dimension, key, [collection === 'page_views' ? 'views' : 'clicks']: FieldValue.increment(1) }, { merge: true });
+  };
+  incrementDimension('referrer', dimensions.referrerHost || '(direct)');
+  incrementDimension('device', dimensions.device);
+  incrementDimension('browser', dimensions.browser);
+  incrementDimension('country', dimensions.country || '(unknown)');
+  const source = dimensions.utmSource || '(direct)';
+  const medium = dimensions.utmMedium || '(none)';
+  const campaign = dimensions.utmCampaign || '(none)';
+  const utmKey = `${source}\u0000${medium}\u0000${campaign}`;
+  const utmRef = rollups.doc(crypto.createHash('sha256').update(`${siteOwnerId}:${siteId}:${day}:utm:${utmKey}`).digest('hex'));
+  batch.set(utmRef, { ...base, kind: 'utm', source, medium, campaign, [collection === 'page_views' ? 'views' : 'clicks']: FieldValue.increment(1) }, { merge: true });
+  if (collection === 'link_clicks') {
+    const linkId = String(data.linkId || 'unknown');
+    const linkRef = rollups.doc(crypto.createHash('sha256').update(`${siteOwnerId}:${siteId}:${day}:link:${linkId}`).digest('hex'));
+    batch.set(linkRef, { ...base, kind: 'link', linkId, clicks: FieldValue.increment(1) }, { merge: true });
+  } else {
+    const visitorRef = adminDb.collection('analytics_visitor_days').doc(crypto.createHash('sha256').update(`${siteOwnerId}:${siteId}:${day}:${dimensions.visitorIdHash}`).digest('hex'));
+    batch.set(visitorRef, { siteOwnerId, siteId, date: day, visitorIdHash: dimensions.visitorIdHash, createdAt: timestamp }, { merge: true });
+  }
+  await batch.commit();
+}
+
 async function persistAnalyticsEvent(collection: 'page_views' | 'link_clicks', siteOwnerId: string, siteHandle: string, dimensions: AnalyticsDimensions, extra: Record<string, unknown>): Promise<boolean> {
   const eventKey = analyticsEventDocumentId(collection, siteOwnerId, dimensions.eventId);
   const reference = adminDb.collection(collection).doc(eventKey);
   try {
+    const timestamp = new Date().toISOString();
     await reference.create({
       eventId: dimensions.eventId,
       siteOwnerId,
@@ -829,9 +866,16 @@ async function persistAnalyticsEvent(collection: 'page_views' | 'link_clicks', s
       utmCampaign: dimensions.utmCampaign,
       utmTerm: dimensions.utmTerm,
       utmContent: dimensions.utmContent,
-      timestamp: new Date().toISOString(),
+      timestamp,
       ...extra
     });
+    try {
+      await persistAnalyticsRollup(collection, siteOwnerId, String(extra.siteId || ''), dimensions, { ...extra, timestamp });
+    } catch (rollupError) {
+      // The canonical event is already persisted. Keep ingestion successful and
+      // let the paginated legacy reader/backfill recover the aggregate later.
+      console.error('[Analytics rollup]', rollupError);
+    }
     return true;
   } catch (error: any) {
     if (error?.code === 6 || error?.code === 'already-exists') return false;
@@ -2177,7 +2221,7 @@ app.get('/api/creator/audience', async (req: Request, res: Response) => {
       listAudienceRecords(kind, site, user.uid, search, status, from, to, limit),
       audienceCollection('subscribers').where('creatorUserId', '==', user.uid).limit(5000).get(),
       audienceCollection('submissions').where('creatorUserId', '==', user.uid).limit(5000).get(),
-      adminDb.collection('page_views').where('siteOwnerId', '==', user.uid).limit(10000).get()
+      readAnalyticsEvents('page_views', user.uid)
     ]);
     const fromTime = from ? Date.parse(`${from}T00:00:00.000Z`) : 0;
     const toTime = to ? Date.parse(`${to}T00:00:00.000Z`) + 86400000 : Number.POSITIVE_INFINITY;
@@ -2189,7 +2233,7 @@ app.get('/api/creator/audience', async (req: Request, res: Response) => {
     const subscribers = subscriberSnapshot.docs.filter(inSiteRange);
     const submissions = submissionSnapshot.docs.filter(inSiteRange);
     const activeSubscribers = subscribers.filter((document) => document.data().status !== 'unsubscribed').length;
-    const uniqueVisitors = new Set(viewsSnapshot.docs.filter((document) => {
+    const uniqueVisitors = new Set(viewsSnapshot.filter((document) => {
       const data = document.data();
       const timestamp = Date.parse(String(data.timestamp || ''));
       return String(data.siteHandle || '') === site.handle && Number.isFinite(timestamp) && timestamp >= fromTime && timestamp < toTime;
@@ -2411,7 +2455,7 @@ app.post('/api/v1/public/telemetry/page-view', async (req: Request, res: Respons
       if (site && site.analyticsCollection === false) return res.status(202).json({ status: 'accepted' });
       if (site) {
         const dimensions = analyticsDimensions(req, req.body && typeof req.body === 'object' ? req.body : {});
-        const accepted = await persistAnalyticsEvent('page_views', String(site.userId), handle, dimensions, { path: pathValue });
+        const accepted = await persistAnalyticsEvent('page_views', String(site.userId), handle, dimensions, { path: pathValue, siteId: String(site.id || '') });
         return res.status(202).json({ status: 'accepted', deduplicated: !accepted });
       }
       return res.status(202).json({ status: 'accepted' });
@@ -2443,7 +2487,7 @@ app.post('/api/v1/public/telemetry/link-click', async (req: Request, res: Respon
       : links.some((link) => link.id === linkId && link.url === url);
     if (!validTarget) return res.status(202).json({ status: 'accepted' });
     const dimensions = analyticsDimensions(req, req.body && typeof req.body === 'object' ? req.body : {});
-    const accepted = await persistAnalyticsEvent('link_clicks', String(site.userId), siteHandle, dimensions, { linkId, url });
+    const accepted = await persistAnalyticsEvent('link_clicks', String(site.userId), siteHandle, dimensions, { linkId, url, siteId: String(site.id || '') });
     return res.status(202).json({ status: 'accepted', deduplicated: !accepted });
   }
   return res.status(202).json({ status: 'accepted' });
@@ -3344,6 +3388,103 @@ app.get('/api/account/export', async (req: Request, res: Response) => {
   }
 });
 
+async function analyticsFromRollups(userId: string, sites: Array<QueryDocumentSnapshot>, requestedSiteId: string, fromDate: string | null, toDate: string): Promise<Record<string, unknown> | null> {
+  let rollupQuery: Query = adminDb.collection('analytics_rollups').where('siteOwnerId', '==', userId).where('date', '<=', toDate);
+  if (fromDate) rollupQuery = rollupQuery.where('date', '>=', fromDate);
+  if (requestedSiteId) rollupQuery = rollupQuery.where('siteId', '==', requestedSiteId);
+  const rollups = await rollupQuery.get();
+  if (rollups.empty) return null;
+  let visitorQuery: Query = adminDb.collection('analytics_visitor_days').where('siteOwnerId', '==', userId).where('date', '<=', toDate);
+  if (fromDate) visitorQuery = visitorQuery.where('date', '>=', fromDate);
+  if (requestedSiteId) visitorQuery = visitorQuery.where('siteId', '==', requestedSiteId);
+  const visitors = await visitorQuery.get();
+  const activeSites = requestedSiteId ? sites.filter((site) => site.id === requestedSiteId) : sites;
+  const siteLinks = new Map<string, { title: string; url: string; blockType: string }>();
+  activeSites.forEach((site) => {
+    const links = Array.isArray(site.data().links) ? site.data().links : [];
+    links.forEach((link: any) => {
+      if (typeof link?.id === 'string') siteLinks.set(link.id, { title: String(link.title || link.id), url: String(link.url || ''), blockType: String(link.type || 'link') });
+    });
+  });
+  const timeline = new Map<string, { date: string; views: number; clicks: number; uniqueVisitors: number }>();
+  const linkCounts = new Map<string, { linkId: string; title: string; url: string; blockType: string; clicks: number }>();
+  const utmCounts = new Map<string, { source: string; medium: string; campaign: string; views: number; clicks: number; uniqueVisitors: number }>();
+  const dimensions = { referrers: new Map<string, number>(), devices: new Map<string, number>(), browsers: new Map<string, number>(), countries: new Map<string, number>() };
+  let totalPageViews = 0;
+  let totalClicks = 0;
+  const visitorIds = new Set<string>();
+  visitors.docs.forEach((document) => visitorIds.add(String(document.data()?.visitorIdHash || document.id)));
+  let rollupFreshThrough: string | null = null;
+  rollups.docs.forEach((document) => {
+    const data = document.data();
+    const date = String(data.date || '');
+    if (data.updatedAt && (!rollupFreshThrough || String(data.updatedAt) > rollupFreshThrough)) rollupFreshThrough = String(data.updatedAt);
+    if (data.kind === 'summary') {
+      const views = Number(data.pageViews || 0);
+      const clicks = Number(data.linkClicks || 0);
+      totalPageViews += views;
+      totalClicks += clicks;
+      const day = timeline.get(date) || { date, views: 0, clicks: 0, uniqueVisitors: 0 };
+      day.views += views;
+      day.clicks += clicks;
+      timeline.set(date, day);
+    } else if (data.kind === 'link') {
+      const linkId = String(data.linkId || 'unknown');
+      const link = linkCounts.get(linkId) || { linkId, title: siteLinks.get(linkId)?.title || linkId, url: siteLinks.get(linkId)?.url || '', blockType: siteLinks.get(linkId)?.blockType || (linkId.startsWith('soc_') ? 'social' : 'link'), clicks: 0 };
+      link.clicks += Number(data.clicks || 0);
+      linkCounts.set(linkId, link);
+    } else if (data.kind === 'dimension') {
+      const map = data.dimension === 'referrer' ? dimensions.referrers : data.dimension === 'device' ? dimensions.devices : data.dimension === 'browser' ? dimensions.browsers : dimensions.countries;
+      map.set(String(data.key || 'unknown'), (map.get(String(data.key || 'unknown')) || 0) + Number(data.views || 0));
+    } else if (data.kind === 'utm') {
+      const key = `${data.source}\u0000${data.medium}\u0000${data.campaign}`;
+      const item = utmCounts.get(key) || { source: String(data.source || '(direct)'), medium: String(data.medium || '(none)'), campaign: String(data.campaign || '(none)'), views: 0, clicks: 0, uniqueVisitors: 0 };
+      item.views += Number(data.views || 0);
+      item.clicks += Number(data.clicks || 0);
+      utmCounts.set(key, item);
+    }
+  });
+  visitors.docs.forEach((document) => {
+    const data = document.data();
+    const day = String(data.date || '');
+    const current = timeline.get(day);
+    if (current) current.uniqueVisitors += 1;
+  });
+  const toBreakdown = (map: Map<string, number>) => [...map.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 20);
+  return {
+    totalVisits: totalPageViews,
+    totalPageViews,
+    uniqueVisitors: visitorIds.size,
+    totalClicks,
+    ctr: totalPageViews ? Number(((totalClicks / totalPageViews) * 100).toFixed(2)) : null,
+    activeSitesCount: activeSites.length,
+    dateRange: { from: fromDate, to: toDate },
+    capped: false,
+    truncated: false,
+    dataSource: 'daily_rollups',
+    rollupFreshThrough,
+    timeline: [...timeline.values()].sort((a, b) => a.date.localeCompare(b.date)),
+    links: [...linkCounts.values()].sort((a, b) => b.clicks - a.clicks).map((link) => ({ ...link, share: totalClicks ? Number(((link.clicks / totalClicks) * 100).toFixed(1)) : 0 })),
+    utmSources: [...utmCounts.values()].sort((a, b) => (b.clicks + b.views) - (a.clicks + a.views)),
+    referrers: toBreakdown(dimensions.referrers),
+    devices: toBreakdown(dimensions.devices),
+    browsers: toBreakdown(dimensions.browsers),
+    countries: toBreakdown(dimensions.countries)
+  };
+}
+
+async function readAnalyticsEvents(collection: 'page_views' | 'link_clicks', userId: string): Promise<QueryDocumentSnapshot[]> {
+  const events: QueryDocumentSnapshot[] = [];
+  let query: Query = adminDb.collection(collection).where('siteOwnerId', '==', userId).orderBy('timestamp', 'asc').limit(1000);
+  while (true) {
+    const page = await query.get();
+    events.push(...page.docs);
+    if (page.docs.length < 1000) break;
+    query = query.startAfter(page.docs[page.docs.length - 1]);
+  }
+  return events;
+}
+
 app.get('/api/analytics/platform', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
@@ -3366,15 +3507,17 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
     const cutoff = fromDate ? Date.parse(`${fromDate}T00:00:00.000Z`) : 0;
     const endExclusive = Date.parse(`${toDate}T00:00:00.000Z`) + 86400000;
     const requestedSiteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
-    const [viewsSnapshot, clicksSnapshot, sitesSnapshot] = await Promise.all([
-      adminDb.collection('page_views').where('siteOwnerId', '==', user.uid).limit(10000).get(),
-      adminDb.collection('link_clicks').where('siteOwnerId', '==', user.uid).limit(10000).get(),
-      adminDb.collection('users').doc(user.uid).collection('sites').where('isPublished', '==', true).limit(1000).get()
-    ]);
+    const sitesSnapshot = await adminDb.collection('users').doc(user.uid).collection('sites').where('isPublished', '==', true).get();
     const selectedSite = requestedSiteId ? sitesSnapshot.docs.find((document) => document.id === requestedSiteId) : null;
     if (requestedSiteId && !selectedSite) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found or is not published.');
-    const views = viewsSnapshot.docs.filter((document) => !requestedSiteId || String(document.data()?.siteId || '') === requestedSiteId);
-    const clicks = clicksSnapshot.docs.filter((document) => !requestedSiteId || String(document.data()?.siteId || '') === requestedSiteId);
+    const rollupMetrics = await analyticsFromRollups(user.uid, sitesSnapshot.docs, requestedSiteId, fromDate, toDate);
+    if (rollupMetrics) return res.status(200).json(rollupMetrics);
+    const [viewsSnapshot, clicksSnapshot] = await Promise.all([
+      readAnalyticsEvents('page_views', user.uid),
+      readAnalyticsEvents('link_clicks', user.uid)
+    ]);
+    const views = viewsSnapshot.filter((document) => !requestedSiteId || String(document.data()?.siteId || '') === requestedSiteId);
+    const clicks = clicksSnapshot.filter((document) => !requestedSiteId || String(document.data()?.siteId || '') === requestedSiteId);
     const sites = selectedSite ? [selectedSite] : sitesSnapshot.docs;
     const siteLinks = new Map<string, { title: string; url: string; blockType: string }>();
     sites.forEach((siteDocument) => {
@@ -3453,7 +3596,9 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
       ctr: totalPageViews ? Number(((totalClicks / totalPageViews) * 100).toFixed(2)) : null,
       activeSitesCount: sites.length,
       dateRange: { from: fromDate, to: toDate },
-      capped: views.length === 10000 || clicks.length === 10000 || sites.length === 1000,
+      capped: false,
+      truncated: false,
+      dataSource: 'legacy_events',
       timeline: timelineData,
       links: [...linkCounts.values()].sort((a, b) => b.clicks - a.clicks).map((link) => ({ ...link, share: totalClicks ? Number(((link.clicks / totalClicks) * 100).toFixed(1)) : 0 })),
       utmSources: [...utmCounts.values()].sort((a, b) => (b.clicks + b.views) - (a.clicks + a.views)).map((item) => ({ source: item.source, medium: item.medium, campaign: item.campaign, views: item.views, clicks: item.clicks, uniqueVisitors: item.visitors.size })),

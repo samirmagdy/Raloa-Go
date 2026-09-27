@@ -24,6 +24,9 @@ export type PlatformMetrics = {
   ctr: number | null;
   activeSitesCount: number;
   capped?: boolean;
+  truncated?: boolean;
+  dataSource?: 'daily_rollups' | 'legacy_events';
+  rollupFreshThrough?: string | null;
   dateRange?: { from: string; to: string };
   timeline: Array<{ date: string; views: number; clicks: number; uniqueVisitors: number }>;
   links: Array<{ linkId: string; title: string; url: string; blockType?: string; clicks: number; share: number }>;

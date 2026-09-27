@@ -157,6 +157,8 @@ service cloud.firestore {
     match /link_clicks/{clickId} {
       allow read, write: if false;
     }
+    match /analytics_rollups/{rollupId} { allow read, write: if false; }
+    match /analytics_visitor_days/{visitorDayId} { allow read, write: if false; }
     match /custom_domains/{domainId} { allow read, write: if false; }
     match /media_assets/{mediaId} { allow read, write: if false; }
     match /creator_integrations/{integrationId} { allow read, write: if false; }
