@@ -52,6 +52,7 @@ import { assertOrderTransition, legacyOrderState } from './server/domains/orders
 import { createBackgroundJobService, createConfiguredDispatcher, createFirestoreBackgroundJobRepository, type JobKind } from './server/background-jobs';
 import { appendOutboxEvent, createFirestoreOutboxRepository, createOutboxEvent, createOutboxService, outboxEventId } from './server/outbox';
 import { createDomainEventBus, DOMAIN_EVENTS, eventType, type DomainEvent } from './server/events';
+import { createPublicCreatorAdapter } from './server/public-site';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,6 +67,7 @@ export const domainModules = createDomainModules(adminDb, {
   oauthAdapters: oauthProviderAdapters(),
   providers: calendarProviders()
 });
+export const publicCreatorAdapter = createPublicCreatorAdapter({ getPublishedSiteByHandle });
 export const backgroundJobs = createBackgroundJobService(createFirestoreBackgroundJobRepository(adminDb), createConfiguredDispatcher(), {
   email_delivery: async () => processPendingBookingNotifications(),
   calendar_sync: async () => processPendingCalendarJobs(),
