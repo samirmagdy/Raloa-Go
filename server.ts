@@ -48,6 +48,7 @@ import { oauthProviderAdapters } from './server/adapters/oauth';
 import { stripeAdapter } from './server/adapters/stripe';
 import { cloudflareAdapter } from './server/adapters/cloudflare';
 import { createBillingController } from './server/domains/billing/controller';
+import { createEntitlementService } from './server/domains/billing/entitlement-service';
 import { assertOrderTransition, legacyOrderState } from './server/domains/orders/state-machine';
 import { createBackgroundJobService, createConfiguredDispatcher, createFirestoreBackgroundJobRepository, type JobKind } from './server/background-jobs';
 import { appendOutboxEvent, createFirestoreOutboxRepository, createOutboxEvent, createOutboxService, outboxEventId } from './server/outbox';
@@ -68,6 +69,7 @@ export const domainModules = createDomainModules(adminDb, {
   oauthAdapters: oauthProviderAdapters(),
   providers: calendarProviders()
 });
+const entitlementService = createEntitlementService({ billing: getAuthoritativeBillingState });
 export const publicCreatorAdapter = createPublicCreatorAdapter({ getPublishedSiteByHandle });
 export const backgroundJobs = createBackgroundJobService(createFirestoreBackgroundJobRepository(adminDb), createConfiguredDispatcher(), {
   email_delivery: async () => processPendingBookingNotifications(),
@@ -3358,15 +3360,8 @@ app.get('/api/account/billing', async (req: Request, res: Response) => {
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (process.env.NODE_ENV === 'production' && !stripe) return apiError(res, 503, 'BILLING_NOT_CONFIGURED', 'Live billing is not configured.');
   try {
-    const billing = await getAuthoritativeBillingState(user.uid);
-    const capabilities = getPlanCapabilities({ plan: billing.effectivePlan });
-    const entitlements = {
-      ...capabilities,
-      maxLinks: Number.isFinite(capabilities.maxLinks) ? capabilities.maxLinks : null,
-      maxMedia: Number.isFinite(capabilities.maxMedia) ? capabilities.maxMedia : null,
-      maxUploadBytes: capabilities.maxUploadBytes
-    };
-    return res.status(200).json({ billing: { ...billing, entitlements } });
+    const snapshot = await entitlementService.resolve(user.uid);
+    return res.status(200).json({ billing: { ...snapshot.billing, entitlements: snapshot.entitlements, evaluatedAt: snapshot.evaluatedAt } });
   } catch (error) {
     console.error('[Account billing read]', error);
     return apiError(res, 503, 'BILLING_STATUS_UNAVAILABLE', 'Billing status is temporarily unavailable.');
@@ -3558,8 +3553,11 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured()) return apiError(res, 503, 'ANALYTICS_UNAVAILABLE', 'Platform analytics are temporarily unavailable.');
-  const analyticsProfile = (await adminDb.collection('users').doc(user.uid).get()).data();
-  if (!getPlanCapabilities(analyticsProfile as any).analytics) return entitlementError(res, 'analytics', 'Analytics require a Pro or Studio plan.');
+  try {
+    await entitlementService.assertEntitled(user.uid, 'analytics');
+  } catch {
+    return entitlementError(res, 'analytics', 'Analytics require a Pro or Studio plan.');
+  }
   try {
     const requestedFrom = typeof req.query.from === 'string' ? req.query.from : '';
     const requestedTo = typeof req.query.to === 'string' ? req.query.to : '';
@@ -3700,14 +3698,13 @@ app.post('/api/media/upload', authenticateMediaUpload, parseMediaUpload, async (
     const siteRef = adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId);
     const siteSnapshot = await siteRef.get();
     if (!siteSnapshot.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
-    const profileSnapshot = await adminDb.collection('users').doc(user.uid).get();
-    const capabilities = getPlanCapabilities(profileSnapshot.data() as any);
-    if (file.size > capabilities.maxUploadBytes) return entitlementError(res, 'mediaUpload', `Your current plan allows uploads up to ${Math.round(capabilities.maxUploadBytes / (1024 * 1024))} MB.`);
+    const entitlementSnapshot = await entitlementService.resolve(user.uid);
+    if (entitlementSnapshot.entitlements.maxUploadBytes < file.size) return entitlementError(res, 'mediaUpload', `Your current plan allows uploads up to ${Math.round(entitlementSnapshot.entitlements.maxUploadBytes / (1024 * 1024))} MB.`);
     await cleanupOrphanMedia(user.uid, siteId);
     const mediaSnapshot = await adminDb.collection('media_assets').where('userId', '==', user.uid).where('siteId', '==', siteId).where('status', '==', 'ready').limit(10001).get();
     const currentAssetCount = mediaSnapshot.size + countExternalMedia(siteSnapshot.data() || {});
-    if (Number.isFinite(capabilities.maxMedia) && currentAssetCount >= capabilities.maxMedia) {
-      return entitlementError(res, 'media', `Your current plan allows up to ${capabilities.maxMedia} media assets.`);
+    if (entitlementSnapshot.entitlements.maxMedia !== null && currentAssetCount >= entitlementSnapshot.entitlements.maxMedia) {
+      return entitlementError(res, 'media', `Your current plan allows up to ${entitlementSnapshot.entitlements.maxMedia} media assets.`);
     }
     const metadata = await sharp(file.buffer).metadata();
     if (!metadata.width || !metadata.height || metadata.width < 1 || metadata.height < 1 || metadata.width > MAX_MEDIA_DIMENSION || metadata.height > MAX_MEDIA_DIMENSION) {
@@ -4712,8 +4709,11 @@ app.get('/api/calendar/:provider/start', async (req: Request, res: Response) => 
   const provider = req.params.provider as CalendarProvider;
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!['google', 'outlook'].includes(provider)) return apiError(res, 404, 'CALENDAR_PROVIDER_NOT_FOUND', 'Unsupported calendar provider.');
-  const profile = (await adminDb.collection('users').doc(user.uid).get()).data();
-  if (!getPlanCapabilities(profile as any).studioControls) return entitlementError(res, 'studioControls', 'Calendar integrations require the Studio plan.');
+  try {
+    await entitlementService.assertEntitled(user.uid, 'studioControls');
+  } catch {
+    return entitlementError(res, 'studioControls', 'Calendar integrations require the Studio plan.');
+  }
   const configuration = calendarOAuthConfiguration(provider);
   if (!configuration || !calendarTokenStorageConfigured() || !isAdminConfigured()) return apiError(res, 503, 'CALENDAR_NOT_CONFIGURED', 'Calendar OAuth is not configured.');
   const nonce = crypto.randomBytes(24).toString('base64url');
@@ -4790,9 +4790,13 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
   if (!hostname) return res.status(400).json({ error: 'A valid customer-owned hostname is required' });
   if (requestedSiteId && !/^[a-zA-Z0-9_-]{1,64}$/.test(requestedSiteId)) return res.status(400).json({ error: 'Invalid site ID' });
 
-  const userProfile = await adminDb.collection('users').doc(user.uid).get();
-  if (!hasPaidPlan(userProfile.data())) return entitlementError(res, 'customDomains', 'Custom domains require a Pro or Studio plan.');
+  try {
+    await entitlementService.assertEntitled(user.uid, 'customDomains');
+  } catch {
+    return entitlementError(res, 'customDomains', 'Custom domains require a Pro or Studio plan.');
+  }
 
+  const userProfile = await adminDb.collection('users').doc(user.uid).get();
   const sitesCollection = adminDb.collection('users').doc(user.uid).collection('sites');
   const siteSnapshot = requestedSiteId
     ? await sitesCollection.doc(requestedSiteId).get()

@@ -34,6 +34,19 @@ export const analyticsEventSchemaV1 = z.object({
   dimensions: z.record(z.string(), z.string().max(500)).default({}),
   payload: z.record(z.string(), z.unknown()).default({})
 });
+export const normalizedEntitlementSchema = z.object({
+  maxLinks: z.number().int().nonnegative().nullable(),
+  maxMedia: z.number().int().nonnegative().nullable(),
+  maxUploadBytes: z.number().int().positive(),
+  premiumTemplates: z.boolean(),
+  analytics: z.boolean(),
+  removeBranding: z.boolean(),
+  customDomains: z.boolean(),
+  studioControls: z.boolean(),
+  allowedBackgroundStyles: z.array(z.string()),
+  allowedBlockTypes: z.array(z.string()),
+  allowedDesignOptions: z.object({ cardRadius: z.array(z.string()), cardShadow: z.array(z.string()), borderStyle: z.array(z.string()) })
+});
 
 export const publicApiPayloadSchemas = {
   contact: z.object({ name: z.string().trim().min(1).max(120), email: z.string().email(), message: z.string().trim().min(1).max(5000) }),
@@ -60,6 +73,7 @@ export type PublicPageV1 = z.infer<typeof publicPageSchemaV1>;
 export type DomainEventV1 = z.infer<typeof domainEventSchemaV1>;
 export type OAuthTokenBundleV1 = z.infer<typeof oauthTokenBundleSchemaV1>;
 export type AnalyticsEventV1 = z.infer<typeof analyticsEventSchemaV1>;
+export type NormalizedEntitlement = z.infer<typeof normalizedEntitlementSchema>;
 
 export function migrateSiteConfig(input: unknown): SiteConfigV1 {
   const candidate = input && typeof input === 'object' ? input as Record<string, unknown> : {};
