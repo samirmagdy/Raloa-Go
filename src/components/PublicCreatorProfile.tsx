@@ -10,7 +10,6 @@ import {
   Check
 } from 'lucide-react';
 import { TemplateItem, Locale, MediaGalleryItem } from '../types';
-import { templatesData } from '../data/content';
 import { resolveTemplateTheme, getTemplateBackgroundContainerProperties } from '../utils/templateThemes';
 import { PlatformIcon, PlatformIconName } from './brand/PlatformIcon';
 import { RaloaLogo } from './brand/RaloaLogo';
@@ -44,10 +43,9 @@ export const PublicCreatorProfile: React.FC<PublicCreatorProfileProps> = ({
   const [storeOpen, setStoreOpen] = useState(false);
   const recordedPageView = useRef<string | null>(null);
 
-  const fixtureCreator = templatesData.find(
-    (t) => t.id.toLowerCase() === cleanHandle || t.name.toLowerCase() === cleanHandle
-  );
-  const [creator, setCreator] = useState<TemplateItem | null>(fixtureCreator || null);
+  // Public pages must be populated by the server's persisted published record.
+  // Template data belongs to the editor/demo surfaces and is not a public fallback.
+  const [creator, setCreator] = useState<TemplateItem | null>(null);
 
   useEffect(() => {
     let cancelled = false;

@@ -45,6 +45,9 @@ const AUTH_SESSION_SECRET = process.env.AUTH_SESSION_SECRET || (process.env.NODE
 const localAuthEnabled = process.env.NODE_ENV === 'test' ||
   process.env.LOCAL_AUTH_ENABLED === 'true' ||
   (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'staging' && process.env.NODE_ENV !== 'preview' && process.env.LOCAL_AUTH_ENABLED !== 'false');
+// Public demo profiles are intentionally available only to local development
+// and automated tests. Never use them as a production data fallback.
+const publicDemoFixturesEnabled = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
 const LOCAL_ACCOUNT_SETTINGS = new Map<string, Record<string, unknown>>();
 
 const DEFAULT_NOTIFICATION_PREFERENCES = {
@@ -1450,10 +1453,11 @@ app.get('/llms.txt', (_req: Request, res: Response) => {
  */
 app.get('/sitemap.xml', async (_req: Request, res: Response) => {
   const pages = Object.keys(SEO_PAGES);
-  const profiles: Array<{ handle: string; lastmod: string | null }> = Object.entries(CREATORS_METADATA).map(([handle]) => ({ handle, lastmod: null }));
+  const profiles: Array<{ handle: string; lastmod: string | null }> = publicDemoFixturesEnabled
+    ? Object.entries(CREATORS_METADATA).map(([handle]) => ({ handle, lastmod: null }))
+    : [];
 
-  // In production, only published sites are eligible for discovery. The fixture
-  // catalog is retained for local/demo mode so the sitemap remains useful there.
+  // In every persisted environment, only published sites are eligible for discovery.
   if (isAdminConfigured()) {
     try {
       const snapshot = await adminDb.collectionGroup('sites').where('isPublished', '==', true).get();
@@ -1504,7 +1508,9 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
   // Lookup in custom domain database
   const mapping = isAdminConfigured()
     ? await findDomainByHostname(host)
-    : CUSTOM_DOMAINS[host];
+    : publicDemoFixturesEnabled
+    ? CUSTOM_DOMAINS[host]
+    : null;
   if (!mapping) {
     return res.status(404).send(`
       <!doctype html>
@@ -3034,24 +3040,31 @@ app.get('/api/public/sites/:handle', async (req: Request, res: Response) => {
     }
     if (site) return res.status(200).json({ site });
 
-    const fixture = templatesData.find((template) => template.id.toLowerCase() === handle || template.name.toLowerCase() === handle);
-    if (!fixture) return res.status(404).json({ error: 'Published site not found' });
-    return res.status(200).json({
-      site: {
-        username: handle,
-        displayName: fixture.name,
-        role: fixture.role,
-        bio: fixture.bio,
-        bioAr: fixture.bioAr,
-        avatar: fixture.avatar,
-        coverImage: fixture.coverImage,
-        bgStyle: fixture.backgroundStyle || 'signature',
-        links: fixture.sampleLinks,
-        socials: fixture.socials,
-        isPublished: true,
-        fixture: true
+    if (publicDemoFixturesEnabled) {
+      const fixture = templatesData.find((template) => template.id.toLowerCase() === handle || template.name.toLowerCase() === handle);
+      if (fixture) {
+        return res.status(200).json({
+          site: {
+            username: handle,
+            displayName: fixture.name,
+            role: fixture.role,
+            bio: fixture.bio,
+            bioAr: fixture.bioAr,
+            avatar: fixture.avatar,
+            coverImage: fixture.coverImage,
+            bgStyle: fixture.backgroundStyle || 'signature',
+            links: fixture.sampleLinks,
+            socials: fixture.socials,
+            isPublished: true,
+            fixture: true
+          }
+        });
       }
-    });
+    }
+    if (!isAdminConfigured() && !publicDemoFixturesEnabled) {
+      return apiError(res, 503, 'PUBLIC_SITE_UNAVAILABLE', 'Public site data is temporarily unavailable.');
+    }
+    return apiError(res, 404, 'PUBLIC_SITE_NOT_FOUND', 'Published site not found.');
   } catch (error) {
     console.error('[Public site lookup]', error);
     return res.status(503).json({ error: 'Public site is temporarily unavailable' });
@@ -3813,8 +3826,17 @@ app.get('*', async (req: Request, res: Response) => {
   if (handleMatch) {
     const handle = handleMatch[1].toLowerCase();
     const customDomainSite = (req as Request & { customDomainSite?: Record<string, unknown> }).customDomainSite;
-    const publishedSite = customDomainSite || (isAdminConfigured() ? await getPublishedSiteByHandle(handle).catch(() => null) : null);
-    const fixtureCreator = CREATORS_METADATA[handle];
+    let publicSiteLookupFailed = false;
+    let publishedSite: Record<string, unknown> | null | undefined = customDomainSite;
+    if (!publishedSite && isAdminConfigured()) {
+      try {
+        publishedSite = await getPublishedSiteByHandle(handle);
+      } catch (error) {
+        publicSiteLookupFailed = true;
+        console.error('[Public SSR profile lookup]', error);
+      }
+    }
+    const fixtureCreator = publicDemoFixturesEnabled ? CREATORS_METADATA[handle] : undefined;
     const creator = publishedSite
       ? {
           name: String(publishedSite.displayName || handle),
@@ -3868,11 +3890,13 @@ app.get('*', async (req: Request, res: Response) => {
         isPartOf: { '@id': 'https://raloa.app/#website' }
       });
     } else {
-      // AC-03: Invalid handle 404 metadata
-      const notFoundTitle = `404: Handle @${handle} Not Found - RALOA`;
+      const unavailable = publicSiteLookupFailed || (!isAdminConfigured() && !publicDemoFixturesEnabled);
+      const notFoundTitle = unavailable
+        ? `503: Profile temporarily unavailable - RALOA`
+        : `404: Handle @${handle} Not Found - RALOA`;
       html = setRobotsMetadata(html.replace(/<title>.*?<\/title>/, `<title>${notFoundTitle}</title>`), 'noindex, nofollow');
       res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-      return res.status(404).send(html);
+      return res.status(unavailable ? 503 : 404).send(html);
     }
   } else if (requestPath === '/templates') {
     html = html
