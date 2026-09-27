@@ -1,4 +1,4 @@
-export type StorageAuthority = 'postgresql' | 'firestore_exception' | 'migration_only';
+export type StorageAuthority = 'postgresql' | 'analytical_store' | 'firestore_exception' | 'migration_only';
 
 export type StoragePolicy = {
   authority: StorageAuthority;
@@ -29,7 +29,8 @@ export const STORAGE_POLICIES = {
   subscriptions: { authority: 'postgresql', realtimeRequired: false, transactionalWrites: true, rationale: 'Provider event uniqueness and entitlement history require durable constraints.' },
   integrations: { authority: 'postgresql', realtimeRequired: false, transactionalWrites: true, rationale: 'Encrypted tokens, leases, scopes, and ownership require constrained persistence.' },
   domains: { authority: 'postgresql', realtimeRequired: false, transactionalWrites: true, rationale: 'Domain ownership and verification state must be unique and auditable.' },
-  analytics: { authority: 'postgresql', realtimeRequired: false, transactionalWrites: true, rationale: 'Operational events and rollups need durable idempotency and retention.' },
+  analytics: { authority: 'postgresql', realtimeRequired: false, transactionalWrites: true, rationale: 'Operational aggregates are relational; high-volume raw history belongs in analytical storage.' },
+  analyticsRawEvents: { authority: 'analytical_store', realtimeRequired: false, transactionalWrites: false, rationale: 'High-volume append-only event history belongs in BigQuery or an equivalent warehouse.' },
   media: { authority: 'postgresql', realtimeRequired: false, transactionalWrites: true, rationale: 'Asset metadata and processing state are relational; bytes remain in object storage.' },
   backgroundJobs: { authority: 'postgresql', realtimeRequired: false, transactionalWrites: true, rationale: 'Claims, retries, leases, and dead letters need durable state.' }
 } as const satisfies Record<string, StoragePolicy>;

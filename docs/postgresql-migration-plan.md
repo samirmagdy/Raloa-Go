@@ -15,7 +15,9 @@ and does not run against the current Firebase project.
 - External provider identifiers remain in provider columns, while provider credentials remain
   encrypted and outside API response models.
 - Analytics events and rollups are separate from transactional tables so reporting cannot extend
-  booking/order transactions.
+  booking/order transactions. PostgreSQL owns bounded Studio rollups; high-volume raw event history
+  belongs in BigQuery or an equivalent analytical store. See
+  [`docs/analytics-architecture.md`](analytics-architecture.md).
 - Inventory is variant-scoped: `inventory` is the current stock snapshot, while
   `inventory_movements` is the append-only audit ledger and `inventory_reservations` tracks holds.
 - Stripe billing is an event source, not the application read model: `billing_customers`,

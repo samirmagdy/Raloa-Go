@@ -523,6 +523,8 @@ CREATE TABLE custom_domains (
 );
 CREATE INDEX custom_domains_ready_idx ON custom_domains (hostname) WHERE verification_status = 'verified' AND ssl_status = 'active';
 
+-- Optional short-lived ingestion buffer only. Long-term raw event history belongs in BigQuery
+-- (or an equivalent analytical store), not this transactional database.
 CREATE TABLE analytics_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   site_id uuid REFERENCES sites(id),
@@ -532,10 +534,12 @@ CREATE TABLE analytics_events (
   visitor_hash text,
   dimensions jsonb NOT NULL DEFAULT '{}'::jsonb,
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  retention_until timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX analytics_events_site_time_idx ON analytics_events (site_id, occurred_at);
 CREATE INDEX analytics_events_owner_time_idx ON analytics_events (site_owner_id, occurred_at);
+CREATE INDEX analytics_events_retention_idx ON analytics_events (retention_until);
 
 CREATE TABLE analytics_daily_rollups (
   site_id uuid NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
