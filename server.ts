@@ -88,7 +88,7 @@ import { createFirestoreEmailDeliveryWorker } from './server/domains/notificatio
 import { createCalendarSyncWorker } from './server/domains/bookings/calendar-sync-worker';
 import { createDomainVerificationWorker } from './server/domains/domains/verification-worker';
 import { createFeatureFlagService, createFirestoreFeatureFlagRepository } from './server/infrastructure/feature-flags';
-import { createConfiguredPostgresDatabase, createPostgresBookingsRepository } from './server/infrastructure/postgres';
+import { createConfiguredPostgresDatabase, createPostgresBookingsRepository, createPostgresSitePersistenceRepository } from './server/infrastructure/postgres';
 import { createBookingMigrationRepository } from './server/domains/bookings/migration-repository';
 import { createFirestoreBookingsRepository } from './server/repositories/firestore';
 
@@ -112,11 +112,21 @@ const entitlementService = createEntitlementService({ billing: billingRepository
 const publicCache = new MemoryCacheStore();
 export const publicCreatorAdapter = createPublicCreatorAdapter({ getPublishedSiteByHandle, cache: publicCache });
 export const auditService = createAuditService(createFirestoreAuditRepository(adminDb));
-const sitesPersistenceRepository = createFirestoreSitePersistenceRepository(adminDb);
+const firestoreSitesPersistenceRepository = createFirestoreSitePersistenceRepository(adminDb);
 const bookingFeatureFlags = createFeatureFlagService(createFirestoreFeatureFlagRepository(adminDb));
 const postgresBookingRuntime = process.env.POSTGRES_ENABLED === 'true' && (process.env.POSTGRES_DATABASE_URL || process.env.DATABASE_URL)
   ? createConfiguredPostgresDatabase()
   : null;
+const sitesPersistenceRepository = process.env.SITES_POSTGRES_AUTHORITATIVE === 'true' && postgresBookingRuntime
+  ? createPostgresSitePersistenceRepository(postgresBookingRuntime.pool, {
+    // Profile/entitlement data remains on the compatibility path until the
+    // account migration is complete; site configuration itself is PostgreSQL-backed.
+    profileLoader: async (userId) => {
+      const profile = await adminDb.collection('users').doc(userId).get();
+      return profile.exists ? profile.data() as Record<string, any> : null;
+    }
+  })
+  : firestoreSitesPersistenceRepository;
 const firestoreBookingsRepository = createFirestoreBookingsRepository(adminDb);
 const postgresBookingsRepository = postgresBookingRuntime ? createPostgresBookingsRepository(postgresBookingRuntime.pool) : null;
 const bookingsMigrationRepository = postgresBookingsRepository

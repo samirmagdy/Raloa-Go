@@ -90,7 +90,12 @@ export function registerSitesControllerRoutes(app: Express, dependencies: SitesC
     if (ownedMediaError) return apiError(res, 400, 'INVALID_MEDIA_REFERENCE', ownedMediaError);
     const entitlement = validateSiteEntitlements(site, profile.data());
     if (entitlement) return entitlementError(res, entitlement.feature, entitlement.message, entitlement.details);
-    await sitesRepository.create(user.uid, siteId, site);
+    try {
+      await sitesRepository.create(user.uid, siteId, site);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'HANDLE_IN_USE') return apiError(res, 409, 'HANDLE_IN_USE', 'That site handle is already in use.');
+      throw error;
+    }
     await auditService.recordBestEffort({ actorUserId: user.uid, siteId, resourceType: 'site', resourceId: siteId, action: 'site.created', requestId: auditRequestId(req), metadata: { handle: username, templateId: requestedTemplateId } });
     return res.status(201).json({ site });
   });

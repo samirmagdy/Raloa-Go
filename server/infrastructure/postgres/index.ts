@@ -5,3 +5,4 @@ export * from './health';
 export * from './test-database';
 export * from './bookings-repository';
 export * from './commerce-repositories';
+export * from './sites-repository';

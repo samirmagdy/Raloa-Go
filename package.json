@@ -83,6 +83,8 @@
   "db:health:local": "POSTGRES_DATABASE_URL=postgresql://raloa:raloa_local_only@127.0.0.1:5432/raloa_dev POSTGRES_SSL=false node scripts/check-postgres-health.mjs",
   "db:health:test": "POSTGRES_DATABASE_URL=postgresql://raloa:raloa_test_only@127.0.0.1:5434/raloa_test POSTGRES_ENVIRONMENT=test POSTGRES_SSL=false node scripts/check-postgres-health.mjs",
   "migrate:bookings": "tsx scripts/migrate-bookings.ts",
+  "migrate:sites": "tsx scripts/migrate-sites.ts",
+  "test:site-migration": "tsx test-site-migration.ts",
   "verify:bookings": "tsx scripts/verify-bookings.ts",
   "check:ci-cd": "node scripts/check-ci-cd.mjs",
   "render:cloud-run": "node scripts/render-cloud-run-manifests.mjs",

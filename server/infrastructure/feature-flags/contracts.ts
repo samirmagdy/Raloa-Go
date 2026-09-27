@@ -12,7 +12,8 @@ export const featureFlagKeys = [
   'public-rendering.v2',
   'background-jobs.v2',
   'integrations.v2',
-  'studio-capabilities.v2'
+  'studio-capabilities.v2',
+  'sites.postgres.authoritative.v2'
 ] as const;
 
 export type FeatureFlagKey = typeof featureFlagKeys[number];
