@@ -25,6 +25,7 @@ export interface SecretAccessClient {
 }
 
 function enabled(env: NodeJS.ProcessEnv): boolean {
+  if (env.E2E_TEST_MODE === 'true' || env.VITE_E2E_TEST_MODE === 'true') return false;
   return env.SECRET_MANAGER_ENABLED === 'true';
 }
 

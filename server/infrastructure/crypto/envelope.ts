@@ -63,7 +63,10 @@ function decryptLegacy(value: string, secret: string, errorCode: string): string
 export function createEnvelopeCipher(options: EnvelopeCipherOptions = {}) {
   const env = options.environment || process.env;
   const keyName = options.keyName || env.INTEGRATION_KMS_KEY_NAME || '';
-  const kms = options.kms || (keyName ? new KeyManagementServiceClient() : undefined);
+  const offlineTestRuntime = env.E2E_TEST_MODE === 'true' || env.VITE_E2E_TEST_MODE === 'true';
+  // E2E runs use local fixtures and must not construct a Google KMS client;
+  // the SDK constructor can begin an asynchronous ADC lookup at import time.
+  const kms = options.kms || (!offlineTestRuntime && keyName ? new KeyManagementServiceClient() : undefined);
   const production = env.NODE_ENV === 'production';
   if (production && (!keyName || !kms)) throw new Error('INTEGRATION_KMS_KEY_NOT_CONFIGURED');
 
@@ -92,9 +95,12 @@ export function createEnvelopeCipher(options: EnvelopeCipherOptions = {}) {
       if (`${brand}.${encoding}` !== PREFIX || version !== ENVELOPE_VERSION || !keyRefValue || !wrappedValue || !ivValue || !tagValue || !ciphertextValue) throw new Error('INVALID_ENCRYPTED_TOKEN_ENVELOPE');
       const keyRef = unb64(keyRefValue).toString('utf8');
       const wrappedKey = unb64(wrappedValue).toString('utf8');
+      const remoteKms = kms || (offlineTestRuntime ? undefined : new KeyManagementServiceClient());
       const dek = keyRef === 'local-v1'
         ? localUnwrap(wrappedKey, localMasterKey(options))
-        : responsePayload(await (kms || new KeyManagementServiceClient()).decrypt({ name: keyRef, ciphertext: unb64(wrappedKey) }), 'plaintext');
+        : remoteKms
+          ? responsePayload(await remoteKms.decrypt({ name: keyRef, ciphertext: unb64(wrappedKey) }), 'plaintext')
+          : (() => { throw new Error('KMS_DISABLED_IN_E2E'); })();
       const decipher = crypto.createDecipheriv('aes-256-gcm', dek, unb64(ivValue));
       decipher.setAAD(Buffer.from(`${PREFIX}.${version}.${purpose}`, 'utf8'));
       decipher.setAuthTag(unb64(tagValue));

@@ -62,6 +62,9 @@ export interface DomainRecord {
 }
 
 export function isAdminConfigured(): boolean {
+  // Playwright E2E runs against deterministic local fixtures. Never let
+  // inherited CI credentials switch that server into Firebase/Google mode.
+  if (process.env.E2E_TEST_MODE === 'true' || process.env.VITE_E2E_TEST_MODE === 'true') return false;
   return Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.K_SERVICE || process.env.FIREBASE_ADMIN_ENABLED === 'true');
 }
 
