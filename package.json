@@ -147,6 +147,7 @@
     "test:commerce-concurrency": "tsx test-commerce-concurrency.ts",
     "test:background-job-queue": "tsx test-background-job-queue.ts",
     "test:cloud-tasks-dispatcher": "tsx test-cloud-tasks-dispatcher.ts",
+    "test:cloudflare-queue-dispatcher": "tsx test-cloudflare-queue-dispatcher.ts",
     "test:postgres-outbox": "tsx test-postgres-outbox.ts",
     "test:integration:staging": "node scripts/staging-integration-checks.mjs",
     "test:integration:staging:creator-flow": "node scripts/staging-creator-flow.mjs",

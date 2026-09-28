@@ -2,5 +2,9 @@
   "name": "@raloa/workers",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "tsx src/index.ts" }
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "dev:cloudflare": "wrangler dev --config wrangler.cloudflare.jsonc",
+    "deploy:cloudflare:staging": "wrangler deploy --config wrangler.cloudflare.jsonc --env staging"
+  }
 }

@@ -52,6 +52,7 @@ export const TARGET_CONFIG_GROUPS = Object.freeze({
   cloudflareServerOnly: ['CLOUDFLARE_API_TOKEN'],
   stripeServerOnly: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PRICE_PRO_MONTHLY', 'STRIPE_PRICE_PRO_YEARLY', 'STRIPE_PRICE_STUDIO_MONTHLY', 'STRIPE_PRICE_STUDIO_YEARLY'],
   cloudTasksWorker: ['CLOUD_TASKS_PROJECT_ID', 'CLOUD_TASKS_LOCATION', 'CLOUD_TASKS_QUEUE', 'CLOUD_TASKS_WORKER_URL'],
+  cloudflareQueueWorker: ['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_QUEUE_NAME', 'CLOUDFLARE_QUEUE_DLQ_NAME'],
   sentryRuntime: ['SENTRY_DSN', 'APP_ENV', 'RELEASE_ID'],
   oauthServerOnly: ['GOOGLE_CALENDAR_CLIENT_ID', 'GOOGLE_CALENDAR_CLIENT_SECRET', 'GOOGLE_CALENDAR_REDIRECT_URI', 'MICROSOFT_CALENDAR_CLIENT_ID', 'MICROSOFT_CALENDAR_CLIENT_SECRET', 'MICROSOFT_CALENDAR_REDIRECT_URI'],
   emailWorkerOnly: ['RESEND_API_KEY', 'RESEND_FROM_EMAIL'],
@@ -86,7 +87,8 @@ function targetUrl(value, name, httpsOnly = true) {
 
 export function inspectTargetEnvironment(env = process.env, role = 'api') {
   const required = new Set([...TARGET_CONFIG_GROUPS.runtimeRequired, ...TARGET_CONFIG_GROUPS.postgresServerOnly, ...TARGET_CONFIG_GROUPS.firebaseAuth, ...TARGET_CONFIG_GROUPS.r2ServerOnly, ...TARGET_CONFIG_GROUPS.cloudflareServerOnly, ...TARGET_CONFIG_GROUPS.stripeServerOnly, ...TARGET_CONFIG_GROUPS.sentryRuntime, ...TARGET_CONFIG_GROUPS.securityServerOnly]);
-  if (role === 'worker' || role === 'api') for (const name of TARGET_CONFIG_GROUPS.cloudTasksWorker) required.add(name);
+  if (env.JOB_TRANSPORT === 'cloudflare') for (const name of TARGET_CONFIG_GROUPS.cloudflareQueueWorker) required.add(name);
+  else if (role === 'worker' || role === 'api') for (const name of TARGET_CONFIG_GROUPS.cloudTasksWorker) required.add(name);
   if (role === 'worker') for (const name of TARGET_CONFIG_GROUPS.emailWorkerOnly) required.add(name);
   if (env.ENABLE_GOOGLE_CALENDAR === 'true') for (const name of TARGET_CONFIG_GROUPS.oauthServerOnly.slice(0, 3)) required.add(name);
   if (env.ENABLE_MICROSOFT_CALENDAR === 'true') for (const name of TARGET_CONFIG_GROUPS.oauthServerOnly.slice(3)) required.add(name);
@@ -116,7 +118,12 @@ export function inspectTargetEnvironment(env = process.env, role = 'api') {
   if (env.AUTH_SESSION_SECRET && env.AUTH_SESSION_SECRET.length < 32) invalid.push('AUTH_SESSION_SECRET must be at least 32 characters');
   if (env.TRUSTED_PROXY_HOPS && (!/^\d+$/.test(env.TRUSTED_PROXY_HOPS) || Number(env.TRUSTED_PROXY_HOPS) > 10)) invalid.push('TRUSTED_PROXY_HOPS must be an integer from 0 to 10');
   if (env.CLOUD_TASKS_WORKER_URL) { const error = targetUrl(env.CLOUD_TASKS_WORKER_URL, 'CLOUD_TASKS_WORKER_URL'); if (error) invalid.push(error); }
-  if (!env.CLOUD_TASKS_SERVICE_ACCOUNT && !targetPresent(env, 'CLOUD_TASKS_AUTH_TOKEN')) invalid.push('Cloud Tasks requires a service account identity or CLOUD_TASKS_AUTH_TOKEN');
+  if (env.JOB_TRANSPORT !== 'cloudflare') {
+    if (!env.CLOUD_TASKS_SERVICE_ACCOUNT && !targetPresent(env, 'CLOUD_TASKS_AUTH_TOKEN')) invalid.push('Cloud Tasks requires a service account identity or CLOUD_TASKS_AUTH_TOKEN');
+  } else if (!targetPresent(env, 'CLOUDFLARE_API_TOKEN')) {
+    invalid.push('Cloudflare Queues requires CLOUDFLARE_API_TOKEN');
+  }
+  if (env.JOB_TRANSPORT && !['cloud_tasks', 'cloudflare'].includes(env.JOB_TRANSPORT)) invalid.push('JOB_TRANSPORT must be cloud_tasks or cloudflare');
   if (env.CLOUD_TASKS_SERVICE_ACCOUNT && !/^[^@\s]+@[^@\s]+\.iam\.gserviceaccount\.com$/.test(env.CLOUD_TASKS_SERVICE_ACCOUNT)) invalid.push('CLOUD_TASKS_SERVICE_ACCOUNT must be a service account email');
   return { missing, invalid, migrationOnly: MIGRATION_ONLY_VARIABLES };
 }

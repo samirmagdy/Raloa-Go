@@ -1,5 +1,6 @@
 import type { BackgroundJob, JobDispatcher } from './types';
 import { CloudTasksClient } from '@google-cloud/tasks';
+import { createCloudflareQueueDispatcherFromEnv } from '../adapters/cloudflare-queues';
 
 type HttpDispatcherConfig = { url: string; token?: string };
 
@@ -52,7 +53,13 @@ export function createPubSubDispatcher(): JobDispatcher | null {
 }
 
 export function createConfiguredDispatcher(): JobDispatcher {
-  const configured = createCloudTasksDispatcher() || createPubSubDispatcher();
+  // Cloudflare is opt-in until the Worker consumer has passed staging
+  // idempotency, retry, and dead-letter validation. This prevents an
+  // incomplete queue deployment from silently replacing the current path.
+  const cloudflare = process.env.CLOUDFLARE_QUEUE_ENABLED === 'true'
+    ? createCloudflareQueueDispatcherFromEnv()
+    : null;
+  const configured = cloudflare || createCloudTasksDispatcher() || createPubSubDispatcher();
   if (configured) return configured;
   if (process.env.NODE_ENV === 'production') throw new Error('DURABLE_JOB_DISPATCHER_NOT_CONFIGURED');
   return { dispatch: async () => undefined };

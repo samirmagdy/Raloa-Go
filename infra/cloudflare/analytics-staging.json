@@ -1,0 +1,11 @@
+{
+  "environment": "staging",
+  "rawEventsBucket": "raloa-staging-analytics",
+  "format": "json-per-event",
+  "partitioning": "raw-events/schema=1/year=YYYY/month=MM/day=DD/hour=HH",
+  "catalog": "pending-dashboard-enablement",
+  "iceberg": "pending-catalog-table-definition",
+  "r2SqlWarehouse": "pending-catalog-warehouse",
+  "postgresRollups": "analytics_daily_rollups, analytics_dimension_daily_rollups, analytics_link_daily_rollups, analytics_utm_daily_rollups",
+  "status": "worker-deployed-queue-consumer-active-observability-enabled"
+}
