@@ -1,9 +1,15 @@
 'use client';
 
 import { useEffect } from 'react';
+import * as Sentry from '@sentry/nextjs';
 
-export default function GlobalError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  useEffect(() => { /* Sentry wiring is injected at the app composition boundary. */ }, []);
+export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  useEffect(() => {
+    Sentry.withScope((scope) => {
+      scope.setTag('surface', 'nextjs-client');
+      Sentry.captureException(error);
+    });
+  }, [error]);
   return (
     <main className="raloa-main" role="alert">
       <section className="raloa-card raloa-prose" style={{ padding: '2rem', marginBlock: '4rem' }}>

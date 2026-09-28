@@ -14,10 +14,13 @@ Tests are organized by the boundary they prove. A lower layer must not require a
 
 ```bash
 npm run test:unit
+npm run test:domain
 npm run test:http
 npm run test:contracts
+npm run test:postgres:integration
 npm run test:e2e
 npm run test:integration:staging
+npm run test:integration:staging:creator-flow
 ```
 
 `test:unit`, `test:http`, and `test:contracts` are deterministic CI gates. Playwright runs against the built application and uses route mocks for stable Studio tests. Staging tests are never part of pull-request unit runs; they require `STAGING_*` configuration and disposable resource confirmation.
@@ -35,3 +38,13 @@ Existing `test-*.ts` files remain compatibility checks while they are migrated i
 Provider contract tests must verify that adapters never return raw provider SDK objects to domain services, preserve normalized error codes, and accept idempotency/retry inputs where the provider operation can be repeated. Staging tests verify the corresponding real behavior, including Stripe webhook signatures, Cloudflare DNS/domain state, Firebase auth/Firestore ownership, Storage lifecycle, email delivery, and calendar OAuth/synchronization.
 
 The current provider contract suite covers Stripe, Cloudflare domain operations, Firebase Auth, Firestore, Firebase Storage, Cloudflare R2, Resend email, Google Calendar, and Microsoft Graph. The staging runner exercises the real Stripe checkout/webhook path, Cloudflare provision/verify/remove path, Firebase bearer-auth and Firestore reads, Firebase Storage upload/delete, real email delivery workers, and one disposable Google plus one disposable Microsoft calendar booking. Provider credentials are required only by the staging command.
+
+## Critical flow matrix
+
+| Flow | Deterministic coverage | PostgreSQL coverage | Real staging coverage | Browser coverage |
+| --- | --- | --- | --- | --- |
+| Creator auth → site → edit → media → publish → visitor → analytics | `tests/domain/critical-workflows.test.ts` and Vitest service suites | Site/publication integration tests | `test:integration:staging:creator-flow` | `e2e/studio.spec.ts` |
+| Visitor booking → slot reservation → notification → calendar → confirmation | Booking concurrency, job, and calendar contract suites | Booking repository/concurrency tests | `test:integration:staging` with disposable Google/Outlook cases | Public booking fixtures |
+| Product → checkout → Stripe → webhook → order → inventory → fulfillment | Order state, payment, commerce concurrency, and Stripe contract suites | Commerce/payment integration tests | `test:integration:staging` with signed Stripe fixtures | Studio/product fixtures |
+
+The deterministic workflow suite verifies ordering and versioned event contracts; it does not replace database, HTTP, browser, or real-provider tests. Staging flows use disposable data and clean it up in `finally` blocks.

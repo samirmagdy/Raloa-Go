@@ -5,13 +5,15 @@ export const REQUIRED_PRODUCTION_VARIABLES = Object.freeze([
   'FIREBASE_PROJECT_ID', 'FIRESTORE_DATABASE_ID', 'FIREBASE_STORAGE_BUCKET', 'FIREBASE_ADMIN_ENABLED',
   'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PRICE_PRO_MONTHLY', 'STRIPE_PRICE_PRO_YEARLY',
   'STRIPE_PRICE_STUDIO_MONTHLY', 'STRIPE_PRICE_STUDIO_YEARLY', 'CLOUDFLARE_API_TOKEN',
-  'CLOUDFLARE_ZONE_ID', 'TRUSTED_PROXY_HOPS'
+  'CLOUDFLARE_ZONE_ID', 'TRUSTED_PROXY_HOPS', 'CLOUD_TASKS_PROJECT_ID', 'CLOUD_TASKS_LOCATION',
+  'CLOUD_TASKS_QUEUE', 'CLOUD_TASKS_WORKER_URL'
 ]);
 
 export const MANAGED_PRODUCTION_SECRETS = Object.freeze([
   'AUTH_SESSION_SECRET', 'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET', 'CLOUDFLARE_API_TOKEN', 'GOOGLE_CALENDAR_CLIENT_SECRET',
-  'MICROSOFT_CALENDAR_CLIENT_SECRET', 'GITHUB_CLIENT_SECRET', 'RESEND_API_KEY'
+  'MICROSOFT_CALENDAR_CLIENT_SECRET', 'GITHUB_CLIENT_SECRET', 'RESEND_API_KEY', 'POSTGRES_DATABASE_URL',
+  'CLOUDFLARE_R2_ACCESS_KEY_ID', 'CLOUDFLARE_R2_SECRET_ACCESS_KEY'
 ]);
 
 export const OPTIONAL_PRODUCTION_VARIABLES = Object.freeze([
@@ -19,6 +21,20 @@ export const OPTIONAL_PRODUCTION_VARIABLES = Object.freeze([
   'GOOGLE_CALENDAR_CLIENT_ID', 'GOOGLE_CALENDAR_CLIENT_SECRET', 'GOOGLE_CALENDAR_REDIRECT_URI',
   'MICROSOFT_CALENDAR_CLIENT_ID', 'MICROSOFT_CALENDAR_CLIENT_SECRET', 'MICROSOFT_CALENDAR_REDIRECT_URI',
   'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'GITHUB_OAUTH_REDIRECT_URI'
+]);
+
+export const REQUIRED_STAGING_VARIABLES = Object.freeze([
+  'APP_URL', 'AUTH_SESSION_SECRET', 'INTEGRATION_KMS_KEY_NAME',
+  'FIREBASE_PROJECT_ID', 'FIRESTORE_DATABASE_ID', 'FIREBASE_STORAGE_BUCKET', 'FIREBASE_ADMIN_ENABLED',
+  'POSTGRES_DATABASE_URL', 'POSTGRES_ENVIRONMENT', 'POSTGRES_ENABLED', 'POSTGRES_SSL',
+  'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET',
+  'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ZONE_ID',
+  'CLOUDFLARE_R2_ACCOUNT_ID', 'CLOUDFLARE_R2_BUCKET', 'CLOUDFLARE_R2_PUBLIC_BASE_URL',
+  'CLOUDFLARE_R2_ACCESS_KEY_ID', 'CLOUDFLARE_R2_SECRET_ACCESS_KEY',
+  'CLOUD_TASKS_PROJECT_ID', 'CLOUD_TASKS_LOCATION', 'CLOUD_TASKS_QUEUE', 'CLOUD_TASKS_WORKER_URL',
+  'SENTRY_DSN', 'RELEASE_ID', 'GOOGLE_CALENDAR_CLIENT_ID', 'GOOGLE_CALENDAR_REDIRECT_URI',
+  'MICROSOFT_CALENDAR_CLIENT_ID', 'MICROSOFT_CALENDAR_REDIRECT_URI', 'RESEND_FROM_EMAIL', 'RESEND_API_KEY',
+  'STAGING_RESOURCE_PREFIX', 'STAGING_STRIPE_MODE'
 ]);
 
 const isPresent = (value) => typeof value === 'string' && value.trim().length > 0;
@@ -75,9 +91,63 @@ export function inspectProductionEnvironment(env = process.env) {
 
 export function assertProductionEnvironment(env = process.env) {
   if (env.NODE_ENV !== 'production') return;
+  if (env.APP_ENV === 'staging') {
+    const result = inspectStagingEnvironment(env);
+    if (result.missing.length || result.invalid.length) {
+      const details = [result.missing.length ? `missing: ${result.missing.join(', ')}` : '', ...result.invalid.map((message) => `invalid: ${message}`)].filter(Boolean).join('; ');
+      throw new Error(`[staging-config] Startup blocked. ${details}`);
+    }
+    return;
+  }
   const result = inspectProductionEnvironment(env);
   if (result.missing.length || result.invalid.length) {
     const details = [result.missing.length ? `missing: ${result.missing.join(', ')}` : '', ...result.invalid.map((message) => `invalid: ${message}`)].filter(Boolean).join('; ');
     throw new Error(`[production-config] Startup blocked. ${details}`);
   }
+}
+
+function stagingManagedOrPresent(env, name) {
+  return isPresent(env[name]) || (env.SECRET_MANAGER_ENABLED === 'true' && isPresent(env.SECRET_MANAGER_PROJECT_ID));
+}
+
+export function inspectStagingEnvironment(env = process.env) {
+  const missing = REQUIRED_STAGING_VARIABLES.filter((name) => {
+    if (['AUTH_SESSION_SECRET', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_R2_ACCESS_KEY_ID', 'CLOUDFLARE_R2_SECRET_ACCESS_KEY', 'GOOGLE_CALENDAR_CLIENT_SECRET', 'MICROSOFT_CALENDAR_CLIENT_SECRET', 'RESEND_API_KEY'].includes(name)) return !stagingManagedOrPresent(env, name);
+    return !isPresent(env[name]);
+  });
+  const invalid = [];
+  if (env.NODE_ENV !== 'production') invalid.push('NODE_ENV must be production for the staging runtime');
+  if (env.APP_ENV !== 'staging') invalid.push('APP_ENV must be staging');
+  if (env.SECRET_MANAGER_ENABLED !== 'true') invalid.push('SECRET_MANAGER_ENABLED must be true for staging provider credentials');
+  if (isPresent(env.APP_URL)) {
+    try {
+      const url = new URL(env.APP_URL);
+      if (url.protocol !== 'https:') invalid.push('APP_URL must use https:// in staging');
+      if (url.hostname === 'raloa.app' || url.hostname.endsWith('.raloa.app') && !url.hostname.startsWith('staging.')) invalid.push('APP_URL must not point at the production public domain');
+    } catch { invalid.push('APP_URL must be a valid absolute HTTPS URL'); }
+  }
+  if (env.FIREBASE_ADMIN_ENABLED !== 'true') invalid.push('FIREBASE_ADMIN_ENABLED must be true in staging');
+  if (env.POSTGRES_ENVIRONMENT !== 'staging') invalid.push('POSTGRES_ENVIRONMENT must be staging');
+  if (env.POSTGRES_ENABLED !== 'true') invalid.push('POSTGRES_ENABLED must be true in staging');
+  if (env.POSTGRES_SSL !== 'true') invalid.push('POSTGRES_SSL must be true in staging');
+  if (env.STAGING_STRIPE_MODE !== 'test') invalid.push('STAGING_STRIPE_MODE must be test');
+  if (isPresent(env.STRIPE_SECRET_KEY) && !/^sk_test_[A-Za-z0-9]/.test(env.STRIPE_SECRET_KEY)) invalid.push('STRIPE_SECRET_KEY must be a Stripe test secret in staging');
+  if (isPresent(env.CLOUDFLARE_ZONE_ID) && !/^[a-f0-9]{32}$/i.test(env.CLOUDFLARE_ZONE_ID)) invalid.push('CLOUDFLARE_ZONE_ID must be a 32-character Cloudflare zone ID');
+  if (isPresent(env.STAGING_RESOURCE_PREFIX) && !/^raloa-staging-[a-z0-9-]+$/.test(env.STAGING_RESOURCE_PREFIX)) invalid.push('STAGING_RESOURCE_PREFIX must start with raloa-staging-');
+  for (const [name, value] of [['CLOUD_TASKS_QUEUE', env.CLOUD_TASKS_QUEUE], ['CLOUDFLARE_R2_BUCKET', env.CLOUDFLARE_R2_BUCKET]]) {
+    if (isPresent(value) && !value.startsWith(env.STAGING_RESOURCE_PREFIX || 'raloa-staging-')) invalid.push(`${name} must use STAGING_RESOURCE_PREFIX`);
+  }
+  if (isPresent(env.CLOUDFLARE_R2_PUBLIC_BASE_URL)) {
+    try { if (new URL(env.CLOUDFLARE_R2_PUBLIC_BASE_URL).protocol !== 'https:') invalid.push('CLOUDFLARE_R2_PUBLIC_BASE_URL must use https://'); } catch { invalid.push('CLOUDFLARE_R2_PUBLIC_BASE_URL must be a valid URL'); }
+  }
+  const providerGroups = [
+    ['Google Calendar', ['GOOGLE_CALENDAR_CLIENT_ID', 'GOOGLE_CALENDAR_CLIENT_SECRET', 'GOOGLE_CALENDAR_REDIRECT_URI']],
+    ['Microsoft Calendar', ['MICROSOFT_CALENDAR_CLIENT_ID', 'MICROSOFT_CALENDAR_CLIENT_SECRET', 'MICROSOFT_CALENDAR_REDIRECT_URI']]
+  ];
+  for (const [label, names] of providerGroups) {
+    const configured = names.filter((name) => stagingManagedOrPresent(env, name)).length;
+    if (configured < names.length) invalid.push(`${label} configuration is incomplete`);
+  }
+  if (!stagingManagedOrPresent(env, 'RESEND_API_KEY')) invalid.push('RESEND_API_KEY must be configured through Secret Manager');
+  return { missing, invalid };
 }

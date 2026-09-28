@@ -3,7 +3,12 @@ import fs from 'node:fs';
 const workflow = fs.readFileSync('.github/workflows/ci-cd.yml', 'utf8');
 const required = [
   'npm run lint',
+  'npm run check:api',
   'npm run test:unit',
+  'npm run test:domain',
+  'npm run test:staging-config',
+  'npm --prefix apps/web run build',
+  'npm run check:performance:next',
   'npm run test:http',
   'npm run test:contracts',
   'npm run test:feature-flags',
@@ -18,6 +23,8 @@ const required = [
   'npm run db:migrate',
   'npm run db:migrate:verify',
   'npm run test:integration:staging',
+  'npm run test:integration:staging:creator-flow',
+  'npm run validate:staging',
   'npm run smoke:release',
   'gcloud run services replace',
   'migrate-production:',

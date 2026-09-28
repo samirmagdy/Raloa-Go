@@ -36,19 +36,20 @@ import {
   type DomainRecord
 } from './server-services';
 import { templatesData } from './src/data/content';
-import { getPlanCapabilities, getPlanTier, isPremiumTemplate } from './src/lib/planCapabilities';
+import { getPlanTier, isPremiumTemplate } from './src/lib/planCapabilities';
 import { calendarAdapter, calendarOAuthConfiguration, calendarProviderIsConfigured, decryptCalendarTokens, encryptCalendarTokens, type CalendarProvider, type CalendarTokenBundle } from './server-calendar';
 import { isSupportedBlockType, isSupportedEmbedUrl } from './src/lib/blockTypes';
 import { canonicalSiteToLegacy, normalizeBookingConfig, normalizeProductInput, normalizeSiteContent, validateProductInput, validateSiteContent } from './src/lib/contentSchema';
 import type { BookingConfig, BookingServiceConfig } from './src/types';
 import { normalizeSiteSlug, RESERVED_SITE_SLUGS, validateSiteSlug } from './src/lib/siteSlug';
 import { createDomainModules } from './server/modules';
-import { calendarProviders } from './server/adapters/calendar';
+import { calendarProviders, calendarProviderAdapters } from './server/adapters/calendar';
 import { oauthProviderAdapters } from './server/adapters/oauth';
 import { stripeAdapter } from './server/adapters/stripe';
 import { cloudflareAdapter } from './server/adapters/cloudflare';
 import { createBillingController } from './server/domains/billing/controller';
-import { createEntitlementService } from './server/domains/billing/entitlement-service';
+import { createEntitlementService } from './server/domains/entitlements/service';
+import { capabilitiesForPlan } from './server/domains/entitlements/service';
 import { buildRateLimitKey, RATE_LIMIT_POLICIES, type RateLimitIdentity, type RateLimitPolicyName } from './server/core/rate-limit-policy';
 import { assertOrderTransition, legacyOrderState } from './server/domains/orders/state-machine';
 import { createBackgroundJobService, createConfiguredDispatcher, createFirestoreBackgroundJobRepository, type JobKind } from './server/background-jobs';
@@ -72,7 +73,7 @@ import {
   InternalError
 } from './server/core/errors';
 import { createStructuredLogger, InMemoryMetrics, traceIdFromHeaders } from './server/infrastructure/observability/logger';
-import { captureServerException, initializeServerSentry } from './server/infrastructure/observability/sentry';
+import { captureServerException, initializeServerSentry, startServerRequestSpan } from './server/infrastructure/observability/sentry';
 import { integrationEnvelopeCipher } from './server/infrastructure/crypto/envelope';
 import { createFirestoreAuditRepository } from './server/audit/firestore';
 import { createAuditService } from './server/audit/service';
@@ -88,11 +89,20 @@ import { createFirestoreEmailDeliveryWorker } from './server/domains/notificatio
 import { createCalendarSyncWorker } from './server/domains/bookings/calendar-sync-worker';
 import { createDomainVerificationWorker } from './server/domains/domains/verification-worker';
 import { createFeatureFlagService, createFirestoreFeatureFlagRepository } from './server/infrastructure/feature-flags';
-import { createConfiguredPostgresDatabase, createPostgresBookingsRepository, createPostgresSitePersistenceRepository } from './server/infrastructure/postgres';
+import { createConfiguredPostgresDatabase, createPostgresAudienceRepository, createPostgresBookingScheduleRepository, createPostgresBookingsRepository, createPostgresCommerceService, createPostgresPaymentService, createPostgresProductsRepository, createPostgresSitePersistenceRepository, createPostgresOutboxRepository, createPostgresOAuthRepository, createPostgresAnalyticsRepository, decodeAudienceCursor, decodeCommerceCursor } from './server/infrastructure/postgres';
+import { createPostgresMediaMetadataRepository, createPostgresDomainsRepository } from './server/infrastructure/postgres';
+import { createCloudflareR2StorageAdapterFromEnv } from './server/adapters/media-storage';
+import { createMediaDomainService } from './server/domains/media/media-service';
+import { processMediaAsset } from './server/domains/media/processing-worker';
+import type { MediaPurpose, MediaService } from './server/domains/media/contracts';
 import { createPostgresPublishedSiteReader, createPostgresSitePublicationRepository } from './server/infrastructure/postgres/site-publications-repository';
 import { createSitePublicationService, type SitePublicationService } from './server/domains/publishing/publication-service';
 import { createBookingMigrationRepository } from './server/domains/bookings/migration-repository';
 import { createFirestoreBookingsRepository } from './server/repositories/firestore';
+import { createOAuthTokenService } from './server/domains/integrations/oauth-service';
+import { createCloudflareDomainAdapter } from './server/adapters/cloudflare-domains';
+import { createPostgresDomainService } from './server/domains/domains/postgres-service';
+import { isSameOriginMutation } from './server/core/csrf';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -116,7 +126,25 @@ export const auditService = createAuditService(createFirestoreAuditRepository(ad
 const firestoreSitesPersistenceRepository = createFirestoreSitePersistenceRepository(adminDb);
 const bookingFeatureFlags = createFeatureFlagService(createFirestoreFeatureFlagRepository(adminDb));
 const postgresBookingRuntime = process.env.POSTGRES_ENABLED === 'true' && (process.env.POSTGRES_DATABASE_URL || process.env.DATABASE_URL)
-  ? createConfiguredPostgresDatabase()
+  ? createConfiguredPostgresDatabase(process.env, undefined, observabilityMetrics)
+  : null;
+const postgresAnalyticsRepository = postgresBookingRuntime && process.env.ANALYTICS_POSTGRES_AUTHORITATIVE !== 'false'
+  ? createPostgresAnalyticsRepository(postgresBookingRuntime.pool)
+  : null;
+const postgresCalendarOAuthService = postgresBookingRuntime && process.env.CALENDAR_OAUTH_POSTGRES_AUTHORITATIVE === 'true'
+  ? createOAuthTokenService(createPostgresOAuthRepository(postgresBookingRuntime.pool), oauthProviderAdapters())
+  : null;
+const postgresDomainRepository = postgresBookingRuntime && process.env.DOMAINS_POSTGRES_AUTHORITATIVE === 'true'
+  ? createPostgresDomainsRepository(postgresBookingRuntime.pool)
+  : null;
+const postgresDomainService = postgresDomainRepository && getCloudflareConfig()
+  ? createPostgresDomainService({
+    repository: postgresDomainRepository,
+    provider: createCloudflareDomainAdapter({ request: cloudflareRequest, zoneId: getCloudflareConfig()!.zoneId, origin: APP_URL })
+  })
+  : null;
+const postgresAudienceRepository = postgresBookingRuntime && process.env.AUDIENCE_POSTGRES_AUTHORITATIVE !== 'false'
+  ? createPostgresAudienceRepository(postgresBookingRuntime.pool)
   : null;
 const sitesPersistenceRepository = process.env.SITES_POSTGRES_AUTHORITATIVE === 'true' && postgresBookingRuntime
   ? createPostgresSitePersistenceRepository(postgresBookingRuntime.pool, {
@@ -145,6 +173,24 @@ const sitePublicationService: SitePublicationService | null = process.env.SITES_
   : null;
 const firestoreBookingsRepository = createFirestoreBookingsRepository(adminDb);
 const postgresBookingsRepository = postgresBookingRuntime ? createPostgresBookingsRepository(postgresBookingRuntime.pool) : null;
+const postgresBookingScheduleRepository = postgresBookingRuntime && process.env.BOOKINGS_POSTGRES_AUTHORITATIVE !== 'false'
+  ? createPostgresBookingScheduleRepository(postgresBookingRuntime.pool)
+  : null;
+const bookingsPostgresAuthoritative = Boolean(postgresBookingsRepository && postgresBookingScheduleRepository);
+const postgresProductsRepository = postgresBookingRuntime ? createPostgresProductsRepository(postgresBookingRuntime.pool) : null;
+const postgresCommerceService = postgresBookingRuntime && process.env.COMMERCE_POSTGRES_AUTHORITATIVE !== 'false'
+  ? createPostgresCommerceService(postgresBookingRuntime.pool)
+  : null;
+const postgresPaymentService = postgresBookingRuntime && process.env.BILLING_POSTGRES_AUTHORITATIVE === 'true'
+  ? createPostgresPaymentService(postgresBookingRuntime.pool, {
+    reconcileOrder: async (event) => {
+      if (!event.orderId || !postgresCommerceService) return;
+      const outcome = event.kind === 'checkout_expired' ? 'cancelled' : event.kind === 'payment_failed' || event.kind === 'invoice_payment_failed' ? 'payment_failed' : event.kind === 'payment_refunded' ? 'refunded' : event.status === 'paid' ? 'paid' : 'pending_payment';
+      await postgresCommerceService.recordProviderPaymentEvent({ orderId: event.orderId, providerPaymentId: event.paymentId || event.checkoutSessionId, providerEventId: event.eventId, outcome, amountMinor: event.amountMinor, currency: event.currency });
+    }
+  })
+  : null;
+const commercePostgresAuthoritative = Boolean(postgresCommerceService && postgresProductsRepository);
 const bookingsMigrationRepository = postgresBookingsRepository
   ? createBookingMigrationRepository(firestoreBookingsRepository, postgresBookingsRepository, bookingFeatureFlags, {
     mismatch: async (operation, context, bookingId) => console.warn('[Bookings migration mismatch]', { operation, tenantId: context.tenantId, bookingId }),
@@ -193,17 +239,26 @@ const auditRequestId = (req: Request): string | undefined => {
   const value = req.headers['x-request-id'];
   return typeof value === 'string' && value ? value : undefined;
 };
+function publicDomainRecord(domain: { id: string; hostname: string; ownerUserId: string; siteId: string; routing: { siteId: string }; verificationStatus: DomainRecord['verificationStatus']; certificateStatus: DomainRecord['sslStatus']; provisioningState: DomainRecord['provisioningState']; dnsInstructions: Array<{ type: 'CNAME' | 'A' | 'AAAA' | 'TXT'; name: string; value: string }>; providerHostnameId?: string; lastError?: string; idempotencyKey: string; createdAt: string; updatedAt: string }): DomainRecord {
+  return { domainId: domain.id, hostname: domain.hostname, userId: domain.ownerUserId, siteId: domain.siteId, verificationStatus: domain.verificationStatus, sslStatus: domain.certificateStatus, provisioningState: domain.provisioningState, verificationToken: '', idempotencyKey: domain.idempotencyKey, dnsRecords: domain.dnsInstructions.filter((record): record is { type: 'CNAME' | 'A' | 'TXT'; name: string; value: string } => record.type !== 'AAAA').map((record) => ({ ...record, is_verified: false })), cloudflareHostnameId: domain.providerHostnameId, lastError: domain.lastError, createdAt: domain.createdAt, updatedAt: domain.updatedAt };
+}
 async function getCachedPublicDomain(hostname: string): Promise<DomainRecord | null> {
   const normalized = hostname.trim().toLowerCase();
   const key = cacheKey('domainResolution', normalized);
   const cached = await publicCache.get<DomainRecord>(key);
   if (cached) return cached;
-  const domain = await findDomainByHostname(normalized);
+  let domain: DomainRecord | null;
+  if (postgresDomainRepository) {
+    const pgDomain = await postgresDomainRepository.findByHostname(normalized);
+    domain = pgDomain && pgDomain.provisioningState === 'verified' && pgDomain.verificationStatus === 'verified' && pgDomain.certificateStatus === 'active' ? publicDomainRecord(pgDomain) : null;
+  } else {
+    domain = await findDomainByHostname(normalized);
+  }
   if (domain) await publicCache.set(key, domain, 30);
   return domain;
 }
 const emailDeliveryWorker = createFirestoreEmailDeliveryWorker({ db: adminDb, provider: resendEmailAdapter });
-export const calendarSyncWorker = createCalendarSyncWorker({ db: adminDb });
+export const calendarSyncWorker = createCalendarSyncWorker({ db: adminDb, providers: calendarProviderAdapters() });
 export const domainVerificationWorker = createDomainVerificationWorker({
   db: adminDb,
   verify: async (providerHostnameId) => {
@@ -217,19 +272,93 @@ export const domainVerificationWorker = createDomainVerificationWorker({
   }
 });
 export const transactionalOutbox = createFirestoreTransactionalOutbox(adminDb);
+let postgresOutboxService: ReturnType<typeof createOutboxService> | null = null;
+let postgresOutboxRepository: ReturnType<typeof createPostgresOutboxRepository> | null = null;
+const r2StorageAdapter = process.env.MEDIA_R2_AUTHORITATIVE === 'true' ? createCloudflareR2StorageAdapterFromEnv() : null;
+const postgresMediaRepository = r2StorageAdapter && postgresBookingRuntime
+  ? createPostgresMediaMetadataRepository(postgresBookingRuntime.pool, { publicBaseUrl: process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL })
+  : null;
+let mediaDomainService: MediaService | null = null;
 export const backgroundJobs = createBackgroundJobService(createFirestoreBackgroundJobRepository(adminDb), createConfiguredDispatcher(), {
   email_delivery: async (job) => emailDeliveryWorker.run(job),
   calendar_sync: async (job) => calendarSyncWorker.run(job),
-  media_processing: async () => sweepOrphanMedia(),
+  media_processing: async (job) => {
+    if (!mediaDomainService || !r2StorageAdapter || !postgresMediaRepository || !r2StorageAdapter.getObject) return sweepOrphanMedia();
+    await processMediaAsset({
+      assetId: String(job.payload.assetId || ''), metadata: postgresMediaRepository, storage: r2StorageAdapter,
+      loadOriginal: (objectKey) => r2StorageAdapter.getObject!(objectKey),
+      processor: {
+        async process(input) {
+          const metadata = await sharp(input.bytes).metadata();
+          if (!metadata.width || !metadata.height || metadata.width > MAX_MEDIA_DIMENSION || metadata.height > MAX_MEDIA_DIMENSION) throw new Error('INVALID_MEDIA_DIMENSIONS');
+          const processed = await sharp(input.bytes).rotate().webp({ quality: 88, effort: 4 }).toBuffer();
+          const thumbnail = await sharp(input.bytes).rotate().resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true }).webp({ quality: 80, effort: 4 }).toBuffer();
+          return { processed: { bytes: processed, contentType: 'image/webp' }, thumbnail: { bytes: thumbnail, contentType: 'image/webp' }, width: metadata.width, height: metadata.height };
+        }
+      }
+    });
+  },
   cleanup: async () => sweepOrphanMedia(),
   stripe_reconciliation: async () => { await reconcileStripeBillingState(); },
   order_processing: async () => undefined,
-  domain_verification: async (job) => domainVerificationWorker.run(job),
-  oauth_refresh: async () => undefined,
-  analytics_rollup: async () => undefined
+  outbox_publish: async () => {
+    if (!postgresOutboxService) throw new Error('POSTGRES_OUTBOX_NOT_CONFIGURED');
+    await postgresOutboxService.publishPending();
+  },
+  domain_verification: async (job) => {
+    if (!postgresDomainService || !postgresDomainRepository) return domainVerificationWorker.run(job);
+    const domainId = typeof job.payload.domainId === 'string' ? job.payload.domainId : '';
+    const operation = typeof job.payload.operation === 'string' ? job.payload.operation : 'verify';
+    if (!domainId) throw new Error('DOMAIN_ID_REQUIRED');
+    if (operation === 'provision') {
+      await postgresDomainService.provision(domainId, job.attempts >= job.maxAttempts);
+      await backgroundJobs.enqueue({ kind: 'domain_verification', idempotencyKey: `domain:${domainId}:verification`, correlationId: job.correlationId || `domain:${domainId}`, payload: { domainId, operation: 'verify' } });
+      return;
+    }
+    if (operation === 'remove') {
+      await postgresDomainService.remove(domainId);
+      return;
+    }
+    await postgresDomainService.verify(domainId, job.attempts >= job.maxAttempts);
+  },
+  oauth_refresh: async (job) => {
+    const userId = typeof job.payload.userId === 'string' ? job.payload.userId : '';
+    const provider = typeof job.payload.provider === 'string' ? job.payload.provider : '';
+    if (userId && provider) {
+      const siteId = typeof job.payload.siteId === 'string' ? job.payload.siteId : undefined;
+      if (postgresCalendarOAuthService && (provider === 'google' || provider === 'outlook')) await postgresCalendarOAuthService.refresh(userId, provider, siteId);
+      else await domainModules.integrations.oauth.validate(userId, provider, siteId);
+    }
+  },
+  analytics_rollup: async (job) => {
+    if (postgresAnalyticsRepository) {
+      const event = job.payload as any;
+      await postgresAnalyticsRepository.record({
+        schemaVersion: 1,
+        eventId: typeof event.eventId === 'string' ? event.eventId : job.id,
+        eventType: event.eventType === 'link_click' ? 'link_click' : 'page_view',
+        siteId: String(event.siteId || ''),
+        siteOwnerId: typeof event.siteOwnerId === 'string' ? event.siteOwnerId : undefined,
+        occurredAt: typeof event.occurredAt === 'string' ? event.occurredAt : new Date().toISOString(),
+        visitorHash: typeof event.visitorHash === 'string' ? event.visitorHash : undefined,
+        dimensions: event.dimensions && typeof event.dimensions === 'object' ? event.dimensions : {},
+        payload: event.payload && typeof event.payload === 'object' ? event.payload : {}
+      });
+      return;
+    }
+    const eventId = typeof job.payload.eventId === 'string' ? job.payload.eventId : job.id;
+    await domainModules.analytics.service.record(eventId, job.payload);
+  }
 }, { metrics: observabilityMetrics });
+mediaDomainService = r2StorageAdapter && postgresMediaRepository
+  ? createMediaDomainService({
+    metadata: postgresMediaRepository,
+    storage: r2StorageAdapter,
+    processing: { enqueue: async (input) => { await backgroundJobs.enqueue({ kind: 'media_processing', idempotencyKey: input.idempotencyKey, payload: { assetId: input.assetId, eventId: input.idempotencyKey } }); } }
+  })
+  : null;
 export const domainEventBus = createDomainEventBus();
-const enqueueEventJobs = (kind: JobKind) => async (event: DomainEvent): Promise<void> => { await backgroundJobs.enqueue({ kind, idempotencyKey: `event:${event.id}:${kind}`, payload: { ...event.payload, eventId: event.id, eventType: event.type } }); };
+const enqueueEventJobs = (kind: JobKind) => async (event: DomainEvent): Promise<void> => { await backgroundJobs.enqueue({ kind, idempotencyKey: `event:${event.id}:${kind}`, correlationId: event.id, payload: { ...event.payload, eventId: event.id, eventType: event.type } }); };
 domainEventBus.subscribe(DOMAIN_EVENTS.BookingCreated, enqueueEventJobs('email_delivery'));
 domainEventBus.subscribe(DOMAIN_EVENTS.BookingCreated, enqueueEventJobs('calendar_sync'));
 domainEventBus.subscribe(DOMAIN_EVENTS.BookingConfirmed, enqueueEventJobs('email_delivery'));
@@ -245,6 +374,15 @@ export const outbox = createOutboxService(createFirestoreOutboxRepository(adminD
     await domainEventBus.publish({ id: event.id, type: event.eventType, name: name as DomainEvent['name'], version: Number(version || 1) as 1, aggregateType: event.aggregateType, aggregateId: event.aggregateId, occurredAt: event.createdAt, payload: event.payload });
   }
 });
+if (postgresBookingRuntime && process.env.OUTBOX_POSTGRES_AUTHORITATIVE === 'true') {
+  postgresOutboxRepository = createPostgresOutboxRepository(postgresBookingRuntime.pool);
+  postgresOutboxService = createOutboxService(postgresOutboxRepository, {
+    publish: async (event) => {
+      const [name, version] = event.eventType.split('.v');
+      await domainEventBus.publish({ id: event.id, type: event.eventType, name: name as DomainEvent['name'], version: Number(version || event.eventVersion || 1) as 1, aggregateType: event.aggregateType, aggregateId: event.aggregateId, occurredAt: event.createdAt, payload: event.payload });
+    }
+  });
+}
 const billingController = createBillingController(domainModules.billing.service, (request) => getAuthenticatedUser(request), auditService);
 const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS || 1);
 app.set('trust proxy', Number.isInteger(trustedProxyHops) && trustedProxyHops >= 0 ? trustedProxyHops : 1);
@@ -279,12 +417,22 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const siteId = typeof req.query.siteId === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(req.query.siteId) ? req.query.siteId : undefined;
   const logger = createStructuredLogger({ requestId, traceId, siteId });
   const startedAt = Date.now();
+  const finishSentrySpan = startServerRequestSpan({ method: req.method, path: req.path, requestId });
   res.setHeader('X-Request-ID', requestId);
   res.on('finish', () => {
+    finishSentrySpan();
     if (req.path.startsWith('/assets/')) return;
     const durationMs = Date.now() - startedAt;
     observabilityMetrics.increment('http.requests', { method: req.method, route: req.route?.path || req.path, status: res.statusCode });
     observabilityMetrics.observe('http.duration_ms', durationMs, { method: req.method, route: req.route?.path || req.path });
+    if (res.statusCode >= 500) {
+      if (/domain/i.test(req.path)) observabilityMetrics.increment('cloudflare.failures', { operation: 'http' });
+      if (/oauth|calendar|integration/i.test(req.path)) observabilityMetrics.increment('oauth.failures', { operation: 'http' });
+      if (/media/i.test(req.path)) observabilityMetrics.increment('media.failures', { operation: 'http' });
+      if (/publish/i.test(req.path)) observabilityMetrics.increment('publishing.failures', { source: 'http' });
+      if (/stripe|billing/i.test(req.path)) observabilityMetrics.increment('stripe.failures', { operation: 'http' });
+    }
+    if (res.statusCode === 409 && /booking/i.test(req.path)) observabilityMetrics.increment('booking.conflicts', { source: 'http' });
     logger.info('http.request', { method: req.method, path: req.path, status: res.statusCode, durationMs });
   });
   next();
@@ -303,15 +451,26 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
   const signature = req.headers['stripe-signature'];
   if (typeof signature !== 'string') return res.status(400).json({ error: 'Missing Stripe signature' });
+  const startedAt = Date.now();
 
   try {
     observabilityMetrics.increment('webhook.received', { provider: 'stripe' });
-    await handleStripeWebhook(req.body as Buffer, signature);
+    const envelope = stripeAdapter.verifyWebhook(req.body as Buffer, signature);
+    if (postgresPaymentService) {
+      await postgresPaymentService.process(envelope.billingEvent);
+    } else {
+      // Compatibility path while billing data remains in Firestore. The
+      // adapter has already verified and normalized the provider payload.
+      await stripeAdapter.handleLegacyWebhook(req.body as Buffer, signature);
+    }
     await auditService.recordBestEffort({ actorType: 'provider', resourceType: 'billing', resourceId: 'stripe', action: 'billing.webhook_processed', requestId: auditRequestId(req), metadata: { provider: 'stripe' } });
     observabilityMetrics.increment('webhook.processed', { provider: 'stripe', status: 'success' });
+    observabilityMetrics.observe('stripe.webhook_latency_ms', Date.now() - startedAt, { status: 'success' });
     return res.status(200).json({ received: true });
   } catch (error) {
     observabilityMetrics.increment('webhook.failed', { provider: 'stripe', status: 'error' });
+    observabilityMetrics.increment('stripe.webhook.failures', { operation: 'process' });
+    observabilityMetrics.observe('stripe.webhook_latency_ms', Date.now() - startedAt, { status: 'error' });
     captureServerException(error, { requestId: String(res.getHeader('X-Request-ID') || ''), provider: 'stripe', webhookId: typeof req.headers['stripe-signature'] === 'string' ? 'stripe' : undefined });
     console.error('[Stripe webhook]', error);
     return res.status(400).json({ error: 'Webhook verification failed' });
@@ -340,14 +499,15 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   const originalJson = res.json.bind(res);
   res.json = ((body: any) => {
     if (res.statusCode >= 400 && body && typeof body === 'object') {
-      const legacyMessage = typeof body.message === 'string' ? body.message : 'Request failed';
-      const legacyError = typeof body.error === 'string' ? body.error : '';
-      const code = typeof body.code === 'string'
+      const existingError = body.error && typeof body.error === 'object' ? body.error : {};
+      const legacyMessage = typeof existingError.message === 'string' ? existingError.message : (typeof body.message === 'string' ? body.message : 'Request failed');
+      const legacyError = typeof existingError.code === 'string' ? existingError.code : (typeof body.error === 'string' ? body.error : '');
+      const code = typeof existingError.code === 'string' ? existingError.code : typeof body.code === 'string'
         ? body.code
         : (legacyError || legacyMessage).toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'REQUEST_FAILED';
       body = {
         ...body,
-        error: { code, message: legacyMessage, ...(body.fields ? { fields: body.fields } : {}) },
+        error: { ...existingError, code, message: legacyMessage, requestId: existingError.requestId || String(res.getHeader('X-Request-ID') || 'unknown'), ...(body.fields ? { fields: body.fields } : {}) },
         errorCode: code
       };
     }
@@ -689,7 +849,7 @@ export function parseCookies(cookieHeader?: string): Record<string, string> {
     const parts = cookie.split('=');
     const name = parts.shift()?.trim();
     if (name) {
-      list[name] = decodeURIComponent(parts.join('=').trim());
+      try { list[name] = decodeURIComponent(parts.join('=').trim()); } catch { list[name] = ''; }
     }
   });
   return list;
@@ -822,8 +982,9 @@ export const CONTACT_SUBMISSIONS: Array<{
 
 async function getAuthenticatedUser(req: Request): Promise<AuthenticatedUser | null> {
   const authorization = req.headers.authorization;
-  if (typeof authorization === 'string' && authorization.startsWith('Bearer ')) {
-    const user = await verifyBearerToken(authorization.slice(7));
+  const bearer = typeof authorization === 'string' ? authorization.match(/^Bearer\s+(\S+)$/i)?.[1] : undefined;
+  if (bearer) {
+    const user = await verifyBearerToken(bearer);
     if (user) return user;
   }
 
@@ -1121,6 +1282,30 @@ async function persistAnalyticsEvent(collection: 'page_views' | 'link_clicks', s
     if (error?.code === 6 || error?.code === 'already-exists') return false;
     throw error;
   }
+}
+
+async function enqueuePostgresAnalyticsEvent(eventType: 'page_view' | 'link_click', siteOwnerId: string, dimensions: AnalyticsDimensions, extra: Record<string, unknown>): Promise<void> {
+  const eventId = dimensions.eventId;
+  await backgroundJobs.enqueue({
+    kind: 'analytics_rollup',
+    idempotencyKey: `analytics:${eventId}`,
+    correlationId: eventId,
+    payload: {
+      schemaVersion: 1,
+      eventId,
+      eventType,
+      siteId: String(extra.siteId || ''),
+      siteOwnerId,
+      occurredAt: new Date().toISOString(),
+      visitorHash: dimensions.visitorIdHash,
+      dimensions: {
+        referrerHost: dimensions.referrerHost || '', country: dimensions.country || '', device: dimensions.device,
+        browser: dimensions.browser, utmSource: dimensions.utmSource || '', utmMedium: dimensions.utmMedium || '',
+        utmCampaign: dimensions.utmCampaign || '', utmTerm: dimensions.utmTerm || '', utmContent: dimensions.utmContent || ''
+      },
+      payload: extra
+    }
+  });
 }
 
 export function analyticsEventDocumentId(collection: 'page_views' | 'link_clicks', siteOwnerId: string, eventId: string): string {
@@ -1445,13 +1630,15 @@ function validGalleryItem(item: unknown): boolean {
 }
 
 export function validateSiteEntitlements(site: Record<string, any>, profile: DocumentData | undefined): { feature: string; message: string; details?: Record<string, string> } | null {
-  const capabilities = getPlanCapabilities(profile as any);
+  const capabilities = capabilitiesForPlan(getPlanTier(profile as any));
+  const maxLinks = capabilities.maxLinks ?? Number.POSITIVE_INFINITY;
+  const maxMedia = capabilities.maxMedia ?? Number.POSITIVE_INFINITY;
   const tier = getPlanTier(profile as any);
   const templateId = typeof site.templateId === 'string' ? site.templateId.trim().toLowerCase() : '';
   if (!templatesData.some((template) => template.id === templateId)) return { feature: 'template', message: 'This template is not available.' };
   if (isPremiumTemplate(templateId) && !capabilities.premiumTemplates) return { feature: 'premiumTemplates', message: 'Premium templates require a Pro or Studio plan.', details: { templateId } };
-  if (!Array.isArray(site.links) || site.links.length > capabilities.maxLinks) return { feature: 'links', message: `Your ${tier} plan allows up to ${capabilities.maxLinks} links.` };
-  if (siteMediaCount(site) > capabilities.maxMedia) return { feature: 'media', message: `Your ${tier} plan allows up to ${capabilities.maxMedia} media assets.` };
+  if (!Array.isArray(site.links) || site.links.length > maxLinks) return { feature: 'links', message: `Your ${tier} plan allows up to ${maxLinks} links.` };
+  if (siteMediaCount(site) > maxMedia) return { feature: 'media', message: `Your ${tier} plan allows up to ${maxMedia} media assets.` };
   if (typeof site.bgStyle === 'string' && !capabilities.allowedBackgroundStyles.includes(site.bgStyle)) return { feature: 'backgroundStyle', message: 'This background style is not included in your plan.', details: { value: site.bgStyle } };
   for (const [field, allowed] of Object.entries(capabilities.allowedDesignOptions)) {
     if (site[field] !== undefined && !allowed.includes(site[field])) return { feature: field, message: `This ${field} option is not included in your plan.`, details: { value: String(site[field]) } };
@@ -1612,6 +1799,8 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
 
   // X-Frame-Options has no ALLOWALL value; keep previews protected by same-origin policy.
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
 
   // Content-Security-Policy
   res.setHeader(
@@ -1626,6 +1815,20 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   );
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(self)');
 
+  next();
+});
+
+// Session cookies are protected by an origin check for unsafe mutations.
+// Bearer-token API clients do not need this browser CSRF control.
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (process.env.NODE_ENV === 'production' && !isSameOriginMutation({
+    method: req.method,
+    cookie: req.headers.cookie,
+    authorization: req.headers.authorization,
+    origin: typeof req.headers.origin === 'string' ? req.headers.origin : undefined,
+    referer: typeof req.headers.referer === 'string' ? req.headers.referer : undefined,
+    appOrigin: APP_URL
+  })) return apiError(res, 403, 'CSRF_ORIGIN_REJECTED', 'The request origin is not allowed.');
   next();
 });
 
@@ -1979,6 +2182,11 @@ app.post('/api/v1/handles/reserve', async (req: Request, res: Response) => {
 app.get('/api/v1/public/scheduling/:handle/config', async (req: Request, res: Response) => {
   const handle = String(req.params.handle || '').trim().toLowerCase();
   if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return apiError(res, 400, 'INVALID_HANDLE', 'Invalid creator handle.');
+  if (postgresBookingScheduleRepository) {
+    const services = await postgresBookingScheduleRepository.listPublishedServices(handle);
+    if (services.length === 0) return apiError(res, 404, 'SCHEDULING_DISABLED', 'This creator has not enabled scheduling.');
+    return res.status(200).json({ handle, timezone: services[0].timezone, today: dateInTimeZone(new Date(), services[0].timezone), services, bookingWindowDays: services[0].bookingWindowDays });
+  }
   if (!isAdminConfigured()) return apiError(res, 503, 'SCHEDULING_UNAVAILABLE', 'Scheduling is not configured.');
   const site = await readPublishedSiteByHandle(handle).catch(() => null);
   const config = normalizeBookingConfig(site?.bookingConfig);
@@ -1996,6 +2204,12 @@ app.get('/api/v1/public/scheduling/:handle/availability', async (req: Request, r
   }
   if (Date.parse(`${to}T00:00:00Z`) < Date.parse(`${from}T00:00:00Z`) || Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`) > 31 * 86400000) {
     return apiError(res, 400, 'INVALID_DATE_RANGE', 'Availability range must be between one and 31 days.');
+  }
+  if (postgresBookingScheduleRepository) {
+    const schedule = await postgresBookingScheduleRepository.findPublishedSchedule(handle, serviceId);
+    if (!schedule) return apiError(res, 404, 'SERVICE_NOT_FOUND', 'The requested booking service is unavailable.');
+    const slots = await postgresBookingScheduleRepository.listSlots(schedule, from, to);
+    return res.status(200).json({ timezone: schedule.timezone, service: { ...schedule.service, id: serviceId }, slots });
   }
   if (!isAdminConfigured()) return apiError(res, 503, 'SCHEDULING_UNAVAILABLE', 'Scheduling is not configured.');
   const site = await readPublishedSiteByHandle(handle).catch(() => null);
@@ -2020,6 +2234,26 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
   }
   const parsedStart = new Date(slotStart);
   if (!Number.isFinite(parsedStart.getTime())) return apiError(res, 400, 'INVALID_SLOT', 'A valid availability slot is required.');
+  if (postgresBookingsRepository && postgresBookingScheduleRepository) {
+    const rate = await enforceRateLimitPolicy('publicBooking', { ip: clientIdentity(req), site: hostHandle });
+    if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many booking requests', retry_after: rate.retryAfter });
+    const idempotencyKey = req.headers['idempotency-key'];
+    if (typeof idempotencyKey !== 'string') return apiError(res, 400, 'IDEMPOTENCY_REQUIRED', 'Idempotency-Key header is required.');
+    try {
+      const schedule = await postgresBookingScheduleRepository.findPublishedSchedule(hostHandle, serviceId);
+      if (!schedule) return apiError(res, 404, 'SCHEDULING_DISABLED', 'This booking service is unavailable.');
+      const slotEnd = new Date(parsedStart.getTime() + schedule.service.durationMinutes * 60000);
+      const slots = await postgresBookingScheduleRepository.listSlots(schedule, dateInTimeZone(parsedStart, schedule.timezone), dateInTimeZone(parsedStart, schedule.timezone));
+      if (!slots.some((slot) => slot.start === parsedStart.toISOString())) return apiError(res, 409, 'SLOT_UNAVAILABLE', 'That slot is no longer available.');
+      const booking = await postgresBookingsRepository.reserveSlot({ siteId: schedule.site.id, hostUserId: schedule.hostUserId, serviceId: schedule.service.id, slotStart: parsedStart.toISOString(), slotEnd: slotEnd.toISOString(), customerName, customerEmail, notes, timezone: schedule.timezone, status: 'pending', idempotencyKey });
+      return res.status(201).json({ id: booking.id, status: booking.status, confirmationStatus: booking.confirmationStatus, timezone: schedule.timezone, slotStart: booking.slotStart, slotEnd: booking.slotEnd });
+    } catch (error) {
+      if (error instanceof Error && ['BOOKING_SLOT_TAKEN', 'BOOKING_NO_ACTIVE_SLOT'].includes(error.message)) return apiError(res, 409, 'SLOT_UNAVAILABLE', 'That slot is no longer available.');
+      if (error instanceof Error && error.message === 'BOOKING_IDEMPOTENCY_IN_PROGRESS') return apiError(res, 409, 'IDEMPOTENCY_IN_PROGRESS', 'A booking with this idempotency key is already being processed.');
+      console.error('[PostgreSQL public booking]', error);
+      return apiError(res, 503, 'BOOKING_UNAVAILABLE', 'Booking service is temporarily unavailable.');
+    }
+  }
   if (!isAdminConfigured()) return apiError(res, 503, 'SCHEDULING_UNAVAILABLE', 'Scheduling is not configured.');
   const hostSite = await readPublishedSiteByHandle(hostHandle).catch(() => null);
   const config = normalizeBookingConfig(hostSite?.bookingConfig);
@@ -2123,9 +2357,15 @@ app.post('/api/v1/public/bookings', async (req: Request, res: Response) => {
 app.get('/api/creator/bookings', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured()) return apiError(res, 503, 'BOOKINGS_UNAVAILABLE', 'Booking management is not configured.');
+  if (!isAdminConfigured() && !bookingsPostgresAuthoritative) return apiError(res, 503, 'BOOKINGS_UNAVAILABLE', 'Booking management is not configured.');
   const siteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
   if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
+  if (bookingsPostgresAuthoritative && postgresBookingsRepository) {
+    const requestedLimit = Number(req.query.limit || 50);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
+    const bookings = await postgresBookingsRepository.listForHost(user.uid, siteId, limit);
+    return res.json({ bookings, hasMore: false, nextCursor: null });
+  }
   const site = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
   if (!site.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
   const requestedLimit = Number(req.query.limit || 50);
@@ -2149,7 +2389,14 @@ app.get('/api/creator/bookings', async (req: Request, res: Response) => {
 app.post('/api/creator/bookings/:bookingId/confirm', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured()) return apiError(res, 503, 'BOOKINGS_UNAVAILABLE', 'Booking management is not configured.');
+  if (!isAdminConfigured() && !bookingsPostgresAuthoritative) return apiError(res, 503, 'BOOKINGS_UNAVAILABLE', 'Booking management is not configured.');
+  if (bookingsPostgresAuthoritative && postgresBookingsRepository) {
+    const booking = await postgresBookingsRepository.get(String(req.params.bookingId || ''));
+    if (!booking || booking.hostUserId !== user.uid || (typeof req.query.siteId === 'string' && booking.siteId !== req.query.siteId.trim())) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
+    if (booking.status === 'cancelled') return apiError(res, 409, 'BOOKING_CANCELLED', 'Cancelled bookings cannot be confirmed.');
+    if (booking.status !== 'confirmed') await postgresBookingsRepository.update(String(req.params.bookingId || ''), { status: 'confirmed' });
+    return res.json({ id: booking.id, status: 'confirmed', confirmationStatus: 'confirmed' });
+  }
   const bookingRef = adminDb.collection('bookings').doc(String(req.params.bookingId || ''));
   const bookingSnapshot = await bookingRef.get();
   if (!bookingSnapshot.exists || bookingSnapshot.data()?.hostUserId !== user.uid) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
@@ -2186,7 +2433,13 @@ app.post('/api/creator/bookings/:bookingId/confirm', async (req: Request, res: R
 app.post('/api/creator/bookings/:bookingId/cancel', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured()) return apiError(res, 503, 'BOOKINGS_UNAVAILABLE', 'Booking management is not configured.');
+  if (!isAdminConfigured() && !bookingsPostgresAuthoritative) return apiError(res, 503, 'BOOKINGS_UNAVAILABLE', 'Booking management is not configured.');
+  if (bookingsPostgresAuthoritative && postgresBookingsRepository) {
+    const booking = await postgresBookingsRepository.get(String(req.params.bookingId || ''));
+    if (!booking || booking.hostUserId !== user.uid || (typeof req.query.siteId === 'string' && booking.siteId !== req.query.siteId.trim())) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
+    if (booking.status !== 'cancelled') await postgresBookingsRepository.update(String(req.params.bookingId || ''), { status: 'cancelled' });
+    return res.json({ id: booking.id, status: 'cancelled', confirmationStatus: 'cancelled' });
+  }
   const bookingRef = adminDb.collection('bookings').doc(String(req.params.bookingId || ''));
   const existing = await bookingRef.get();
   if (!existing.exists || existing.data()?.hostUserId !== user.uid) return apiError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found.');
@@ -2224,6 +2477,21 @@ app.post('/api/v1/public/newsletter', async (req: Request, res: Response) => {
   if (!validEmail(email)) return res.status(400).json({ error: 'A valid email is required' });
   const rate = await enforceRateLimitPolicy('publicForms', { ip: clientIdentity(req), site: siteHandle || 'unknown' });
   if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many newsletter requests', retry_after: rate.retryAfter });
+  if (postgresAudienceRepository) {
+    try {
+      if (!siteHandle) return apiError(res, 400, 'PUBLIC_SITE_REQUIRED', 'A published site is required for newsletter signup.');
+      const site = await postgresAudienceRepository.findSiteByHandle(siteHandle);
+      if (!site) return apiError(res, 404, 'PUBLIC_SITE_NOT_FOUND', 'Published site not found.');
+      const record = await postgresAudienceRepository.createSubscriber(site, {
+        email, source: typeof req.body?.source === 'string' ? req.body.source : 'Public profile',
+        consentStatus: req.body?.consent === true ? 'granted' : 'unknown', consentSource: 'public_newsletter'
+      });
+      return res.status(200).json({ id: record.id });
+    } catch (error) {
+      console.error('[Newsletter signup]', error);
+      return res.status(503).json({ error: 'Newsletter service is temporarily unavailable' });
+    }
+  }
   try {
     if (!isAdminConfigured()) return res.status(503).json({ error: 'Newsletter service is not configured' });
     if (siteHandle) {
@@ -2369,7 +2637,7 @@ async function listAudienceRecords(kind: AudienceRecordKind, site: { id: string;
 app.get('/api/creator/audience', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured()) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
+  if (!isAdminConfigured() && !postgresAudienceRepository) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
   const kind = audienceKind(req.query.type || 'subscribers');
   if (!kind) return apiError(res, 400, 'INVALID_AUDIENCE_TYPE', 'Audience type must be subscribers or submissions.');
   const requestedHandle = typeof req.query.siteHandle === 'string' ? req.query.siteHandle : undefined;
@@ -2383,6 +2651,22 @@ app.get('/api/creator/audience', async (req: Request, res: Response) => {
   const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 100;
   const cursor = req.query.cursor ? decodePageCursor(req.query.cursor) : null;
   if (req.query.cursor && !cursor) return apiError(res, 400, 'INVALID_CURSOR', 'The audience page cursor is invalid or expired.');
+  if (postgresAudienceRepository) {
+    try {
+      const site = await postgresAudienceRepository.findOwnedSite(user.uid, requestedSiteId, requestedHandle);
+      if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
+      const pgCursor = req.query.cursor ? decodeAudienceCursor(req.query.cursor) : null;
+      if (req.query.cursor && !pgCursor) return apiError(res, 400, 'INVALID_CURSOR', 'The audience page cursor is invalid or expired.');
+      const [list, metrics] = await Promise.all([
+        postgresAudienceRepository.list(kind, site, { search, status, from, to }, limit, pgCursor),
+        postgresAudienceRepository.metrics(site, { from, to })
+      ]);
+      return res.status(200).json({ site, data: list.records, total: list.total, hasMore: list.hasMore, nextCursor: list.nextCursor, metricsCapped: false, metrics: { ...metrics, capped: false, truncated: false }, dateRange: { from, to } });
+    } catch (error) {
+      console.error('[Audience PostgreSQL read]', error);
+      return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is temporarily unavailable.');
+    }
+  }
   try {
     const site = await getOwnedAudienceSite(user, requestedHandle, requestedSiteId);
     if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
@@ -2438,10 +2722,21 @@ app.get('/api/creator/audience', async (req: Request, res: Response) => {
 app.post('/api/creator/audience/subscribers', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured()) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
+  if (!isAdminConfigured() && !postgresAudienceRepository) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   const source = typeof req.body?.source === 'string' ? req.body.source.trim().slice(0, 120) : 'Manual Entry';
   if (!validEmail(email)) return apiError(res, 400, 'INVALID_EMAIL', 'A valid email is required.');
+  if (postgresAudienceRepository) {
+    try {
+      const site = await postgresAudienceRepository.findOwnedSite(user.uid, typeof req.body?.siteId === 'string' ? req.body.siteId : undefined, typeof req.body?.siteHandle === 'string' ? req.body.siteHandle : undefined);
+      if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
+      const record = await postgresAudienceRepository.createSubscriber(site, { email, source, name: typeof req.body?.name === 'string' ? req.body.name : undefined, tags: Array.isArray(req.body?.tags) ? req.body.tags.filter((tag: unknown): tag is string => typeof tag === 'string').slice(0, 50) : undefined, consentStatus: req.body?.consent === true ? 'granted' : 'unknown', consentSource: 'studio' });
+      return res.status(201).json({ data: record });
+    } catch (error) {
+      console.error('[Audience PostgreSQL subscriber create]', error);
+      return apiError(res, 503, 'AUDIENCE_WRITE_FAILED', 'The subscriber could not be saved.');
+    }
+  }
   try {
     const site = await getOwnedAudienceSite(user, typeof req.body?.siteHandle === 'string' ? req.body.siteHandle : undefined, typeof req.body?.siteId === 'string' ? req.body.siteId : undefined);
     if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
@@ -2460,12 +2755,23 @@ app.post('/api/creator/audience/subscribers', async (req: Request, res: Response
 app.patch('/api/creator/audience/:kind/:id', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured()) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
+  if (!isAdminConfigured() && !postgresAudienceRepository) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
   const kind = audienceKind(req.params.kind);
   if (!kind) return apiError(res, 400, 'INVALID_AUDIENCE_TYPE', 'Invalid audience type.');
   const status = typeof req.body?.status === 'string' ? req.body.status : '';
   const allowedStatuses = kind === 'subscribers' ? ['active', 'unsubscribed'] : ['new', 'read', 'archived'];
   if (!allowedStatuses.includes(status)) return apiError(res, 400, 'INVALID_AUDIENCE_STATUS', 'Invalid audience status.');
+  if (postgresAudienceRepository) {
+    try {
+      const site = await postgresAudienceRepository.findOwnedSite(user.uid, typeof req.body?.siteId === 'string' ? req.body.siteId : undefined);
+      if (!site) return apiError(res, 404, 'AUDIENCE_RECORD_NOT_FOUND', 'Audience record not found.');
+      const record = await postgresAudienceRepository.update(kind, site, String(req.params.id || ''), status);
+      return record ? res.status(200).json({ data: record }) : apiError(res, 404, 'AUDIENCE_RECORD_NOT_FOUND', 'Audience record not found.');
+    } catch (error) {
+      console.error('[Audience PostgreSQL status update]', error);
+      return apiError(res, 503, 'AUDIENCE_WRITE_FAILED', 'The audience record could not be updated.');
+    }
+  }
   try {
     const reference = audienceCollection(kind).doc(String(req.params.id || ''));
     const snapshot = await reference.get();
@@ -2484,9 +2790,19 @@ app.patch('/api/creator/audience/:kind/:id', async (req: Request, res: Response)
 app.delete('/api/creator/audience/:kind/:id', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured()) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
+  if (!isAdminConfigured() && !postgresAudienceRepository) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
   const kind = audienceKind(req.params.kind);
   if (!kind) return apiError(res, 400, 'INVALID_AUDIENCE_TYPE', 'Invalid audience type.');
+  if (postgresAudienceRepository) {
+    try {
+      const site = await postgresAudienceRepository.findOwnedSite(user.uid, typeof req.query.siteId === 'string' ? req.query.siteId : undefined);
+      if (!site || !(await postgresAudienceRepository.remove(kind, site, String(req.params.id || '')))) return apiError(res, 404, 'AUDIENCE_RECORD_NOT_FOUND', 'Audience record not found.');
+      return res.status(204).send();
+    } catch (error) {
+      console.error('[Audience PostgreSQL delete]', error);
+      return apiError(res, 503, 'AUDIENCE_WRITE_FAILED', 'The audience record could not be deleted.');
+    }
+  }
   try {
     const reference = audienceCollection(kind).doc(String(req.params.id || ''));
     const snapshot = await reference.get();
@@ -2505,9 +2821,32 @@ app.delete('/api/creator/audience/:kind/:id', async (req: Request, res: Response
 app.get('/api/creator/audience/export', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured()) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
+  if (!isAdminConfigured() && !postgresAudienceRepository) return apiError(res, 503, 'AUDIENCE_UNAVAILABLE', 'Audience data is not configured.');
   const kind = audienceKind(req.query.type || 'subscribers');
   if (!kind) return apiError(res, 400, 'INVALID_AUDIENCE_TYPE', 'Invalid audience type.');
+  if (postgresAudienceRepository) {
+    try {
+      const site = await postgresAudienceRepository.findOwnedSite(user.uid, typeof req.query.siteId === 'string' ? req.query.siteId : undefined, typeof req.query.siteHandle === 'string' ? req.query.siteHandle : undefined);
+      if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
+      const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 120) : '';
+      const status = typeof req.query.status === 'string' ? req.query.status.trim().slice(0, 30) : '';
+      const from = req.query.from && validAudienceDate(req.query.from) ? req.query.from : null;
+      const to = req.query.to && validAudienceDate(req.query.to) ? req.query.to : null;
+      const records = await postgresAudienceRepository.exportAll(kind, site, { search, status, from, to });
+      const format = req.query.format === 'csv' ? 'csv' : 'json';
+      const stamp = new Date().toISOString().slice(0, 10);
+      res.setHeader('Content-Disposition', `attachment; filename="raloa-${site.handle}-${kind}-${stamp}.${format}"`);
+      if (format === 'json') { res.setHeader('Content-Type', 'application/json; charset=utf-8'); return res.status(200).send(JSON.stringify(records, null, 2)); }
+      const columns = kind === 'subscribers' ? ['id', 'email', 'source', 'status', 'createdAt'] : ['id', 'name', 'email', 'subject', 'message', 'source', 'status', 'createdAt'];
+      const csvEscape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const csv = [columns.join(','), ...records.map((record) => columns.map((column) => csvEscape(record[column])).join(','))].join('\n');
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      return res.status(200).send(`\ufeff${csv}`);
+    } catch (error) {
+      console.error('[Audience PostgreSQL export]', error);
+      return apiError(res, 503, 'AUDIENCE_EXPORT_FAILED', 'The audience export could not be generated.');
+    }
+  }
   try {
     const site = await getOwnedAudienceSite(user, typeof req.query.siteHandle === 'string' ? req.query.siteHandle : undefined, typeof req.query.siteId === 'string' ? req.query.siteId : undefined);
     if (!site) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
@@ -2583,6 +2922,25 @@ app.post('/api/v1/public/contact', async (req: Request, res: Response) => {
     message,
     createdAt: new Date().toISOString()
   };
+  if (postgresAudienceRepository) {
+    try {
+      const siteHandle = typeof req.body?.siteHandle === 'string' ? req.body.siteHandle.trim().toLowerCase() : '';
+      if (!siteHandle) return apiError(res, 400, 'PUBLIC_SITE_REQUIRED', 'A published site is required for contact submissions.');
+      const site = await postgresAudienceRepository.findSiteByHandle(siteHandle);
+      if (!site) return apiError(res, 404, 'PUBLIC_SITE_NOT_FOUND', 'Published site not found.');
+      const idempotencyKey = crypto.createHash('sha256').update(`${site.id}:${contactEmail}:${submission.subject}:${submission.message}`).digest('hex');
+      const record = await postgresAudienceRepository.createSubmission(site, {
+        name: submission.fullName, email: submission.email, subject: submission.subject, message: submission.message,
+        idempotencyKey, source: typeof req.body?.source === 'string' ? req.body.source : 'public_form',
+        attribution: typeof req.body?.attribution === 'object' && req.body.attribution ? req.body.attribution : {},
+        consentStatus: req.body?.consent === true ? 'granted' : 'unknown'
+      });
+      return res.status(200).json({ status: 'success', message: 'Inquiry successfully received', data: { id: record.id } });
+    } catch (error) {
+      console.error('[Contact PostgreSQL persistence]', error);
+      return res.status(503).json({ status: 'error', message: 'Contact service is temporarily unavailable' });
+    }
+  }
   if (isAdminConfigured()) {
     try {
       const siteHandle = typeof req.body?.siteHandle === 'string' ? req.body.siteHandle.trim().toLowerCase() : '';
@@ -2637,6 +2995,10 @@ app.post('/api/v1/public/telemetry/page-view', async (req: Request, res: Respons
       if (site && site.analyticsCollection === false) return res.status(202).json({ status: 'accepted' });
       if (site) {
         const dimensions = analyticsDimensions(req, req.body && typeof req.body === 'object' ? req.body : {});
+        if (postgresAnalyticsRepository) {
+          await enqueuePostgresAnalyticsEvent('page_view', String(site.userId), dimensions, { path: pathValue, siteId: String(site.id || '') });
+          return res.status(202).json({ status: 'accepted' });
+        }
         const accepted = await persistAnalyticsEvent('page_views', String(site.userId), handle, dimensions, { path: pathValue, siteId: String(site.id || '') });
         return res.status(202).json({ status: 'accepted', deduplicated: !accepted });
       }
@@ -2669,6 +3031,10 @@ app.post('/api/v1/public/telemetry/link-click', async (req: Request, res: Respon
       : links.some((link) => link.id === linkId && link.url === url);
     if (!validTarget) return res.status(202).json({ status: 'accepted' });
     const dimensions = analyticsDimensions(req, req.body && typeof req.body === 'object' ? req.body : {});
+    if (postgresAnalyticsRepository) {
+      await enqueuePostgresAnalyticsEvent('link_click', String(site.userId), dimensions, { linkId, url, siteId: String(site.id || '') });
+      return res.status(202).json({ status: 'accepted' });
+    }
     const accepted = await persistAnalyticsEvent('link_clicks', String(site.userId), siteHandle, dimensions, { linkId, url, siteId: String(site.id || '') });
     return res.status(202).json({ status: 'accepted', deduplicated: !accepted });
   }
@@ -3428,7 +3794,7 @@ app.get('/api/account/billing', async (req: Request, res: Response) => {
   if (process.env.NODE_ENV === 'production' && !stripe) return apiError(res, 503, 'BILLING_NOT_CONFIGURED', 'Live billing is not configured.');
   try {
     const snapshot = await entitlementService.resolve(user.uid);
-    return res.status(200).json({ billing: { ...snapshot.billing, entitlements: snapshot.entitlements, evaluatedAt: snapshot.evaluatedAt } });
+    return res.status(200).json({ billing: { ...snapshot.billing, plan: snapshot.plan, entitlements: snapshot.entitlements, capabilities: snapshot.capabilities, limits: snapshot.limits, evaluatedAt: snapshot.evaluatedAt } });
   } catch (error) {
     console.error('[Account billing read]', error);
     return apiError(res, 503, 'BILLING_STATUS_UNAVAILABLE', 'Billing status is temporarily unavailable.');
@@ -3634,7 +4000,9 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
       const parsed = new Date(`${value}T00:00:00.000Z`);
       return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
     };
-    const range = req.query.days === '7' ? 7 : req.query.days === 'all' ? null : 30;
+    // Analytics dashboards are operational reads, not a warehouse query. Even
+    // the legacy compatibility path is bounded to the retained rollup window.
+    const range = req.query.days === '7' ? 7 : req.query.days === 'all' ? 400 : 30;
     const toDate = validDate(requestedTo) ? requestedTo : new Date().toISOString().slice(0, 10);
     const defaultFrom = range === null ? null : new Date(Date.parse(`${toDate}T00:00:00.000Z`) - ((range || 30) - 1) * 86400000).toISOString().slice(0, 10);
     const fromDate = validDate(requestedFrom) ? requestedFrom : defaultFrom;
@@ -3642,14 +4010,23 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
     const cutoff = fromDate ? Date.parse(`${fromDate}T00:00:00.000Z`) : 0;
     const endExclusive = Date.parse(`${toDate}T00:00:00.000Z`) + 86400000;
     const requestedSiteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
+    if (postgresAnalyticsRepository) {
+      const metrics = await postgresAnalyticsRepository.readDashboard({ siteOwnerId: user.uid, siteId: requestedSiteId || undefined, from: fromDate, to: toDate });
+      if (metrics) return res.status(200).json(metrics);
+      return apiError(res, 503, 'ANALYTICS_ROLLUP_PENDING', 'Analytics rollups are still being processed.');
+    }
     const sitesSnapshot = await adminDb.collection('users').doc(user.uid).collection('sites').get();
     const selectedSite = requestedSiteId ? sitesSnapshot.docs.find((document) => document.id === requestedSiteId) : null;
     if (requestedSiteId && !(await getOwnedSite(user.uid, requestedSiteId))) return apiError(res, 404, 'SITE_NOT_FOUND', 'The requested site was not found for this account.');
     const rollupMetrics = await analyticsFromRollups(user.uid, sitesSnapshot.docs, requestedSiteId, fromDate, toDate);
     if (rollupMetrics) return res.status(200).json(rollupMetrics);
+    // Raw-event aggregation is intentionally disabled. Legacy rollups must be
+    // backfilled asynchronously before they can serve this dashboard.
+    return apiError(res, 503, 'ANALYTICS_ROLLUP_PENDING', 'Analytics rollups are still being processed.');
+    const legacyAnalyticsUserId = user?.uid || '';
     const [viewsResult, clicksResult] = await Promise.all([
-      readAnalyticsEvents('page_views', user.uid, 10000, new Date(cutoff).toISOString(), new Date(endExclusive).toISOString()),
-      readAnalyticsEvents('link_clicks', user.uid, 10000, new Date(cutoff).toISOString(), new Date(endExclusive).toISOString())
+      readAnalyticsEvents('page_views', legacyAnalyticsUserId, 10000, new Date(cutoff).toISOString(), new Date(endExclusive).toISOString()),
+      readAnalyticsEvents('link_clicks', legacyAnalyticsUserId, 10000, new Date(cutoff).toISOString(), new Date(endExclusive).toISOString())
     ]);
     const viewsSnapshot = viewsResult.events;
     const clicksSnapshot = clicksResult.events;
@@ -3659,7 +4036,7 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
     const sites = selectedSite ? [selectedSite] : sitesSnapshot.docs;
     const siteLinks = new Map<string, { title: string; url: string; blockType: string }>();
     sites.forEach((siteDocument) => {
-      const links = Array.isArray(siteDocument.data().links) ? siteDocument.data().links : [];
+      const links = Array.isArray(siteDocument?.data?.().links) ? siteDocument.data().links : [];
       links.forEach((link: any) => {
         if (typeof link?.id === 'string') siteLinks.set(link.id, { title: String(link.title || link.id), url: String(link.url || ''), blockType: String(link.type || 'link') });
       });
@@ -3751,6 +4128,47 @@ app.get('/api/analytics/platform', async (req: Request, res: Response) => {
   }
 });
 
+app.post('/api/media/upload-url', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!mediaDomainService || !r2StorageAdapter || !postgresMediaRepository) return apiError(res, 503, 'MEDIA_DIRECT_UPLOAD_UNAVAILABLE', 'Direct media uploads are not configured.');
+  const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
+  const contentType = typeof req.body?.contentType === 'string' ? req.body.contentType.trim().toLowerCase() : '';
+  const purpose = typeof req.body?.purpose === 'string' ? req.body.purpose.trim().toLowerCase() : '';
+  const requestedBytes = Number(req.body?.bytes);
+  if (!siteId || !MEDIA_PURPOSES.has(purpose) || !Number.isSafeInteger(requestedBytes) || requestedBytes <= 0) return apiError(res, 400, 'INVALID_MEDIA_UPLOAD', 'A site, supported purpose, and valid byte size are required.');
+  if (!(await hasAuthorizedSiteAccess(user.uid, siteId, 'site:write'))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+  try {
+    const entitlement = await entitlementService.resolve(user.uid);
+    if (requestedBytes > entitlement.limits.maxUploadBytes) return entitlementError(res, 'mediaUpload', `Your current plan allows uploads up to ${Math.round(entitlement.limits.maxUploadBytes / (1024 * 1024))} MB.`);
+    const existing = await mediaDomainService.list(user.uid, siteId);
+    if (entitlement.limits.maxMedia !== null && existing.length >= entitlement.limits.maxMedia) return entitlementError(res, 'media', `Your current plan allows up to ${entitlement.limits.maxMedia} media assets.`);
+    const asset = await mediaDomainService.beginUpload({ id: crypto.randomUUID(), ownerUserId: user.uid, siteId, purpose: purpose as MediaPurpose, contentType, maxBytes: entitlement.limits.maxUploadBytes });
+    const upload = await mediaDomainService.createUploadUrl({ assetId: asset.id, ownerUserId: user.uid });
+    return res.status(201).json({ upload: { assetId: asset.id, objectKey: upload.objectKey, url: upload.url, headers: upload.headers, expiresAt: upload.expiresAt, maxBytes: entitlement.limits.maxUploadBytes, status: asset.lifecycle } });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'UNSUPPORTED_MEDIA_TYPE') return apiError(res, 415, 'UNSUPPORTED_MEDIA_TYPE', 'Only JPEG, PNG, and WebP images are supported.');
+    console.error('[R2 upload URL]', error); return apiError(res, 503, 'MEDIA_UPLOAD_FAILED', 'The media upload could not be prepared.');
+  }
+});
+
+app.post('/api/media/upload-complete', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!mediaDomainService || !r2StorageAdapter || !r2StorageAdapter.getObject) return apiError(res, 503, 'MEDIA_DIRECT_UPLOAD_UNAVAILABLE', 'Direct media uploads are not configured.');
+  const assetId = typeof req.body?.assetId === 'string' ? req.body.assetId.trim() : '';
+  try {
+    const asset = await postgresMediaRepository?.get(assetId);
+    if (!asset || asset.ownerUserId !== user.uid) return apiError(res, 404, 'MEDIA_NOT_FOUND', 'Media asset not found.');
+    const bytes = await r2StorageAdapter.getObject(asset.original.objectKey);
+    const entitlement = await entitlementService.resolve(user.uid);
+    const completed = await mediaDomainService.completeUpload({ assetId, ownerUserId: user.uid, bytes, maxBytes: entitlement.limits.maxUploadBytes, checksum: typeof req.body?.checksum === 'string' ? req.body.checksum : undefined });
+    return res.status(200).json({ media: { ...completed, src: completed.processed?.cdnUrl || completed.original.cdnUrl, thumbnail: completed.thumbnail?.cdnUrl || null } });
+  } catch (error) {
+    console.error('[R2 upload complete]', error); return apiError(res, 503, 'MEDIA_UPLOAD_FAILED', 'The media upload could not be completed.');
+  }
+});
+
 app.post('/api/media/upload', authenticateMediaUpload, parseMediaUpload, async (req: Request, res: Response) => {
   const user = (req as Request & { mediaUser?: AuthenticatedUser }).mediaUser;
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
@@ -3831,6 +4249,13 @@ app.get('/api/media', async (req: Request, res: Response) => {
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   const siteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
   if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
+  if (mediaDomainService) {
+    try {
+      if (!(await hasAuthorizedSiteAccess(user.uid, siteId, 'site:read'))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+      const assets = await mediaDomainService.list(user.uid, siteId);
+      return res.json({ media: assets.map((asset) => ({ ...asset, src: asset.processed?.cdnUrl || asset.original.cdnUrl, thumbnail: asset.thumbnail?.cdnUrl || null })), mediaCapped: assets.length >= 500 });
+    } catch (error) { console.error('[R2 media list]', error); return apiError(res, 503, 'MEDIA_UNAVAILABLE', 'Media assets are temporarily unavailable.'); }
+  }
   try {
     const site = await adminDb.collection('users').doc(user.uid).collection('sites').doc(siteId).get();
     if (!site.exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
@@ -3845,6 +4270,16 @@ app.get('/api/media', async (req: Request, res: Response) => {
 app.get('/api/media/:mediaId/url', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (mediaDomainService && postgresMediaRepository && r2StorageAdapter?.getSignedUrl) {
+    try {
+      const asset = await postgresMediaRepository.get(String(req.params.mediaId || ''));
+      if (!asset || asset.ownerUserId !== user.uid || asset.lifecycle !== 'ready') return apiError(res, 404, 'MEDIA_NOT_FOUND', 'Media asset not found.');
+      const object = req.query.variant === 'thumbnail' ? asset.thumbnail : asset.processed || asset.original;
+      if (!object) return apiError(res, 404, 'MEDIA_NOT_FOUND', 'Media variant not found.');
+      const signed = await r2StorageAdapter.getSignedUrl(object.objectKey, MEDIA_SIGNED_URL_TTL_MS / 1000);
+      return res.json({ url: signed.url, expiresAt: signed.expiresAt });
+    } catch (error) { console.error('[R2 signed media URL]', error); return apiError(res, 503, 'MEDIA_URL_UNAVAILABLE', 'The media URL is temporarily unavailable.'); }
+  }
   try {
     const document = await adminDb.collection('media_assets').doc(String(req.params.mediaId || '')).get();
     const data = document.data();
@@ -3862,6 +4297,14 @@ app.delete('/api/media/:mediaId', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   const siteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
+  if (mediaDomainService && postgresMediaRepository) {
+    try {
+      const asset = await postgresMediaRepository.get(String(req.params.mediaId || ''));
+      if (!asset || asset.ownerUserId !== user.uid || (siteId && asset.siteId !== siteId)) return apiError(res, 404, 'MEDIA_NOT_FOUND', 'Media asset not found.');
+      await mediaDomainService.remove({ assetId: asset.id, ownerUserId: user.uid });
+      return res.status(204).send();
+    } catch (error) { console.error('[R2 media delete]', error); return apiError(res, 503, 'MEDIA_DELETE_FAILED', 'The media asset could not be deleted.'); }
+  }
   try {
     const ownedSite = await getOwnedSite(user.uid, siteId);
     if (!ownedSite) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
@@ -3886,6 +4329,10 @@ app.post('/api/media/cleanup', async (req: Request, res: Response) => {
   if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
   try {
     if (!(await hasAuthorizedSiteAccess(user.uid, siteId, 'site:write'))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+    if (mediaDomainService) {
+      const result = await mediaDomainService.cleanup({ abandonedAfterMs: 24 * 60 * 60 * 1000, ownerUserId: user.uid, siteId });
+      return res.json({ removed: result.abandoned + result.orphaned, ...result });
+    }
     const removed = await cleanupOrphanMedia(user.uid, siteId);
     return res.json({ removed });
   } catch (error) {
@@ -3897,6 +4344,17 @@ app.post('/api/media/cleanup', async (req: Request, res: Response) => {
 app.get('/api/media/public/:mediaId', async (req: Request, res: Response) => {
   const mediaId = String(req.params.mediaId || '').trim();
   if (!/^[a-f0-9-]{36}$/i.test(mediaId)) return res.status(404).send('Media not found');
+  if (postgresMediaRepository && r2StorageAdapter) {
+    try {
+      const asset = await postgresMediaRepository.get(mediaId);
+      const site = asset ? await readPublishedSiteById(asset.ownerUserId, asset.siteId).catch(() => null) : null;
+      if (!asset || asset.lifecycle !== 'ready' || !site?.isPublished) return res.status(404).send('Media not found');
+      const object = req.query.variant === 'thumbnail' ? asset.thumbnail : asset.processed || asset.original;
+      if (!object) return res.status(404).send('Media not found');
+      res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
+      return res.redirect(302, object.cdnUrl || r2StorageAdapter.getCdnUrl(object.objectKey));
+    } catch (error) { console.error('[Public R2 media]', error); return res.status(503).send('Media temporarily unavailable'); }
+  }
   try {
     const document = await adminDb.collection('media_assets').doc(mediaId).get();
     const data = document.data();
@@ -3915,13 +4373,13 @@ app.get('/api/media/public/:mediaId', async (req: Request, res: Response) => {
 
 registerPublishingControllerRoutes(app, { adminDb, isAdminConfigured, getRequestHost, getCachedPublicDomain, getPublishedSiteById: readPublishedSiteById, getPublishedSiteByHandle: readPublishedSiteByHandle, resolveSiteSlugRedirect: readSiteSlugRedirect, publicCreatorAdapter, publicDemoFixturesEnabled, templatesData, apiError });
 
-registerSitesControllerRoutes(app, { crypto, sitesRepository: sitesPersistenceRepository, sitePublicationService, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities, normalizeBookingConfig, publicCreatorAdapter, authorizationService });
+registerSitesControllerRoutes(app, { crypto, sitesRepository: sitesPersistenceRepository, sitePublicationService, getAuthenticatedUser, apiError, isAdminConfigured, normalizeSiteSlug, validateSiteSlug, RESERVED_HANDLES, templatesData, normalizeSiteContent, validateSiteContent, canonicalSiteToLegacy, isSafePublicUrl, validateOwnedMediaReferences, validateSiteEntitlements, entitlementError, auditService, auditRequestId, getPlanCapabilities: (profile: any) => capabilitiesForPlan(getPlanTier(profile)), normalizeBookingConfig, publicCreatorAdapter, authorizationService });
 
 
 app.get('/api/creator/products', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured()) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product persistence is not configured.');
+  if (!isAdminConfigured() && !commercePostgresAuthoritative) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product persistence is not configured.');
   try {
     const siteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
     if (!siteId) return apiError(res, 400, 'SITE_ID_REQUIRED', 'A site ID is required.');
@@ -3931,6 +4389,10 @@ app.get('/api/creator/products', async (req: Request, res: Response) => {
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
     const cursor = req.query.cursor ? decodePageCursor(req.query.cursor) : null;
     if (req.query.cursor && !cursor) return apiError(res, 400, 'INVALID_CURSOR', 'The products page cursor is invalid or expired.');
+    if (commercePostgresAuthoritative && postgresCommerceService) {
+      const result = await postgresCommerceService.listCreatorProducts(user.uid, siteId, cursor, limit);
+      return res.status(200).json({ products: result.products.map((product) => publicProduct(product)), hasMore: result.hasMore, nextCursor: result.nextCursor });
+    }
     const products = await creatorProducts(user.uid, siteId, limit, cursor);
     return res.status(200).json({ products: products.products.map((product) => publicProduct(product)), hasMore: products.hasMore, nextCursor: products.nextCursor });
   } catch (error) {
@@ -3942,9 +4404,9 @@ app.get('/api/creator/products', async (req: Request, res: Response) => {
 app.post('/api/creator/products', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured() || !stripe) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
+  if (!isAdminConfigured() && !commercePostgresAuthoritative) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product persistence is not configured.');
   const siteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
-  if (!siteId || !(await hasAuthorizedSiteAccess(user.uid, siteId, 'site:write'))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+  if (!siteId || !(commercePostgresAuthoritative && postgresCommerceService ? await postgresCommerceService.canManageSite(user.uid, siteId) : await hasAuthorizedSiteAccess(user.uid, siteId, 'site:write'))) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
   const productInput = normalizeProductInput(req.body);
   const { name, description, imageUrls, priceMinor, currency, inventory, active } = productInput;
   const productSchema = validateProductInput(req.body);
@@ -3953,8 +4415,21 @@ app.post('/api/creator/products', async (req: Request, res: Response) => {
     return apiError(res, 400, 'INVALID_PRODUCT', 'Name, supported currency, valid price, and inventory are required.');
   }
   if (Array.isArray(req.body?.imageUrls) && imageUrls.length !== req.body.imageUrls.length) return apiError(res, 400, 'INVALID_PRODUCT_IMAGES', 'Every product image must be an HTTP(S) URL.');
-  const ownedProductMediaError = await validateOwnedMediaReferences({ imageUrls }, user.uid, siteId);
-  if (ownedProductMediaError) return apiError(res, 400, 'INVALID_PRODUCT_IMAGES', ownedProductMediaError);
+  if (commercePostgresAuthoritative && postgresProductsRepository) {
+    try {
+      const id = crypto.randomUUID();
+      await postgresProductsRepository.save(id, { id, creatorId: user.uid, siteId, name, description, imageUrls, priceMinor, currency, active, inventory, inventoryReserved: 0 });
+      return res.status(201).json({ product: publicProduct({ id, creatorId: user.uid, siteId, name, description, imageUrls, priceMinor, currency, active, inventory, inventoryReserved: 0 }) });
+    } catch (error) {
+      console.error('[PostgreSQL product create]', error);
+      return apiError(res, 503, 'PRODUCT_CREATE_FAILED', 'Product could not be created.');
+    }
+  }
+  if (!stripe) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
+  if (!commercePostgresAuthoritative) {
+    const ownedProductMediaError = await validateOwnedMediaReferences({ imageUrls }, user.uid, siteId);
+    if (ownedProductMediaError) return apiError(res, 400, 'INVALID_PRODUCT_IMAGES', ownedProductMediaError);
+  }
   let stripeProductId = '';
   let stripePriceId = '';
   try {
@@ -3978,9 +4453,22 @@ app.post('/api/creator/products', async (req: Request, res: Response) => {
 app.patch('/api/creator/products/:productId', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured() || !stripe) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
+  if (!isAdminConfigured() && !commercePostgresAuthoritative) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
   const productId = String(req.params.productId || '').trim();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(productId)) return apiError(res, 400, 'INVALID_PRODUCT_ID', 'Invalid product ID.');
+  if (commercePostgresAuthoritative && postgresProductsRepository) {
+    const current = await postgresProductsRepository.get(productId);
+    if (!current || current.creatorId !== user.uid || (typeof req.body?.siteId === 'string' && current.siteId !== req.body.siteId.trim())) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
+    try {
+      const next = normalizeProductInput({ ...current, ...req.body });
+      await postgresProductsRepository.save(productId, { ...next, id: productId, creatorId: user.uid, siteId: current.siteId });
+      return res.status(200).json({ product: publicProduct({ ...current, ...next, id: productId }) });
+    } catch (error) {
+      console.error('[PostgreSQL product update]', error);
+      return apiError(res, 503, 'PRODUCT_UPDATE_FAILED', 'Product could not be updated.');
+    }
+  }
+  if (!stripe) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
   const reference = adminDb.collection('creator_products').doc(productId);
   const snapshot = await reference.get();
   if (!snapshot.exists || snapshot.data()?.creatorId !== user.uid) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
@@ -4026,7 +4514,14 @@ app.patch('/api/creator/products/:productId', async (req: Request, res: Response
 app.delete('/api/creator/products/:productId', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured() || !stripe) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
+  if (!isAdminConfigured() && !commercePostgresAuthoritative) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
+  if (commercePostgresAuthoritative && postgresProductsRepository) {
+    const current = await postgresProductsRepository.get(String(req.params.productId || ''));
+    if (!current || current.creatorId !== user.uid || (typeof req.query.siteId === 'string' && current.siteId !== req.query.siteId.trim())) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
+    await postgresProductsRepository.remove(String(req.params.productId || ''));
+    return res.status(200).json({ id: current.id, active: false });
+  }
+  if (!stripe) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Product payments are not configured.');
   const reference = adminDb.collection('creator_products').doc(String(req.params.productId || ''));
   const snapshot = await reference.get();
   if (!snapshot.exists || snapshot.data()?.creatorId !== user.uid) return apiError(res, 404, 'PRODUCT_NOT_FOUND', 'Product not found.');
@@ -4046,6 +4541,11 @@ app.delete('/api/creator/products/:productId', async (req: Request, res: Respons
 app.get('/api/v1/public/products/:handle', async (req: Request, res: Response) => {
   const handle = String(req.params.handle || '').trim().toLowerCase();
   if (!/^[a-z0-9_-]{3,30}$/.test(handle)) return apiError(res, 400, 'INVALID_HANDLE', 'Invalid creator handle.');
+  if (postgresCommerceService) {
+    const result = await postgresCommerceService.listPublicProducts(handle, null, 100);
+    if (!result) return apiError(res, 404, 'CREATOR_NOT_FOUND', 'Creator page not found.');
+    return res.status(200).json({ products: result.products });
+  }
   if (!isAdminConfigured()) return apiError(res, 503, 'PRODUCTS_UNAVAILABLE', 'Products are not configured.');
   const site = await readPublishedSiteByHandle(handle).catch(() => null);
   if (!site) return apiError(res, 404, 'CREATOR_NOT_FOUND', 'Creator page not found.');
@@ -4059,11 +4559,26 @@ app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: R
   const quantity = Number(req.body?.quantity || 1);
   const customerEmail = typeof req.body?.customerEmail === 'string' ? req.body.customerEmail.trim().toLowerCase() : '';
   if (!/^[a-z0-9_-]{3,30}$/.test(handle) || !/^[A-Za-z0-9_-]{1,128}$/.test(productId) || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 20 || !validEmail(customerEmail)) return apiError(res, 400, 'INVALID_ORDER', 'A valid product, quantity, and email are required.');
-  if (!isAdminConfigured() || !stripe) return apiError(res, 503, 'CHECKOUT_UNAVAILABLE', 'Checkout is not configured.');
+  if (!isAdminConfigured() && !commercePostgresAuthoritative) return apiError(res, 503, 'CHECKOUT_UNAVAILABLE', 'Checkout is not configured.');
   const rate = await enforceRateLimitPolicy('checkoutCreation', { ip: clientIdentity(req), site: handle });
   if (!rate.allowed) return res.status(429).set('Retry-After', String(rate.retryAfter)).json({ error: 'Too many checkout attempts', retry_after: rate.retryAfter });
   const idempotencyKey = req.headers['idempotency-key'];
   if (typeof idempotencyKey !== 'string' || idempotencyKey.length < 16 || idempotencyKey.length > 200) return apiError(res, 400, 'IDEMPOTENCY_REQUIRED', 'Idempotency-Key header is required.');
+  if (commercePostgresAuthoritative && postgresCommerceService) {
+    if (!stripeAdapter.isConfigured()) return apiError(res, 503, 'CHECKOUT_UNAVAILABLE', 'Checkout is not configured.');
+    try {
+      const draft = await postgresCommerceService.createCheckout({ handle, productId, quantity, customerEmail, idempotencyKey });
+      const session = await stripeAdapter.createPaymentCheckoutSession({ orderId: draft.id, productId: draft.productId, creatorId: draft.creatorId, creatorHandle: handle, customerEmail, quantity: draft.quantity, currency: draft.currency, unitPriceMinor: draft.unitPriceMinor, successUrl: `${APP_URL}/?order=success&order_id=${encodeURIComponent(draft.id)}`, cancelUrl: `${APP_URL}/?order=cancelled&order_id=${encodeURIComponent(draft.id)}`, idempotencyKey: `creator_order_${idempotencyKey}` });
+      await postgresCommerceService.setCheckoutSession(draft.id, session.id);
+      return res.status(201).json({ id: draft.id, status: draft.status, url: session.url });
+    } catch (error) {
+      if (error instanceof Error && ['PRODUCT_NOT_FOUND', 'OUT_OF_STOCK'].includes(error.message)) return apiError(res, error.message === 'OUT_OF_STOCK' ? 409 : 404, error.message, error.message === 'OUT_OF_STOCK' ? 'The requested quantity is no longer available.' : 'Product not found.');
+      if (error instanceof Error && error.message === 'CREATOR_NOT_FOUND') return apiError(res, 404, 'CREATOR_NOT_FOUND', 'Creator page not found.');
+      console.error('[PostgreSQL product checkout]', error);
+      return apiError(res, 503, 'CHECKOUT_UNAVAILABLE', 'Checkout is temporarily unavailable.');
+    }
+  }
+  if (!stripeAdapter.isConfigured()) return apiError(res, 503, 'CHECKOUT_UNAVAILABLE', 'Checkout is not configured.');
   const site = await readPublishedSiteByHandle(handle).catch(() => null);
   if (!site) return apiError(res, 404, 'CREATOR_NOT_FOUND', 'Creator page not found.');
   const productRef = adminDb.collection('creator_products').doc(productId);
@@ -4087,8 +4602,7 @@ app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: R
       transactionalOutbox.append(transaction, orderCreatedEvent);
       return { orderData, stripePriceId: String(product.stripePriceId) };
     });
-    const session = await stripe.checkout.sessions.create({ mode: 'payment', line_items: [{ price: order.stripePriceId, quantity }], customer_email: customerEmail, success_url: `${APP_URL}/?order=success&order_id=${encodeURIComponent(orderRef.id)}`, cancel_url: `${APP_URL}/?order=cancelled&order_id=${encodeURIComponent(orderRef.id)}`, metadata: { orderId: orderRef.id, productId, creatorId: String(site.userId), creatorHandle: handle } }, { idempotencyKey: `creator_order_${idempotencyKey}` });
-    if (!session.url) throw new Error('STRIPE_CHECKOUT_URL_MISSING');
+    const session = await stripeAdapter.createPaymentCheckoutSession({ orderId: orderRef.id, productId, creatorId: String(site.userId), creatorHandle: handle, customerEmail, quantity, providerPriceId: order.stripePriceId, currency: String(order.orderData.currency), successUrl: `${APP_URL}/?order=success&order_id=${encodeURIComponent(orderRef.id)}`, cancelUrl: `${APP_URL}/?order=cancelled&order_id=${encodeURIComponent(orderRef.id)}`, idempotencyKey: `creator_order_${idempotencyKey}` });
     await orderRef.set({ stripeCheckoutSessionId: session.id, updatedAt: new Date().toISOString() }, { merge: true });
     const response = { id: orderRef.id, status: 'pending_payment', url: session.url };
     await completeIdempotency('product-checkout', idempotencyKey, response);
@@ -4110,10 +4624,16 @@ app.post('/api/v1/public/products/:handle/checkout', async (req: Request, res: R
 app.get('/api/account/orders', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured()) return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Order history is not configured.');
+  if (!isAdminConfigured() && !commercePostgresAuthoritative) return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Order history is not configured.');
   const profile = await adminDb.collection('users').doc(user.uid).get();
   const email = String(user.email || profile.data()?.email || '').toLowerCase();
   const requestedSiteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
+  if (commercePostgresAuthoritative && postgresCommerceService) {
+    const creatorOrders = await postgresCommerceService.listCreatorOrders(user.uid, requestedSiteId || undefined, null, 100);
+    const customerOrders = email ? await postgresCommerceService.listCustomerOrders(email, requestedSiteId || undefined, 100) : [];
+    const unique = new Map([...creatorOrders.orders, ...customerOrders].map((order) => [String(order.id), order]));
+    return res.status(200).json({ orders: [...unique.values()] });
+  }
   if (requestedSiteId && !(await adminDb.collection('users').doc(user.uid).collection('sites').doc(requestedSiteId).get()).exists) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
   const [creatorOrders, customerOrders] = await Promise.all([
     adminDb.collection('orders').where('creatorId', '==', user.uid).limit(100).get(),
@@ -4127,16 +4647,25 @@ app.get('/api/account/orders', async (req: Request, res: Response) => {
 app.get('/api/creator/orders', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured()) return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Order management is not configured.');
+  if (!isAdminConfigured() && !commercePostgresAuthoritative) return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Order management is not configured.');
   const requestedSiteId = typeof req.query.siteId === 'string' ? req.query.siteId.trim() : '';
-  if (requestedSiteId && !(await getOwnedSite(user.uid, requestedSiteId))) {
-    return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
+  if (requestedSiteId) {
+    const ownsSite = commercePostgresAuthoritative && postgresCommerceService
+      ? await postgresCommerceService.canManageSite(user.uid, requestedSiteId)
+      : await getOwnedSite(user.uid, requestedSiteId);
+    if (!ownsSite) return apiError(res, 404, 'SITE_NOT_FOUND', 'Site not found.');
   }
   try {
     const requestedLimit = Number(req.query.limit || 50);
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
     const cursor = req.query.cursor ? decodePageCursor(req.query.cursor) : null;
     if (req.query.cursor && !cursor) return apiError(res, 400, 'INVALID_CURSOR', 'The orders page cursor is invalid or expired.');
+    if (commercePostgresAuthoritative && postgresCommerceService) {
+      const pgCursor = req.query.cursor ? decodeCommerceCursor(req.query.cursor) : null;
+      if (req.query.cursor && !pgCursor) return apiError(res, 400, 'INVALID_CURSOR', 'The orders page cursor is invalid or expired.');
+      const result = await postgresCommerceService.listCreatorOrders(user.uid, requestedSiteId || undefined, pgCursor, limit);
+      return res.status(200).json(result);
+    }
     let query: Query = adminDb.collection('orders').where('creatorId', '==', user.uid).orderBy('createdAt', 'desc').orderBy(FieldPath.documentId(), 'desc').limit(limit + 1);
     if (cursor) query = query.startAfter(cursor.createdAt, cursor.id);
     const snapshot = await query.get();
@@ -4165,11 +4694,26 @@ app.get('/api/creator/orders', async (req: Request, res: Response) => {
 app.patch('/api/creator/orders/:orderId/fulfillment', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
-  if (!isAdminConfigured()) return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Order management is not configured.');
+  if (!isAdminConfigured() && !commercePostgresAuthoritative) return apiError(res, 503, 'ORDERS_UNAVAILABLE', 'Order management is not configured.');
   const fulfillmentStatus = String(req.body?.fulfillmentStatus || '').trim();
   if (!['processing', 'fulfilled', 'cancelled'].includes(fulfillmentStatus)) return apiError(res, 400, 'INVALID_FULFILLMENT_STATUS', 'Invalid fulfillment status.');
   const orderId = String(req.params.orderId || '').trim();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(orderId)) return apiError(res, 400, 'INVALID_ORDER_ID', 'Invalid order ID.');
+  if (commercePostgresAuthoritative && postgresCommerceService) {
+    try {
+      const idempotencyKey = typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'] : `fulfillment:${orderId}:${fulfillmentStatus}:${req.headers['x-request-id'] || crypto.randomUUID()}`;
+      const order = await postgresCommerceService.changeFulfillment(orderId, user.uid, fulfillmentStatus as 'processing' | 'fulfilled' | 'cancelled', idempotencyKey);
+      if (typeof req.body?.siteId === 'string' && req.body.siteId.trim() && order.siteId !== req.body.siteId.trim()) return apiError(res, 404, 'ORDER_NOT_FOUND', 'Order not found.');
+      return res.status(200).json({ order });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      if (code === 'ORDER_NOT_FOUND') return apiError(res, 404, 'ORDER_NOT_FOUND', 'Order not found.');
+      if (code === 'ORDER_NOT_PAID') return apiError(res, 409, 'ORDER_NOT_PAID', 'Only paid orders can be fulfilled.');
+      if (code.startsWith('INVALID_ORDER_TRANSITION')) return apiError(res, 409, 'INVALID_FULFILLMENT_TRANSITION', 'The order cannot move to that fulfillment state.');
+      console.error('[PostgreSQL order fulfillment]', error);
+      return apiError(res, 503, 'FULFILLMENT_UPDATE_FAILED', 'Order fulfillment could not be updated.');
+    }
+  }
   const requestedSiteId = typeof req.body?.siteId === 'string' ? req.body.siteId.trim() : '';
   const reference = adminDb.collection('orders').doc(orderId);
   try {
@@ -4415,7 +4959,9 @@ app.get('/api/integrations/github/callback', async (req: Request, res: Response)
   const state = typeof req.query.state === 'string' ? req.query.state : '';
   if (!code || !state) return fail('missing_callback_parameters');
   try {
-    const [payload, signature] = state.split('.');
+    const stateParts = state.split('.');
+    const [payload, signature] = stateParts;
+    if (stateParts.length !== 2) return fail('invalid_state');
     const expectedSignature = payload ? signOAuthState(payload) : '';
     if (!payload || !signature || signature.length !== expectedSignature.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) return fail('invalid_state');
     const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { uid: string; nonce: string; exp: number };
@@ -4491,6 +5037,13 @@ app.get('/api/calendar/integrations', async (req: Request, res: Response) => {
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!isAdminConfigured()) return apiError(res, 503, 'CALENDAR_UNAVAILABLE', 'Calendar integrations are not configured.');
   try {
+    if (postgresCalendarOAuthService) {
+      const integrations = await Promise.all((['google', 'outlook'] as const).map(async (provider) => {
+        const value = await postgresCalendarOAuthService.getStatus?.(user.uid, provider);
+        return value || { provider, status: 'disconnected', scopes: [] };
+      }));
+      return res.json({ integrations });
+    }
     const snapshot = await adminDb.collection('calendar_integrations').where('userId', '==', user.uid).get();
     return res.json({ integrations: snapshot.docs.map((doc) => { const value = doc.data(); return { provider: value.provider, status: value.status, scopes: value.scopes || [], connectedAt: value.connectedAt, updatedAt: value.updatedAt, lastError: value.lastError || undefined }; }) });
   } catch (error) {
@@ -4529,7 +5082,9 @@ app.get('/api/calendar/:provider/callback', async (req: Request, res: Response) 
   const state = typeof req.query.state === 'string' ? req.query.state : '';
   if (!code || !state) return fail('missing_callback_parameters');
   try {
-    const [payload, signature] = state.split('.');
+    const stateParts = state.split('.');
+    const [payload, signature] = stateParts;
+    if (stateParts.length !== 2) return fail('invalid_state');
     const expected = payload ? signOAuthState(payload) : '';
     if (!payload || !signature || signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return fail('invalid_state');
     const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { uid: string; nonce: string; exp: number; provider: CalendarProvider };
@@ -4540,7 +5095,11 @@ app.get('/api/calendar/:provider/callback', async (req: Request, res: Response) 
     await stateRef.delete();
     const tokens = await calendarAdapter(provider).exchangeCode(code);
     const now = new Date().toISOString();
-    await adminDb.collection('calendar_integrations').doc(`${decoded.uid}_${provider}`).set({ userId: decoded.uid, provider, status: 'connected', scopes: calendarOAuthConfiguration(provider)!.scopes, encryptedTokens: await encryptCalendarTokens(tokens), expiresAt: tokens.expiresAt, connectedAt: now, updatedAt: now }, { merge: true });
+    if (postgresCalendarOAuthService) {
+      await postgresCalendarOAuthService.connect({ id: crypto.randomUUID(), userId: decoded.uid, provider, scopes: calendarOAuthConfiguration(provider)!.scopes, tokens });
+    } else {
+      await adminDb.collection('calendar_integrations').doc(`${decoded.uid}_${provider}`).set({ userId: decoded.uid, provider, status: 'connected', scopes: calendarOAuthConfiguration(provider)!.scopes, encryptedTokens: await encryptCalendarTokens(tokens), expiresAt: tokens.expiresAt, connectedAt: now, updatedAt: now }, { merge: true });
+    }
     await auditService.recordBestEffort({ actorUserId: decoded.uid, resourceType: 'integration', resourceId: `${decoded.uid}_${provider}`, action: 'integration.connected', metadata: { provider, scopes: calendarOAuthConfiguration(provider)!.scopes.join(' ') } });
     return res.redirect(`${APP_URL}/studio?calendar=${encodeURIComponent(provider)}&status=connected`);
   } catch (error) {
@@ -4554,9 +5113,20 @@ app.delete('/api/calendar/:provider', async (req: Request, res: Response) => {
   const provider = req.params.provider as CalendarProvider;
   if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
   if (!['google', 'outlook'].includes(provider)) return apiError(res, 404, 'CALENDAR_PROVIDER_NOT_FOUND', 'Unsupported calendar provider.');
-  await adminDb.collection('calendar_integrations').doc(`${user.uid}_${provider}`).delete();
+  if (postgresCalendarOAuthService) await postgresCalendarOAuthService.revoke(user.uid, provider);
+  else await adminDb.collection('calendar_integrations').doc(`${user.uid}_${provider}`).delete();
   await auditService.recordBestEffort({ actorUserId: user.uid, resourceType: 'integration', resourceId: `${user.uid}_${provider}`, action: 'integration.disconnected', requestId: auditRequestId(req), metadata: { provider } });
   return res.status(204).send();
+});
+
+app.post('/api/calendar/:provider/refresh', async (req: Request, res: Response) => {
+  const user = await getAuthenticatedUser(req);
+  const provider = req.params.provider as CalendarProvider;
+  if (!user) return apiError(res, 401, 'AUTH_REQUIRED', 'Authentication required.');
+  if (!['google', 'outlook'].includes(provider)) return apiError(res, 404, 'CALENDAR_PROVIDER_NOT_FOUND', 'Unsupported calendar provider.');
+  if (!postgresCalendarOAuthService) return apiError(res, 503, 'CALENDAR_NOT_CONFIGURED', 'PostgreSQL calendar OAuth is not enabled.');
+  const job = await backgroundJobs.enqueue({ kind: 'oauth_refresh', idempotencyKey: `calendar-oauth-refresh:${user.uid}:${provider}`, correlationId: `calendar-oauth:${user.uid}:${provider}`, payload: { userId: user.uid, provider } });
+  return res.status(202).json({ status: 'queued', jobId: job.id });
 });
 
 app.get('/api/domains', async (req: Request, res: Response) => {
@@ -4565,6 +5135,7 @@ app.get('/api/domains', async (req: Request, res: Response) => {
   if (!isAdminConfigured()) return apiError(res, 503, 'DOMAINS_UNAVAILABLE', 'Custom domain persistence is temporarily unavailable.');
 
   try {
+    if (postgresDomainRepository) return res.status(200).json({ domains: (await postgresDomainRepository.listOwned(user.uid)).map(publicDomainRecord) });
     const snapshot = await adminDb.collection('custom_domains').where('userId', '==', user.uid).get();
     const domains = (await Promise.all(snapshot.docs.map(async (document) => {
       const domain = document.data();
@@ -4591,6 +5162,24 @@ app.post('/api/domains/provision', async (req: Request, res: Response) => {
     await entitlementService.assertEntitled(user.uid, 'customDomains');
   } catch {
     return entitlementError(res, 'customDomains', 'Custom domains require a Pro or Studio plan.');
+  }
+
+  if (postgresDomainService && postgresDomainRepository) {
+    if (!requestedSiteId) return res.status(400).json({ error: 'A site ID is required for PostgreSQL domain provisioning' });
+    const site = await postgresDomainRepository.getSiteForOwner(user.uid, requestedSiteId);
+    if (!site) return res.status(404).json({ error: 'Site not found' });
+    if (!site.published) return res.status(409).json({ error: 'Publish the site before attaching a domain' });
+    const domainId = crypto.randomUUID();
+    const idempotencyKey = `domain:${hostname}:provision`;
+    try {
+      const domain = await postgresDomainService.add({ id: domainId, ownerUserId: user.uid, siteId: site.id, hostname, idempotencyKey });
+      const job = await backgroundJobs.enqueue({ kind: 'domain_verification', idempotencyKey: `domain:${domain.id}:provision`, correlationId: `domain:${domain.id}`, payload: { domainId: domain.id, operation: 'provision' } });
+      return res.status(202).json({ domain: publicDomainRecord(domain), dnsRecords: domain.dnsInstructions, status: 'provisioning_queued', jobId: job.id });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'DOMAIN_ALREADY_OWNED') return res.status(409).json({ error: 'Domain is already attached' });
+      if (error instanceof Error && error.message === 'DOMAIN_SITE_NOT_FOUND') return res.status(404).json({ error: 'Site not found' });
+      throw error;
+    }
   }
 
   const userProfile = await adminDb.collection('users').doc(user.uid).get();
@@ -4691,6 +5280,20 @@ app.post('/api/domains/verify', async (req: Request, res: Response) => {
   if (!isAdminConfigured() || !getCloudflareConfig()) return res.status(503).json({ error: 'Domain verification is not configured' });
 
   const domainId = typeof req.body?.domainId === 'string' ? req.body.domainId : '';
+  if (postgresDomainService && postgresDomainRepository) {
+    const domain = await postgresDomainRepository.get(domainId);
+    if (!domain || domain.ownerUserId !== user.uid) return res.status(404).json({ error: 'Domain not found' });
+    const domainRate = await enforceRateLimitPolicy('domainVerification', { ip: clientIdentity(req), user: user.uid, site: domain.siteId, domain: domainId });
+    if (!domainRate.allowed) return res.status(429).set('Retry-After', String(domainRate.retryAfter)).json({ error: 'Too many domain verification attempts', retry_after: domainRate.retryAfter });
+    try {
+      const requested = await postgresDomainRepository.update(domainId, { provisioningState: 'pending', verificationStatus: 'pending', lastError: undefined, updatedAt: new Date().toISOString() });
+      const job = await backgroundJobs.enqueue({ kind: 'domain_verification', idempotencyKey: `domain:${domainId}:verification`, correlationId: `domain:${domainId}`, payload: { domainId, operation: 'verify' } });
+      return res.status(202).json({ domain: publicDomainRecord(requested), status: 'verification_queued', jobId: job.id });
+    } catch (error) {
+      console.error('[Domain verify enqueue]', error);
+      return res.status(503).json({ error: 'Domain verification could not be queued' });
+    }
+  }
   const domain = await findDomainById(domainId);
   if (!domain || domain.userId !== user.uid) return res.status(404).json({ error: 'Domain not found' });
   if (!(await getOwnedSite(user.uid, domain.siteId))) return res.status(404).json({ error: 'Domain site not found' });
@@ -4713,6 +5316,20 @@ app.delete('/api/domains/:domainId', async (req: Request, res: Response) => {
   const user = await getAuthenticatedUser(req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
   if (!isAdminConfigured()) return res.status(503).json({ error: 'Domain deletion is not configured' });
+  if (postgresDomainService && postgresDomainRepository) {
+    const domain = await postgresDomainRepository.get(req.params.domainId);
+    if (!domain || domain.ownerUserId !== user.uid) return res.status(404).json({ error: 'Domain not found' });
+    try {
+      const pending = await postgresDomainRepository.update(domain.id, { provisioningState: 'provisioning', lastError: undefined, updatedAt: new Date().toISOString() });
+      const job = await backgroundJobs.enqueue({ kind: 'domain_verification', idempotencyKey: `domain:${domain.id}:remove`, correlationId: `domain:${domain.id}`, payload: { domainId: domain.id, operation: 'remove' } });
+      await publicCache.delete(cacheKey('domainResolution', domain.hostname));
+      await auditService.recordBestEffort({ actorUserId: user.uid, siteId: domain.siteId, resourceType: 'domain', resourceId: domain.id, action: 'domain.removal_queued', requestId: auditRequestId(req), metadata: { hostname: domain.hostname } });
+      return res.status(202).json({ domain: publicDomainRecord(pending), status: 'removal_queued', jobId: job.id });
+    } catch (error) {
+      console.error('[Domain removal enqueue]', error);
+      return res.status(503).json({ error: 'Domain removal could not be queued' });
+    }
+  }
   const domain = await findDomainById(req.params.domainId);
   if (!domain || domain.userId !== user.uid) return res.status(404).json({ error: 'Domain not found' });
   if (!(await getOwnedSite(user.uid, domain.siteId))) return res.status(404).json({ error: 'Domain site not found' });
@@ -5011,7 +5628,9 @@ app.post('/internal/outbox/publish', async (req: Request, res: Response) => {
   const configuredSecret = process.env.BACKGROUND_JOB_SECRET;
   if (!configuredSecret || req.headers['x-background-job-secret'] !== configuredSecret) return res.status(401).json({ error: 'UNAUTHORIZED' });
   const limit = Math.min(500, Math.max(1, Number(req.body?.limit) || 100));
-  return res.status(200).json(await outbox.publishPending(limit));
+  const legacy = await outbox.publishPending(limit);
+  const postgres = postgresOutboxService ? await postgresOutboxService.publishPending(limit) : { published: 0, failed: 0 };
+  return res.status(200).json({ published: legacy.published + postgres.published, failed: legacy.failed + postgres.failed });
 });
 
 app.post('/internal/outbox/cleanup', async (req: Request, res: Response) => {
@@ -5020,7 +5639,27 @@ app.post('/internal/outbox/cleanup', async (req: Request, res: Response) => {
   const retentionDays = Math.min(365, Math.max(1, Number(req.body?.retentionDays) || 30));
   const limit = Math.min(5000, Math.max(1, Number(req.body?.limit) || 500));
   const publishedBefore = new Date(Date.now() - retentionDays * 86400000).toISOString();
-  return res.status(200).json({ deleted: await outbox.cleanup(publishedBefore, limit), publishedBefore });
+  const legacyDeleted = await outbox.cleanup(publishedBefore, limit);
+  const postgresDeleted = postgresOutboxService ? await postgresOutboxService.cleanup(publishedBefore, limit) : 0;
+  return res.status(200).json({ deleted: legacyDeleted + postgresDeleted, publishedBefore });
+});
+
+app.post('/internal/outbox/replay', async (req: Request, res: Response) => {
+  const configuredSecret = process.env.BACKGROUND_JOB_SECRET;
+  if (!configuredSecret || req.headers['x-background-job-secret'] !== configuredSecret) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  if (!postgresOutboxRepository) return res.status(409).json({ error: 'POSTGRES_OUTBOX_NOT_CONFIGURED' });
+  const eventId = typeof req.body?.eventId === 'string' ? req.body.eventId : '';
+  const correlationId = typeof req.body?.correlationId === 'string' ? req.body.correlationId : '';
+  if (!eventId && !correlationId) return res.status(400).json({ error: 'EVENT_ID_OR_CORRELATION_ID_REQUIRED' });
+  const count = eventId ? (await postgresOutboxRepository.replay?.(eventId) ? 1 : 0) : await (postgresOutboxRepository.replayByCorrelation?.(correlationId) || Promise.resolve(0));
+  return res.status(200).json({ replayed: count, eventId: eventId || undefined, correlationId: correlationId || undefined });
+});
+
+app.get('/internal/metrics', (req: Request, res: Response) => {
+  const configuredSecret = process.env.BACKGROUND_JOB_SECRET;
+  if (!configuredSecret || req.headers['x-background-job-secret'] !== configuredSecret) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+  return res.status(200).send(observabilityMetrics.toPrometheus());
 });
 
 app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {

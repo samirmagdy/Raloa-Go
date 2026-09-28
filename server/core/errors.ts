@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { apiErrorSchema } from '../../src/shared/schema';
+import { apiErrorEnvelopeSchema } from '@raloa/schemas';
 
 export type ApplicationErrorCode =
   | 'VALIDATION_ERROR'
@@ -205,21 +205,14 @@ export function normalizeApplicationError(err: unknown): ApplicationError {
  * Standard centralized error response builder
  */
 export function formatErrorResponse(res: Response, error: ApplicationError) {
-  const fields = error.fields;
-  const body = apiErrorSchema.parse({
-    status: 'error',
-    error: error.code,
-    code: error.code,
-    message: error.message,
-    ...(fields ? { fields } : {})
-  });
+  const requestId = String(res.getHeader('X-Request-ID') || 'unknown');
+  const kind = error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 401 ? 'AUTHENTICATION_ERROR' : error.statusCode === 403 ? 'AUTHORIZATION_ERROR' : error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 429 ? 'RATE_LIMITED' : error.statusCode >= 500 ? (error.statusCode === 503 ? 'DEPENDENCY_FAILURE' : 'INTERNAL_ERROR') : undefined;
+  const canonical = apiErrorEnvelopeSchema.parse({ status: 'error', error: { code: error.code, kind, message: error.message, requestId, ...(error.fields ? { fields: error.fields } : {}), ...(error.details ? { details: error.details } : {}) } });
+  const body = { ...canonical, code: error.code, message: error.message, errorCode: error.code };
 
   if (error instanceof RateLimitError && error.retryAfter !== undefined) {
     res.setHeader('Retry-After', String(error.retryAfter));
   }
 
-  // Include extra details (e.g. conflict payload) if present
-  const fullBody = error.details ? { ...body, ...error.details } : body;
-
-  return res.status(error.statusCode).json(fullBody);
+  return res.status(error.statusCode).json(body);
 }

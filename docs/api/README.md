@@ -23,3 +23,9 @@ npm run build
 The checker fails on route drift or missing endpoint documents. It reports
 unproven routes as warnings so a contract test can be added without hiding
 coverage gaps.
+
+The repository-local CI gate is `npm run check:api`. It discovers Express
+controllers, worker endpoints, and Next route handlers, then verifies that
+each live method/path has a matching document under `docs/api/endpoints/`.
+Run `node scripts/generate-openapi.mjs` after changing the endpoint inventory
+to keep `docs/api/openapi.yaml` aligned with the documented surface.

@@ -6,245 +6,6 @@ info:
 servers:
   - url: https://raloa.app
 paths:
-  /api/auth/session:
-    get:
-      operationId: get_get_api_auth_session
-      responses:
-        '200': { description: Current authenticated application user }
-        '401': { description: Session missing, expired, or revoked }
-    post:
-      operationId: post_post_api_auth_session
-      responses:
-        '200': { description: Firebase ID token exchanged for HttpOnly session cookie }
-        '401': { description: Invalid Firebase ID token }
-  /api/auth/logout:
-    post:
-      operationId: post_post_api_auth_logout
-      responses:
-        '200': { description: Session cookie cleared and refresh tokens revoked when possible }
-  /api/creator/audience:
-    get:
-      operationId: get_get_api_creator_audience
-      parameters:
-        - { name: type, in: query, required: false, schema: { type: string, enum: [subscribers, submissions] } }
-        - { name: siteHandle, in: query, required: false, schema: { type: string } }
-        - { name: search, in: query, required: false, schema: { type: string } }
-        - { name: status, in: query, required: false, schema: { type: string } }
-        - { name: from, in: query, required: false, schema: { type: string, format: date } }
-        - { name: to, in: query, required: false, schema: { type: string, format: date } }
-      responses:
-        '200': { description: Owner-scoped audience records and calculated metrics }
-        '400': { description: Invalid audience filter }
-        '401': { description: Authentication required }
-        '404': { description: Owned site not found }
-        '503': { description: Audience persistence unavailable }
-  /api/creator/audience/subscribers:
-    post:
-      operationId: post_post_api_creator_audience_subscribers
-      responses:
-        '201': { description: Subscriber created or updated idempotently by creator/site/email }
-        '400': { description: Invalid email }
-        '401': { description: Authentication required }
-        '404': { description: Owned site not found }
-        '503': { description: Audience persistence unavailable }
-  /api/creator/audience/{kind}/{id}:
-    patch:
-      operationId: patch_patch_api_creator_audience_kind_id
-      parameters:
-        - { name: kind, in: path, required: true, schema: { type: string, enum: [subscribers, submissions] } }
-        - { name: id, in: path, required: true, schema: { type: string } }
-      responses:
-        '200': { description: Audience record status updated }
-        '400': { description: Invalid type or status }
-        '401': { description: Authentication required }
-        '404': { description: Record not owned by creator or not found }
-        '503': { description: Audience persistence unavailable }
-    delete:
-      operationId: delete_delete_api_creator_audience_kind_id
-      parameters:
-        - { name: kind, in: path, required: true, schema: { type: string, enum: [subscribers, submissions] } }
-        - { name: id, in: path, required: true, schema: { type: string } }
-      responses:
-        '204': { description: Audience record deleted }
-        '400': { description: Invalid audience type }
-        '401': { description: Authentication required }
-        '404': { description: Record not owned by creator or not found }
-        '503': { description: Audience persistence unavailable }
-  /api/creator/audience/export:
-    get:
-      operationId: get_get_api_creator_audience_export
-      parameters:
-        - { name: type, in: query, required: false, schema: { type: string, enum: [subscribers, submissions] } }
-        - { name: format, in: query, required: false, schema: { type: string, enum: [csv, json] } }
-        - { name: siteHandle, in: query, required: false, schema: { type: string } }
-      responses:
-        '200': { description: Owner-scoped CSV or JSON export }
-        '400': { description: Invalid audience type }
-        '401': { description: Authentication required }
-        '404': { description: Owned site not found }
-        '503': { description: Audience export unavailable }
-  /api/integrations/providers:
-    get:
-      operationId: get_get_api_integrations_providers
-      responses:
-        '200': { description: Supported providers }
-        '401': { description: Authentication required }
-  /api/integrations:
-    get:
-      operationId: get_get_api_integrations
-      responses:
-        '200': { description: Connected integrations }
-        '401': { description: Authentication required }
-  /api/integrations/github/start:
-    get:
-      operationId: get_get_api_integrations_github_start
-      responses:
-        '302': { description: OAuth redirect }
-        '401': { description: Authentication required }
-  /api/integrations/github/callback:
-    get:
-      operationId: get_get_api_integrations_github_callback
-      responses:
-        '302': { description: Studio redirect }
-  /api/integrations/{provider}/refresh:
-    post:
-      operationId: post_post_api_integrations_provider_refresh
-      parameters: [{ name: provider, in: path, required: true, schema: { type: string } }]
-      responses:
-        '200': { description: Refreshed connection }
-        '401': { description: Authentication required }
-  /api/integrations/{provider}:
-    delete:
-      operationId: delete_delete_api_integrations_provider
-      parameters: [{ name: provider, in: path, required: true, schema: { type: string } }]
-      responses:
-        '204': { description: Disconnected }
-        '401': { description: Authentication required }
-  /api/calendar/integrations:
-    get:
-      operationId: get_get_api_calendar_integrations
-      responses:
-        '200': { description: Calendar connection statuses }
-        '401': { description: Authentication required }
-  /api/calendar/{provider}/start:
-    get:
-      operationId: get_get_api_calendar_provider_start
-      parameters: [{ name: provider, in: path, required: true, schema: { type: string, enum: [google, outlook] } }]
-      responses:
-        '302': { description: OAuth redirect }
-        '401': { description: Authentication required }
-  /api/calendar/{provider}/callback:
-    get:
-      operationId: get_get_api_calendar_provider_callback
-      parameters: [{ name: provider, in: path, required: true, schema: { type: string, enum: [google, outlook] } }]
-      responses:
-        '302': { description: Studio redirect }
-  /api/calendar/{provider}:
-    delete:
-      operationId: delete_delete_api_calendar_provider
-      parameters: [{ name: provider, in: path, required: true, schema: { type: string, enum: [google, outlook] } }]
-      responses:
-        '204': { description: Disconnected }
-        '401': { description: Authentication required }
-  /api/creator/bookings:
-    get:
-      operationId: get_get_api_creator_bookings
-      responses:
-        '200': { description: Creator bookings }
-        '401': { description: Authentication required }
-  /api/creator/bookings/{bookingId}/confirm:
-    post:
-      operationId: post_post_api_creator_bookings_bookingId_confirm
-      parameters: [{ name: bookingId, in: path, required: true, schema: { type: string } }]
-      responses:
-        '200': { description: Booking confirmed }
-        '401': { description: Authentication required }
-        '404': { description: Booking not found }
-  /api/creator/bookings/{bookingId}/cancel:
-    post:
-      operationId: post_post_api_creator_bookings_bookingId_cancel
-      parameters: [{ name: bookingId, in: path, required: true, schema: { type: string } }]
-      responses:
-        '200': { description: Booking cancelled }
-        '401': { description: Authentication required }
-        '404': { description: Booking not found }
-  /api/account/orders:
-    get:
-      operationId: get_get_api_account_orders
-      responses:
-        '200': { description: Order history }
-        '401': { description: Authentication required }
-        '503': { description: Orders unavailable }
-  /api/creator/orders:
-    get:
-      operationId: get_get_api_creator_orders
-      responses:
-        '200': { description: Creator-owned orders with fulfillment history }
-        '401': { description: Authentication required }
-        '404': { description: Site not found }
-        '503': { description: Orders unavailable }
-  /api/creator/products:
-    get:
-      operationId: get_get_api_creator_products
-      responses:
-        '200': { description: Creator products }
-        '401': { description: Authentication required }
-        '503': { description: Products unavailable }
-    post:
-      operationId: post_post_api_creator_products
-      responses:
-        '201': { description: Product created }
-        '400': { description: Invalid product }
-        '401': { description: Authentication required }
-        '503': { description: Products unavailable }
-  /api/creator/products/{productId}:
-    patch:
-      operationId: patch_patch_api_creator_products_productId
-      parameters:
-        - { name: productId, in: path, required: true, schema: { type: string } }
-      responses:
-        '200': { description: Product updated }
-        '400': { description: Invalid product }
-        '401': { description: Authentication required }
-        '404': { description: Product not found }
-    delete:
-      operationId: delete_delete_api_creator_products_productId
-      parameters:
-        - { name: productId, in: path, required: true, schema: { type: string } }
-      responses:
-        '200': { description: Product archived }
-        '401': { description: Authentication required }
-        '404': { description: Product not found }
-  /api/creator/orders/{orderId}/fulfillment:
-    patch:
-      operationId: patch_patch_api_creator_orders_orderId_fulfillment
-      parameters:
-        - { name: orderId, in: path, required: true, schema: { type: string } }
-      responses:
-        '200': { description: Fulfillment updated }
-        '400': { description: Invalid fulfillment status }
-        '401': { description: Authentication required }
-        '409': { description: Invalid transition or unpaid order }
-        '404': { description: Order not found }
-  /api/v1/public/products/{handle}:
-    get:
-      operationId: get_get_api_v1_public_products_handle
-      parameters:
-        - { name: handle, in: path, required: true, schema: { type: string } }
-      responses:
-        '200': { description: Active public creator products }
-        '404': { description: Creator not found }
-        '503': { description: Products unavailable }
-  /api/v1/public/products/{handle}/checkout:
-    post:
-      operationId: post_post_api_v1_public_products_handle_checkout
-      parameters:
-        - { name: handle, in: path, required: true, schema: { type: string } }
-      responses:
-        '201': { description: Stripe Checkout session created }
-        '400': { description: Invalid order }
-        '409': { description: Out of stock or idempotency conflict }
-        '503': { description: Checkout unavailable }
   /api/account/billing:
     get:
       operationId: get_get_api_account_billing
@@ -278,6 +39,16 @@ paths:
   /api/account/export:
     get:
       operationId: get_get_api_account_export
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/account/orders:
+    get:
+      operationId: get_get_api_account_orders
       responses:
         '200':
           description: Successful response
@@ -373,6 +144,35 @@ paths:
           description: Invalid request
         '401':
           description: Authentication required
+  /api/auth/logout:
+    post:
+      operationId: post_post_api_auth_logout
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/auth/session:
+    get:
+      operationId: get_get_api_auth_session
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+    post:
+      operationId: post_post_api_auth_session
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
   /api/billing/activate-free:
     post:
       operationId: post_post_api_billing_activate_free
@@ -405,6 +205,193 @@ paths:
   /api/billing/portal-session:
     post:
       operationId: post_post_api_billing_portal_session
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/calendar/*:
+    delete:
+      operationId: delete_delete_api_calendar_provider
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/calendar/*/callback:
+    get:
+      operationId: get_get_api_calendar_provider_callback
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/calendar/*/refresh:
+    post:
+      operationId: post_post_api_calendar_provider_refresh
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/calendar/*/start:
+    get:
+      operationId: get_get_api_calendar_provider_start
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/calendar/integrations:
+    get:
+      operationId: get_get_api_calendar_integrations
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/creator/audience:
+    get:
+      operationId: get_get_api_creator_audience
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/creator/audience/export:
+    get:
+      operationId: get_get_api_creator_audience_export
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/creator/audience/subscribers:
+    post:
+      operationId: post_post_api_creator_audience_subscribers
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/creator/audience/{kind}/{id}:
+    delete:
+      operationId: delete_delete_api_creator_audience_kind_id
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+    patch:
+      operationId: patch_patch_api_creator_audience_kind_id
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/creator/bookings:
+    get:
+      operationId: get_get_api_creator_bookings
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/creator/bookings/*/cancel:
+    post:
+      operationId: post_post_api_creator_bookings_bookingid_cancel
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/creator/bookings/*/confirm:
+    post:
+      operationId: post_post_api_creator_bookings_bookingid_confirm
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/creator/orders:
+    get:
+      operationId: get_get_api_creator_orders
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/creator/orders/*/fulfillment:
+    patch:
+      operationId: patch_patch_api_creator_orders_orderid_fulfillment
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/creator/products:
+    get:
+      operationId: get_get_api_creator_products
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+    post:
+      operationId: post_post_api_creator_products
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/creator/products/*:
+    delete:
+      operationId: delete_delete_api_creator_products_productid
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+    patch:
+      operationId: patch_patch_api_creator_products_productid
       responses:
         '200':
           description: Successful response
@@ -462,6 +449,146 @@ paths:
           description: Invalid request
         '401':
           description: Authentication required
+  /api/integrations:
+    get:
+      operationId: get_get_api_integrations
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/integrations/*:
+    delete:
+      operationId: delete_delete_api_integrations_provider
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/integrations/*/refresh:
+    post:
+      operationId: post_post_api_integrations_provider_refresh
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/integrations/github/callback:
+    get:
+      operationId: get_get_api_integrations_github_callback
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/integrations/github/start:
+    get:
+      operationId: get_get_api_integrations_github_start
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/integrations/providers:
+    get:
+      operationId: get_get_api_integrations_providers
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/media:
+    get:
+      operationId: get_get_api_media
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/media/*:
+    delete:
+      operationId: delete_delete_api_media_mediaid
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/media/*/url:
+    get:
+      operationId: get_get_api_media_mediaid_url
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/media/cleanup:
+    post:
+      operationId: post_post_api_media_cleanup
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/media/public/*:
+    get:
+      operationId: get_get_api_media_public_mediaid
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/media/upload:
+    post:
+      operationId: post_post_api_media_upload
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/media/upload-complete:
+    post:
+      operationId: post_post_api_media_upload_complete
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/media/upload-url:
+    post:
+      operationId: post_post_api_media_upload_url
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
   /api/public/sites/*:
     get:
       operationId: get_get_api_public_sites_handle
@@ -482,9 +609,67 @@ paths:
           description: Invalid request
         '401':
           description: Authentication required
+  /api/sites:
+    get:
+      operationId: get_get_api_sites
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+    post:
+      operationId: post_post_api_sites
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
   /api/sites/*:
+    delete:
+      operationId: delete_delete_api_sites_siteid
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
     put:
       operationId: put_put_api_sites_siteid
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/sites/*/publish:
+    post:
+      operationId: post_post_api_sites_siteid_publish
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/sites/*/rollback:
+    post:
+      operationId: post_post_api_sites_siteid_rollback
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/sites/*/unpublish:
+    post:
+      operationId: post_post_api_sites_siteid_unpublish
       responses:
         '200':
           description: Successful response
@@ -611,6 +796,16 @@ paths:
           description: Invalid request
         '401':
           description: Authentication required
+  /api/v1/health:
+    get:
+      operationId: get_get_api_v1_health
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
   /api/v1/public/bookings:
     post:
       operationId: post_post_api_v1_public_bookings
@@ -621,52 +816,6 @@ paths:
           description: Invalid request
         '401':
           description: Authentication required
-  /api/v1/public/scheduling/{handle}/config:
-    get:
-      operationId: get_get_api_v1_public_scheduling_handle_config
-      parameters:
-        - name: handle
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: Published creator scheduling configuration
-        '400':
-          description: Invalid handle
-        '404':
-          description: Scheduling is disabled or unavailable
-        '503':
-          description: Scheduling backend is not configured
-  /api/v1/public/scheduling/{handle}/availability:
-    get:
-      operationId: get_get_api_v1_public_scheduling_handle_availability
-      parameters:
-        - name: handle
-          in: path
-          required: true
-          schema: { type: string }
-        - name: from
-          in: query
-          required: true
-          schema: { type: string, format: date }
-        - name: to
-          in: query
-          required: true
-          schema: { type: string, format: date }
-        - name: serviceId
-          in: query
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: Server-calculated available slots
-        '400':
-          description: Invalid date range or service request
-        '404':
-          description: Service is unavailable
-        '503':
-          description: Scheduling backend is not configured
   /api/v1/public/contact:
     post:
       operationId: post_post_api_v1_public_contact
@@ -680,6 +829,46 @@ paths:
   /api/v1/public/newsletter:
     post:
       operationId: post_post_api_v1_public_newsletter
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/public/products/*:
+    get:
+      operationId: get_get_api_v1_public_products_handle
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/public/products/*/checkout:
+    post:
+      operationId: post_post_api_v1_public_products_handle_checkout
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/public/scheduling/*/availability:
+    get:
+      operationId: get_get_api_v1_public_scheduling_handle_availability
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /api/v1/public/scheduling/*/config:
+    get:
+      operationId: get_get_api_v1_public_scheduling_handle_config
       responses:
         '200':
           description: Successful response
@@ -727,126 +916,86 @@ paths:
           description: Invalid request
         '401':
           description: Authentication required
-  /api/media/upload:
-    post:
-      operationId: post_post_api_media_upload
-      responses:
-        '201': { description: Optimized media asset created }
-        '400': { description: Invalid upload request }
-        '401': { description: Authentication required }
-        '403': { description: Plan entitlement denied }
-        '415': { description: Unsupported media type }
-        '503': { description: Media storage unavailable }
-  /api/media:
+  /health:
     get:
-      operationId: get_get_api_media
-      parameters: [{ name: siteId, in: query, required: true, schema: { type: string } }]
+      operationId: get_get_health
       responses:
-        '200': { description: Owned ready media assets }
-        '400': { description: Site ID required }
-        '401': { description: Authentication required }
-        '404': { description: Site not found }
-        '503': { description: Media storage unavailable }
-  /api/media/{mediaId}/url:
-    get:
-      operationId: get_get_api_media_mediaid_url
-      parameters:
-        - { name: mediaId, in: path, required: true, schema: { type: string } }
-        - { name: variant, in: query, required: false, schema: { type: string, enum: [original, thumbnail] } }
-      responses:
-        '200': { description: Short-lived signed media URL }
-        '401': { description: Authentication required }
-        '404': { description: Media asset not owned or ready }
-        '503': { description: Media storage unavailable }
-  /api/media/{mediaId}:
-    delete:
-      operationId: delete_delete_api_media_mediaid
-      parameters:
-        - { name: mediaId, in: path, required: true, schema: { type: string } }
-        - { name: siteId, in: query, required: true, schema: { type: string } }
-      responses:
-        '204': { description: Media asset deleted }
-        '401': { description: Authentication required }
-        '404': { description: Site or media not found }
-        '409': { description: Media is still referenced }
-        '503': { description: Media storage unavailable }
-  /api/media/cleanup:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /internal/background-jobs/reconcile:
     post:
-      operationId: post_post_api_media_cleanup
+      operationId: post_post_internal_background_jobs_reconcile
       responses:
-        '200': { description: Orphan media cleanup result }
-        '400': { description: Site ID required }
-        '401': { description: Authentication required }
-        '404': { description: Site not found }
-        '503': { description: Media storage unavailable }
-  /api/media/public/{mediaId}:
-    get:
-      operationId: get_get_api_media_public_mediaid
-      parameters:
-        - { name: mediaId, in: path, required: true, schema: { type: string } }
-        - { name: variant, in: query, required: false, schema: { type: string, enum: [original, thumbnail] } }
-      responses:
-        '302': { description: Redirect to a signed public media URL }
-        '404': { description: Media is unavailable or unpublished }
-        '503': { description: Media storage unavailable }
-  /api/sites:
-    get:
-      operationId: get_get_api_sites
-      responses:
-        '200': { description: Authenticated creator site summaries }
-        '401': { description: Authentication required }
-        '503': { description: Site persistence unavailable }
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /internal/background-jobs/run:
     post:
-      operationId: post_post_api_sites
+      operationId: post_post_internal_background_jobs_run
       responses:
-        '201': { description: Draft site created }
-        '400': { description: Invalid site content }
-        '401': { description: Authentication required }
-        '403': { description: Entitlement denied }
-        '409': { description: Site handle conflict }
-        '503': { description: Site persistence unavailable }
-  /api/sites/{siteId}/publish:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /internal/calendar-jobs/reconcile:
     post:
-      operationId: post_post_api_sites_siteid_publish
-      parameters:
-        - { name: siteId, in: path, required: true, schema: { type: string } }
+      operationId: post_post_internal_calendar_jobs_reconcile
       responses:
-        '200': { description: New immutable published snapshot created }
-        '400': { description: Draft is invalid or not publishable }
-        '401': { description: Authentication required }
-        '404': { description: Site or profile not found }
-        '409': { description: Publication concurrency conflict }
-  /api/sites/{siteId}/unpublish:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /internal/domain-verification/reconcile:
     post:
-      operationId: post_post_api_sites_siteid_unpublish
-      parameters:
-        - { name: siteId, in: path, required: true, schema: { type: string } }
+      operationId: post_post_internal_domain_verification_reconcile
       responses:
-        '200': { description: Public pointer cleared; history retained }
-        '401': { description: Authentication required }
-        '404': { description: Site not found }
-        '409': { description: Publication concurrency conflict }
-  /api/sites/{siteId}/rollback:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /internal/outbox/cleanup:
     post:
-      operationId: post_post_api_sites_siteid_rollback
-      parameters:
-        - { name: siteId, in: path, required: true, schema: { type: string } }
+      operationId: post_post_internal_outbox_cleanup
       responses:
-        '200': { description: Prior snapshot cloned into a new publication version }
-        '400': { description: Invalid publication version }
-        '401': { description: Authentication required }
-        '404': { description: Site or publication version not found }
-        '409': { description: Publication concurrency conflict }
-  /api/sites/{siteId}:
-    delete:
-      operationId: delete_delete_api_sites_siteid
-      parameters: [{ name: siteId, in: path, required: true, schema: { type: string } }]
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /internal/outbox/publish:
+    post:
+      operationId: post_post_internal_outbox_publish
       responses:
-        '204': { description: Draft site deleted }
-        '401': { description: Authentication required }
-        '404': { description: Site not found or not owned }
-        '409': { description: Published site cannot be deleted }
-        '503': { description: Site persistence unavailable }
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /internal/outbox/replay:
+    post:
+      operationId: post_post_internal_outbox_replay
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
   /llms.txt:
     get:
       operationId: get_get_llms_txt
@@ -870,6 +1019,36 @@ paths:
   /sitemap.xml:
     get:
       operationId: get_get_sitemap_xml
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /tasks/background-jobs:
+    post:
+      operationId: post_post_tasks_background_jobs
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /tasks/background-jobs/*:
+    get:
+      operationId: get_get_tasks_background_jobs_jobid
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication required
+  /tasks/outbox-publish:
+    post:
+      operationId: post_post_tasks_outbox_publish
       responses:
         '200':
           description: Successful response

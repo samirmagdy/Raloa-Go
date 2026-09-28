@@ -73,6 +73,27 @@ export function createOAuthTokenService(repository: OAuthConnectionRepository, a
       if (adapter?.revoke) await adapter.revoke(await tokenBundle(connection)).catch(() => undefined);
       await repository.revoke(connection.id, new Date().toISOString());
     },
+    async refresh(userId: string, provider: string, siteId?: string): Promise<void> {
+      const connection = await repository.get(userId, provider, siteId);
+      if (!connection || connection.state === 'revoked' || !connection.encryptedRefreshToken) throw new Error('OAUTH_REAUTH_REQUIRED');
+      const adapter = adapterFor(provider);
+      if (!adapter?.refresh) throw new Error('OAUTH_REFRESH_UNAVAILABLE');
+      const claimed = await repository.claimRefreshLock(connection.id, Date.now() + 30_000);
+      if (!claimed) throw new Error('OAUTH_REFRESH_IN_PROGRESS');
+      try {
+        const refreshed = await adapter.refresh(await tokenBundle(connection));
+        await repository.save({ ...connection, state: 'connected', encryptedAccessToken: await integrationEnvelopeCipher.encrypt(refreshed.accessToken), ...(refreshed.refreshToken ? { encryptedRefreshToken: await integrationEnvelopeCipher.encrypt(refreshed.refreshToken) } : {}), expiresAt: refreshed.expiresAt, tokenVersion: connection.tokenVersion + 1, refreshLockUntil: undefined, updatedAt: new Date().toISOString() });
+      } catch (error) {
+        await repository.save({ ...connection, state: 'reauthorization_required', refreshLockUntil: undefined, updatedAt: new Date().toISOString() });
+        throw error;
+      } finally {
+        await repository.releaseRefreshLock(connection.id);
+      }
+    },
+    async getStatus(userId: string, provider: string, siteId?: string): Promise<{ provider: string; status: OAuthConnectionState; scopes: string[]; updatedAt: string; expiresAt?: number } | null> {
+      const connection = await repository.get(userId, provider, siteId);
+      return connection ? { provider: connection.provider, status: connection.state, scopes: connection.scopes, updatedAt: connection.updatedAt, expiresAt: connection.expiresAt } : null;
+    },
     async validate(userId: string, provider: string, siteId?: string): Promise<void> {
       const adapter = adapterFor(provider);
       if (!adapter?.validate) return;

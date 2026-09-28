@@ -25,8 +25,10 @@ jobs:
           cache: npm
       - run: npm ci --legacy-peer-deps
       - run: npm run lint
+      - run: npm run check:api
       - run: npm run check:secrets
       - run: npm run check:deployment-topology
+      - run: npm run check:load-test
       - run: npm run check:persistence-boundary
       - run: npm run check:modular-monolith
       - run: npm run check:adrs
@@ -49,6 +51,10 @@ jobs:
           cache: npm
       - run: npm ci --legacy-peer-deps
       - run: npm run test:unit
+      - run: npm run test:domain
+      - run: npm run test:staging-config
+      - run: npm --prefix apps/web run build
+      - run: npm run check:performance:next
       - run: npm run test:coverage
       - run: npm run test:http
       - run: npm run test:contracts
@@ -98,6 +104,9 @@ jobs:
       name: staging
     env:
       DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      POSTGRES_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      POSTGRES_ENVIRONMENT: staging
+      POSTGRES_SSL: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -105,7 +114,40 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci --legacy-peer-deps
+      - name: Validate isolated real-provider configuration
+        run: npm run validate:staging
+        env:
+          APP_URL: ${{ secrets.STAGING_BASE_URL }}
+          SECRET_MANAGER_ENABLED: "true"
+          SECRET_MANAGER_PROJECT_ID: ${{ secrets.STAGING_GCP_PROJECT_ID }}
+          INTEGRATION_KMS_KEY_NAME: ${{ secrets.STAGING_KMS_KEY_RESOURCE }}
+          FIREBASE_PROJECT_ID: ${{ secrets.STAGING_FIREBASE_PROJECT_ID }}
+          FIRESTORE_DATABASE_ID: ${{ secrets.STAGING_FIRESTORE_DATABASE_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.STAGING_STORAGE_BUCKET }}
+          FIREBASE_ADMIN_ENABLED: "true"
+          POSTGRES_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          POSTGRES_ENVIRONMENT: staging
+          POSTGRES_ENABLED: "true"
+          POSTGRES_SSL: "true"
+          CLOUDFLARE_ZONE_ID: ${{ secrets.STAGING_CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_R2_ACCOUNT_ID: ${{ secrets.STAGING_CLOUDFLARE_R2_ACCOUNT_ID }}
+          CLOUDFLARE_R2_BUCKET: ${{ secrets.STAGING_CLOUDFLARE_R2_BUCKET }}
+          CLOUDFLARE_R2_PUBLIC_BASE_URL: ${{ secrets.STAGING_CLOUDFLARE_R2_PUBLIC_BASE_URL }}
+          CLOUD_TASKS_PROJECT_ID: ${{ secrets.STAGING_GCP_PROJECT_ID }}
+          CLOUD_TASKS_LOCATION: ${{ secrets.STAGING_CLOUD_TASKS_LOCATION }}
+          CLOUD_TASKS_QUEUE: ${{ secrets.STAGING_CLOUD_TASKS_QUEUE }}
+          CLOUD_TASKS_WORKER_URL: ${{ secrets.STAGING_WORKER_TASKS_URL }}
+          SENTRY_DSN: ${{ secrets.STAGING_SENTRY_DSN }}
+          RELEASE_ID: ${{ github.sha }}
+          GOOGLE_CALENDAR_CLIENT_ID: ${{ secrets.STAGING_GOOGLE_CALENDAR_CLIENT_ID }}
+          GOOGLE_CALENDAR_REDIRECT_URI: ${{ secrets.STAGING_GOOGLE_CALENDAR_REDIRECT_URI }}
+          MICROSOFT_CALENDAR_CLIENT_ID: ${{ secrets.STAGING_MICROSOFT_CALENDAR_CLIENT_ID }}
+          MICROSOFT_CALENDAR_REDIRECT_URI: ${{ secrets.STAGING_MICROSOFT_CALENDAR_REDIRECT_URI }}
+          RESEND_FROM_EMAIL: ${{ secrets.STAGING_RESEND_FROM_EMAIL }}
+          STAGING_RESOURCE_PREFIX: ${{ secrets.STAGING_RESOURCE_PREFIX }}
+          STAGING_STRIPE_MODE: test
       - run: npm run test:integration:staging
+      - run: npm run test:integration:staging:creator-flow
         env:
           STAGING_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
           STAGING_BEARER_TOKEN: ${{ secrets.STAGING_BEARER_TOKEN }}
@@ -155,6 +197,11 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: staging
+    env:
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      POSTGRES_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      POSTGRES_ENVIRONMENT: staging
+      POSTGRES_SSL: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -176,17 +223,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ secrets.STAGING_GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.STAGING_GCP_DEPLOYER_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
       - name: Render checked-in service topology
         env:
           DEPLOY_IMAGE: ${{ needs.build.outputs.image }}
-          DEPLOY_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          DEPLOY_REGION: ${{ secrets.GCP_REGION }}
+          DEPLOY_PROJECT_ID: ${{ secrets.STAGING_GCP_PROJECT_ID }}
+          DEPLOY_REGION: ${{ secrets.STAGING_GCP_REGION }}
           DEPLOY_RELEASE_ID: ${{ github.sha }}
-          DEPLOY_RUNTIME_SERVICE_ACCOUNT: ${{ secrets.RUNTIME_SERVICE_ACCOUNT }}
-          DEPLOY_WORKER_SERVICE_ACCOUNT: ${{ secrets.WORKER_SERVICE_ACCOUNT }}
+          DEPLOY_RUNTIME_SERVICE_ACCOUNT: ${{ secrets.STAGING_RUNTIME_SERVICE_ACCOUNT }}
+          DEPLOY_WORKER_SERVICE_ACCOUNT: ${{ secrets.STAGING_WORKER_SERVICE_ACCOUNT }}
           DEPLOY_FIRESTORE_DATABASE_ID: ${{ secrets.STAGING_FIRESTORE_DATABASE_ID }}
           DEPLOY_STORAGE_BUCKET: ${{ secrets.STAGING_STORAGE_BUCKET }}
           DEPLOY_KMS_KEY_RESOURCE: ${{ secrets.STAGING_KMS_KEY_RESOURCE }}
@@ -196,9 +243,19 @@ jobs:
           DEPLOY_STRIPE_PRICE_STUDIO_YEARLY: ${{ secrets.STAGING_STRIPE_PRICE_STUDIO_YEARLY }}
           DEPLOY_CLOUDFLARE_ZONE_ID: ${{ secrets.STAGING_CLOUDFLARE_ZONE_ID }}
           DEPLOY_WORKER_TASKS_URL: ${{ secrets.STAGING_WORKER_TASKS_URL }}
+          DEPLOY_ENVIRONMENT: staging
+          DEPLOY_APP_URL: ${{ secrets.STAGING_BASE_URL }}
+          DEPLOY_RESOURCE_PREFIX: ${{ secrets.STAGING_RESOURCE_PREFIX }}
+          DEPLOY_CLOUDFLARE_R2_ACCOUNT_ID: ${{ secrets.STAGING_CLOUDFLARE_R2_ACCOUNT_ID }}
+          DEPLOY_CLOUDFLARE_R2_BUCKET: ${{ secrets.STAGING_CLOUDFLARE_R2_BUCKET }}
+          DEPLOY_CLOUDFLARE_R2_PUBLIC_BASE_URL: ${{ secrets.STAGING_CLOUDFLARE_R2_PUBLIC_BASE_URL }}
+          DEPLOY_CLOUD_TASKS_PROJECT_ID: ${{ secrets.STAGING_GCP_PROJECT_ID }}
+          DEPLOY_CLOUD_TASKS_LOCATION: ${{ secrets.STAGING_CLOUD_TASKS_LOCATION }}
+          DEPLOY_CLOUD_TASKS_QUEUE: ${{ secrets.STAGING_CLOUD_TASKS_QUEUE }}
+          DEPLOY_SENTRY_DSN: ${{ secrets.STAGING_SENTRY_DSN }}
           DEPLOY_OUTPUT_DIR: .generated-cloud-run
         run: node scripts/render-cloud-run-manifests.mjs
-      - run: for file in .generated-cloud-run/*.yaml; do gcloud run services replace "$file" --region "${{ secrets.GCP_REGION }}" --platform managed --quiet; done
+      - run: for file in .generated-cloud-run/*.yaml; do gcloud run services replace "$file" --project "${{ secrets.STAGING_GCP_PROJECT_ID }}" --region "${{ secrets.STAGING_GCP_REGION }}" --platform managed --quiet; done
 
   smoke-staging:
     name: Staging smoke gate

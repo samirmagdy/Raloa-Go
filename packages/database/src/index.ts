@@ -45,3 +45,5 @@ export interface RepositoryBundle {
 export type DatabaseProvider = 'postgres' | 'firestore';
 
 export { createPostgresAuthDataSource } from './postgres-auth';
+export { createPostgresPublicSiteRepository } from './public-sites';
+export type { PublicSiteRepository, PublicSiteSnapshotRecord } from './public-sites';

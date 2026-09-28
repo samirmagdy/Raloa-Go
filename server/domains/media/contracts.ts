@@ -32,8 +32,8 @@ export interface MediaMetadataRepository {
   create(asset: MediaAsset): Promise<void>;
   get(id: string): Promise<MediaAsset | null>;
   listOwned(ownerUserId: string, siteId: string): Promise<MediaAsset[]>;
-  listAll(): Promise<MediaAsset[]>;
-  listAbandoned(cutoff: string): Promise<MediaAsset[]>;
+  listAll(ownerUserId?: string, siteId?: string): Promise<MediaAsset[]>;
+  listAbandoned(cutoff: string, ownerUserId?: string, siteId?: string): Promise<MediaAsset[]>;
   remove(id: string): Promise<void>;
   update(id: string, changes: Partial<MediaAsset>): Promise<MediaAsset>;
 }
@@ -44,6 +44,9 @@ export interface MediaStorageAdapter {
   delete(objectKey: string): Promise<void>;
   listKeys(prefix: string): Promise<string[]>;
   getCdnUrl(objectKey: string): string;
+  createUploadUrl?(input: { objectKey: string; contentType: string; expiresInSeconds: number }): Promise<{ url: string; expiresAt: string; headers: Record<string, string> }>;
+  getSignedUrl?(objectKey: string, expiresInSeconds: number): Promise<{ url: string; expiresAt: string }>;
+  getObject?(objectKey: string): Promise<Uint8Array>;
 }
 
 export interface MediaProcessor {
@@ -60,9 +63,10 @@ export interface MediaProcessingQueue {
 }
 
 export interface MediaService {
-  beginUpload(input: { id: string; ownerUserId: string; siteId: string; purpose: MediaPurpose; contentType: string }): Promise<MediaAsset>;
-  completeUpload(input: { assetId: string; ownerUserId: string; bytes: Uint8Array; checksum?: string }): Promise<MediaAsset>;
+  beginUpload(input: { id: string; ownerUserId: string; siteId: string; purpose: MediaPurpose; contentType: string; maxBytes?: number }): Promise<MediaAsset>;
+  createUploadUrl(input: { assetId: string; ownerUserId: string; expiresInSeconds?: number }): Promise<{ url: string; objectKey: string; expiresAt: string; headers: Record<string, string> }>;
+  completeUpload(input: { assetId: string; ownerUserId: string; bytes: Uint8Array; checksum?: string; maxBytes?: number }): Promise<MediaAsset>;
   list(ownerUserId: string, siteId: string): Promise<MediaAsset[]>;
   remove(input: { assetId: string; ownerUserId: string }): Promise<void>;
-  cleanup(input: { now?: string; abandonedAfterMs: number }): Promise<{ abandoned: number; orphaned: number }>;
+  cleanup(input: { now?: string; abandonedAfterMs: number; ownerUserId?: string; siteId?: string }): Promise<{ abandoned: number; orphaned: number }>;
 }

@@ -92,8 +92,8 @@ export function createPostgresSitePublicationRepository(pool: Pool): SitePublica
           [nextVersion, snapshotId, site.id]
         );
         await client.query(
-          `INSERT INTO outbox_events (event_type, aggregate_type, aggregate_id, idempotency_key, payload)
-           VALUES ('SitePublished.v1', 'site', $1, $2, $3::jsonb) ON CONFLICT (idempotency_key) DO NOTHING`,
+          `INSERT INTO outbox_events (event_type, event_version, aggregate_type, aggregate_id, idempotency_key, correlation_id, payload)
+           VALUES ('SitePublished.v1', 1, 'site', $1, $2, $2, $3::jsonb) ON CONFLICT (idempotency_key) DO NOTHING`,
           [site.id, `site:${site.id}:publication:${nextVersion}`, JSON.stringify({ siteId: publicId(site), handle: site.handle, revision: Number(site.draft_revision), publicationVersion: nextVersion, snapshotId })]
         );
         await writeAudit(client, { actorUserId: site.owner_user_id, accountId: site.account_id, siteId: site.id, action: 'site.published', metadata: { publicationVersion: nextVersion, revision: Number(site.draft_revision), snapshotId } });
@@ -118,8 +118,8 @@ export function createPostgresSitePublicationRepository(pool: Pool): SitePublica
         await client.query('UPDATE published_site_snapshots SET is_current = false WHERE site_id = $1 AND is_current', [site.id]);
         await client.query('UPDATE sites SET is_published = false, published_snapshot_id = NULL, updated_at = now() WHERE id = $1', [site.id]);
         await client.query(
-          `INSERT INTO outbox_events (event_type, aggregate_type, aggregate_id, idempotency_key, payload)
-           VALUES ('SiteUnpublished.v1', 'site', $1, $2, $3::jsonb) ON CONFLICT (idempotency_key) DO NOTHING`,
+          `INSERT INTO outbox_events (event_type, event_version, aggregate_type, aggregate_id, idempotency_key, correlation_id, payload)
+           VALUES ('SiteUnpublished.v1', 1, 'site', $1, $2, $2, $3::jsonb) ON CONFLICT (idempotency_key) DO NOTHING`,
           [site.id, `site:${site.id}:unpublished:${site.publication_version}`, JSON.stringify({ siteId: publicId(site), handle: site.handle, publicationVersion: Number(site.publication_version) })]
         );
         await writeAudit(client, { actorUserId: site.owner_user_id, accountId: site.account_id, siteId: site.id, action: 'site.unpublished', metadata: { publicationVersion: Number(site.publication_version) } });
@@ -153,8 +153,8 @@ export function createPostgresSitePublicationRepository(pool: Pool): SitePublica
         );
         await client.query('UPDATE sites SET is_published = true, published_at = now(), publication_version = $1, published_snapshot_id = $2, updated_at = now() WHERE id = $3', [nextVersion, clone.rows[0].id, site.id]);
         await client.query(
-          `INSERT INTO outbox_events (event_type, aggregate_type, aggregate_id, idempotency_key, payload)
-           VALUES ('SitePublished.v1', 'site', $1, $2, $3::jsonb) ON CONFLICT (idempotency_key) DO NOTHING`,
+          `INSERT INTO outbox_events (event_type, event_version, aggregate_type, aggregate_id, idempotency_key, correlation_id, payload)
+           VALUES ('SitePublished.v1', 1, 'site', $1, $2, $2, $3::jsonb) ON CONFLICT (idempotency_key) DO NOTHING`,
           [site.id, `site:${site.id}:publication:${nextVersion}`, JSON.stringify({ siteId: publicId(site), handle: site.handle, revision: Number(target.rows[0].revision), publicationVersion: nextVersion, rollbackFromVersion: publicationVersion, snapshotId: clone.rows[0].id })]
         );
         await writeAudit(client, { actorUserId: site.owner_user_id, accountId: site.account_id, siteId: site.id, action: 'site.published', metadata: { publicationVersion: nextVersion, rollbackFromVersion: publicationVersion, snapshotId: clone.rows[0].id } });

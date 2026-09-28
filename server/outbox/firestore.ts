@@ -1,16 +1,8 @@
 import type { Firestore, Transaction } from 'firebase-admin/firestore';
-import type { DomainEventName, DomainEventType } from '../events';
-import { eventType } from '../events';
+import type { DomainEventType } from '../events';
 import type { OutboxEvent, OutboxEventInput, OutboxRepository, TransactionalOutboxProducer } from './types';
-import { domainEventSchemaV1, outboxEventSchemaV1 } from '../../src/shared/schema';
-
-export function createOutboxEvent(input: OutboxEventInput): OutboxEvent {
-  const now = new Date().toISOString();
-  const [name, version] = input.eventType.split('.v');
-  const normalized = { ...input, eventType: eventType(name as DomainEventName, Number(version || 1)), maxAttempts: input.maxAttempts || 8, availableAt: input.availableAt || now, status: 'pending' as const, attempts: 0, createdAt: now, updatedAt: now };
-  domainEventSchemaV1.parse({ id: normalized.id, type: normalized.eventType, name, version: Number(version || 1), aggregateType: normalized.aggregateType, aggregateId: normalized.aggregateId, occurredAt: normalized.createdAt, payload: normalized.payload });
-  return outboxEventSchemaV1.parse(normalized) as OutboxEvent;
-}
+import { createOutboxEvent } from './event';
+export { createOutboxEvent } from './event';
 
 export function appendOutboxEvent(transaction: Transaction, db: Firestore, event: OutboxEvent): void {
   transaction.create(db.collection('outbox_events').doc(event.id), event);

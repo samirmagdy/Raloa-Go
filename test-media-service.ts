@@ -20,13 +20,17 @@ const service = createMediaDomainService({
     async put(input) { return { provider: 'cloudflare_r2', objectKey: input.objectKey, contentType: input.contentType, bytes: input.bytes.byteLength, cdnUrl: `https://cdn.test/${input.objectKey}` }; },
     async delete(objectKey) { deleted.push(objectKey); },
     async listKeys() { return []; },
-    getCdnUrl: (objectKey) => `https://cdn.test/${objectKey}`
+    getCdnUrl: (objectKey) => `https://cdn.test/${objectKey}`,
+    async createUploadUrl(input) { return { url: `https://upload.test/${input.objectKey}`, expiresAt: '2026-01-01T00:15:00.000Z', headers: { 'Content-Type': input.contentType } }; }
   },
   processing: { async enqueue(input) { queued.push(input.idempotencyKey); } },
   clock: () => '2026-01-01T00:00:00.000Z'
 });
 
 await service.beginUpload({ id: 'asset-1', ownerUserId: 'user-1', siteId: 'site-1', purpose: 'gallery', contentType: 'image/webp' });
+const upload = await service.createUploadUrl({ assetId: 'asset-1', ownerUserId: 'user-1' });
+assert.equal(upload.objectKey, 'sites/site-1/media/asset-1/original');
+await assert.rejects(() => service.createUploadUrl({ assetId: 'asset-1', ownerUserId: 'other-user' }), /MEDIA_NOT_FOUND/);
 const completed = await service.completeUpload({ assetId: 'asset-1', ownerUserId: 'user-1', bytes: new Uint8Array([1, 2, 3]), checksum: 'sha256:test' });
 assert.equal(completed.lifecycle, 'processing');
 assert.equal(completed.original.provider, 'cloudflare_r2');

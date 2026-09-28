@@ -29,6 +29,7 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { UserProfile, UserMiniSite, ContactInquiry } from '../types';
 import { PlatformMetrics } from '../api/types';
 import { captureReferralCode, captureUtmParameters } from '../utils/attribution';
+import { createStudioApiClient } from '../api/client';
 
 // Initialize Firebase App instance safely (prevent duplicate initialization)
 export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -570,22 +571,13 @@ export async function saveUserMiniSiteToFirestore(
 ): Promise<UserMiniSite> {
   if ((!auth.currentUser && !isE2ETestMode) || (auth.currentUser && auth.currentUser.uid !== userId)) throw new Error('AUTH_REQUIRED');
   const token = isE2ETestMode ? 'e2e-test-token' : await auth.currentUser!.getIdToken();
-  const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify(siteData)
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    const error = new Error(payload?.error?.message || payload?.message || 'SITE_SAVE_FAILED') as Error & { code?: string; fields?: Record<string, string>; status?: number; serverSite?: UserMiniSite };
-    error.code = payload?.error?.code || payload?.code || 'SITE_SAVE_FAILED';
-    error.fields = payload?.error?.fields || payload?.fields;
-    error.status = response.status;
-    error.serverSite = payload?.site as UserMiniSite | undefined;
+  try {
+    return await createStudioApiClient(async () => token).saveSite(siteId, siteData);
+  } catch (cause) {
+    const error = cause as Error & { code?: string; fields?: Record<string, string>; status?: number; serverSite?: UserMiniSite };
+    error.code ||= 'SITE_SAVE_FAILED';
     throw error;
   }
-  const payload = await response.json().catch(() => ({}));
-  return payload.site as UserMiniSite;
 }
 
 /**
@@ -595,53 +587,27 @@ export async function loadUserMiniSiteFromFirestore(
   userId: string,
   siteId: string
 ): Promise<UserMiniSite | null> {
-  if (isE2ETestMode) {
-    const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}`, { headers: { Authorization: 'Bearer e2e-test-token' } });
-    if (response.status === 404) return null;
-    if (!response.ok) throw new Error('SITE_LOAD_FAILED');
-    const payload = await response.json();
-    return payload.site as UserMiniSite;
-  }
-  try {
-    const siteDocRef = doc(db, 'users', userId, 'sites', siteId);
-    const snap = await getDoc(siteDocRef);
-    if (snap.exists()) {
-      return snap.data() as UserMiniSite;
-    }
-    return null;
-  } catch (error) {
-    console.error('Error loading mini-site from Firestore:', error);
-    throw error;
-  }
+  const token = isE2ETestMode ? 'e2e-test-token' : await auth.currentUser!.getIdToken();
+  try { return await createStudioApiClient(async () => token).getSite(siteId); } catch (error: any) { if (error?.status === 404) return null; throw error; }
 }
 
 export async function listUserMiniSitesFromServer(userId: string): Promise<import('../types').UserMiniSiteSummary[]> {
   if ((!auth.currentUser && !isE2ETestMode) || (auth.currentUser && auth.currentUser.uid !== userId)) throw new Error('AUTH_REQUIRED');
   const token = isE2ETestMode ? 'e2e-test-token' : await auth.currentUser!.getIdToken();
-  const response = await fetch('/api/sites', { headers: { Authorization: `Bearer ${token}` } });
-  if (!response.ok) throw new Error('SITE_LIST_FAILED');
-  const payload = await response.json();
-  return Array.isArray(payload.sites) ? payload.sites : [];
+  const response = await createStudioApiClient(async () => token).listSites();
+  return Array.isArray(response.sites) ? response.sites : [];
 }
 
 export async function createUserMiniSiteOnServer(userId: string, siteData: Partial<UserMiniSite>, siteId?: string): Promise<UserMiniSite> {
   if ((!auth.currentUser && !isE2ETestMode) || (auth.currentUser && auth.currentUser.uid !== userId)) throw new Error('AUTH_REQUIRED');
   const token = isE2ETestMode ? 'e2e-test-token' : await auth.currentUser!.getIdToken();
-  const response = await fetch('/api/sites', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...(siteId ? { siteId } : {}), ...siteData })
-  });
-  if (!response.ok) throw new Error('SITE_CREATE_FAILED');
-  const payload = await response.json();
-  return payload.site as UserMiniSite;
+  return createStudioApiClient(async () => token).createSite(siteData, siteId);
 }
 
 export async function deleteUserMiniSiteFromServer(userId: string, siteId: string): Promise<void> {
   if ((!auth.currentUser && !isE2ETestMode) || (auth.currentUser && auth.currentUser.uid !== userId)) throw new Error('AUTH_REQUIRED');
   const token = isE2ETestMode ? 'e2e-test-token' : await auth.currentUser!.getIdToken();
-  const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-  if (!response.ok) throw new Error('SITE_DELETE_FAILED');
+  await createStudioApiClient(async () => token).deleteSite(siteId);
 }
 
 /**

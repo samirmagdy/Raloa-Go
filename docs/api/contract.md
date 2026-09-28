@@ -13,13 +13,27 @@ handler must preserve these schemas and policies.
   cursors must be returned unchanged as `nextCursor` values.
 - Booking and checkout writes require `Idempotency-Key` (16–200 characters).
   Replays return the original response; concurrent requests return a conflict.
-- Errors use HTTP status plus `{ status: "error", error, code, message,
-  fields? }`. The legacy string fields remain during compatibility migration.
+- Errors use HTTP status plus the canonical envelope `{ status: "error",
+  error: { code, kind, message, requestId, fields?, details? } }`. Legacy
+  top-level `code`, `message`, and `errorCode` fields remain during the
+  compatibility migration, but new clients must read `error`.
 - Public booking, telemetry, newsletter, and contact endpoints are rate
   limited by IP. Authenticated endpoints should use user identity plus IP when
   adding distributed limits. `Retry-After` is returned on throttling.
 - Authorization is server-side and ownership-based; client-provided user or
   site IDs never establish access.
+
+## Canonical runtime schemas
+
+The reusable schemas live in `@raloa/schemas` (`api-contract.ts`) and are the
+source of truth for error envelopes, success/accepted envelopes, cursor
+pagination, idempotency keys, rate-limit metadata, and endpoint policy records.
+Route-specific request and response schemas remain versioned in this package
+and are referenced by endpoint documents.
+
+Every live route must have a document in `docs/api/endpoints/` and an OpenAPI
+operation. `npm run check:api` discovers Express, worker, and Next route
+handlers and fails on undocumented or stale contract entries.
 
 The machine-readable policy registry is `API_CONTRACTS`. Request/response
 schemas and policy changes require a new API version or an explicitly backward

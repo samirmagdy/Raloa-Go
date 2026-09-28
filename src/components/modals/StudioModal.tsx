@@ -22,10 +22,9 @@ import type { PublicationState } from '../studio/StudioTopToolbar';
 import { StudioContentTab } from '../studio/StudioContentTab';
 import { StudioDesignTab, VISUAL_PRESETS } from '../studio/StudioDesignTab';
 import { StudioAudienceTab } from '../studio/StudioAudienceTab';
-import { StudioSettingsTab } from '../studio/StudioSettingsTab';
 import { StudioMobileNav, StudioTab } from '../studio/StudioMobileNav';
 import { StudioQrModal } from '../studio/StudioQrModal';
-import { DEFAULT_BOOKING_CONFIG } from '../studio/StudioSchedulingSettings';
+import { DEFAULT_BOOKING_CONFIG } from '../studio/bookingDefaults';
 import { StudioTemplatePreview } from '../studio/StudioTemplatePreview';
 import { StudioBlockItem } from '../studio/SortableBlockList';
 import { getPlanCapabilities, isPremiumTemplate } from '../../lib/planCapabilities';
@@ -34,6 +33,7 @@ import { normalizeSiteSlug } from '../../lib/siteSlug';
 import { publicSiteUrl } from '../../utils/publicUrl';
 
 const StudioAnalyticsTab = lazy(() => import('../studio/StudioAnalyticsTab').then((module) => ({ default: module.StudioAnalyticsTab })));
+const StudioSettingsTab = lazy(() => import('../studio/StudioSettingsTab').then((module) => ({ default: module.StudioSettingsTab })));
 
 export interface StudioSiteConfig {
   username: string;
@@ -1098,7 +1098,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
             )}
 
             {activeTab === 'settings' && (
-              <StudioSettingsTab
+              <Suspense fallback={<div role="status" className="flex min-h-48 items-center justify-center text-sm text-slate-500">{isRtl ? 'جارٍ تحميل الإعدادات...' : 'Loading settings…'}</div>}>
+                <StudioSettingsTab
                 siteId={activeSiteId}
                 handle={username}
                 plan={profile?.plan || 'free'}
@@ -1150,7 +1151,8 @@ export const StudioModal: React.FC<StudioModalProps> = ({
                   }
                 }}
                 locale={locale}
-              />
+                />
+              </Suspense>
             )}
           </div>
         </section>

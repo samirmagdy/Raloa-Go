@@ -9,6 +9,7 @@ import type {
   TelemetryLinkClickRequest,
   TelemetryPageViewRequest
 } from './types';
+import type { UserMiniSite, UserMiniSiteSummary } from '../types';
 
 export class ApiClientError extends Error {
   constructor(public readonly status: number, public readonly details: ApiError) {
@@ -30,6 +31,32 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiClientError(response.status, details);
   }
   return body as T;
+}
+
+export type StudioApiClient = ReturnType<typeof createStudioApiClient>;
+
+/** Typed authenticated transport used by the shared Studio implementation. */
+export function createStudioApiClient(getToken: () => Promise<string>) {
+  const authenticatedRequest = async <T>(path: string, init: RequestInit = {}) => {
+    const token = await getToken();
+    return request<T>(path, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.headers || {}) } });
+  };
+  return {
+    listSites: () => authenticatedRequest<{ sites: UserMiniSiteSummary[] }>('/api/sites'),
+    getSite: async (siteId: string) => {
+      const response = await authenticatedRequest<{ site: UserMiniSite }>(`/api/sites/${encodeURIComponent(siteId)}`);
+      return response.site;
+    },
+    saveSite: async (siteId: string, siteData: Partial<UserMiniSite>) => {
+      const response = await authenticatedRequest<{ site: UserMiniSite }>(`/api/sites/${encodeURIComponent(siteId)}`, { method: 'PUT', body: JSON.stringify(siteData) });
+      return response.site;
+    },
+    createSite: async (siteData: Partial<UserMiniSite>, siteId?: string) => {
+      const response = await authenticatedRequest<{ site: UserMiniSite }>('/api/sites', { method: 'POST', body: JSON.stringify({ ...(siteId ? { siteId } : {}), ...siteData }) });
+      return response.site;
+    },
+    deleteSite: (siteId: string) => authenticatedRequest<void>(`/api/sites/${encodeURIComponent(siteId)}`, { method: 'DELETE' }),
+  };
 }
 
 export const api = {

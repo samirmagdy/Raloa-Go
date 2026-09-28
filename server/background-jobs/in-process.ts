@@ -18,7 +18,8 @@ function createMemoryRepository(): BackgroundJobRepository {
     async fail(id, failure) { const current = jobs.get(id); if (current?.status === 'processing') jobs.set(id, { ...current, status: failure.deadLetter ? 'dead_letter' : 'retry', lastError: failure.error, availableAt: failure.availableAt || current.availableAt, leaseUntil: undefined, deadLetteredAt: failure.deadLetter ? failure.at : undefined, updatedAt: failure.at }); },
     async listRecoverable(now, limit) { return [...jobs.values()].filter((job) => ['pending', 'retry', 'processing'].includes(job.status) && Date.parse(job.availableAt) <= Date.parse(now)).slice(0, limit); },
     async requeue(id, availableAt, reason) { const current = jobs.get(id); if (!current || ['completed', 'dead_letter'].includes(current.status)) return false; jobs.set(id, { ...current, status: 'retry', availableAt, leaseUntil: undefined, lastError: reason, updatedAt: new Date().toISOString() }); return true; },
-    async deadLetter(id, reason, at) { const current = jobs.get(id); if (!current || ['completed', 'dead_letter'].includes(current.status)) return false; jobs.set(id, { ...current, status: 'dead_letter', lastError: reason, deadLetteredAt: at, leaseUntil: undefined, updatedAt: at }); return true; }
+    async deadLetter(id, reason, at) { const current = jobs.get(id); if (!current || ['completed', 'dead_letter'].includes(current.status)) return false; jobs.set(id, { ...current, status: 'dead_letter', lastError: reason, deadLetteredAt: at, leaseUntil: undefined, updatedAt: at }); return true; },
+    async countPending(now) { return [...jobs.values()].filter((job) => ['pending', 'retry', 'processing'].includes(job.status) && Date.parse(job.availableAt) <= Date.parse(now)).length; }
   };
 }
 

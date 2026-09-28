@@ -1,6 +1,7 @@
 import type { MediaAsset, MediaMetadataRepository, MediaProcessingQueue, MediaService, MediaStorageAdapter } from './contracts';
 
 const allowedContentTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+export function validateMediaContentType(contentType: string): void { if (!allowedContentTypes.has(contentType)) throw new Error('UNSUPPORTED_MEDIA_TYPE'); }
 
 export function validateMediaUpload(input: { contentType: string; bytes: number; maxBytes: number }): void {
   if (!allowedContentTypes.has(input.contentType)) throw new Error('Unsupported media type');
@@ -17,6 +18,7 @@ export function createMediaDomainService(dependencies: {
 
   const service: MediaService = {
     async beginUpload(input) {
+      validateMediaContentType(input.contentType);
       const timestamp = clock();
       const objectKey = `sites/${input.siteId}/media/${input.id}/original`;
       const asset: MediaAsset = {
@@ -32,12 +34,19 @@ export function createMediaDomainService(dependencies: {
       await dependencies.metadata.create(asset);
       return asset;
     },
+    async createUploadUrl(input) {
+      const asset = await dependencies.metadata.get(input.assetId);
+      if (!asset || asset.ownerUserId !== input.ownerUserId || asset.lifecycle !== 'pending_upload') throw new Error('MEDIA_NOT_FOUND');
+      if (!dependencies.storage.createUploadUrl) throw new Error('DIRECT_UPLOAD_UNAVAILABLE');
+      const signed = await dependencies.storage.createUploadUrl({ objectKey: asset.original.objectKey, contentType: asset.original.contentType, expiresInSeconds: Math.min(Math.max(input.expiresInSeconds || 900, 60), 3600) });
+      return { ...signed, objectKey: asset.original.objectKey };
+    },
     async completeUpload(input) {
       const asset = await dependencies.metadata.get(input.assetId);
       if (!asset || asset.ownerUserId !== input.ownerUserId || asset.lifecycle === 'deleted') {
         throw new Error('Media asset not found');
       }
-      validateMediaUpload({ contentType: asset.original.contentType, bytes: input.bytes.byteLength, maxBytes: 25 * 1024 * 1024 });
+      validateMediaUpload({ contentType: asset.original.contentType, bytes: input.bytes.byteLength, maxBytes: input.maxBytes || 25 * 1024 * 1024 });
       const stored = await dependencies.storage.put({
         objectKey: asset.original.objectKey,
         bytes: input.bytes,
@@ -66,13 +75,13 @@ export function createMediaDomainService(dependencies: {
     async cleanup(input) {
       const currentTime = input.now ? Date.parse(input.now) : Date.now();
       const cutoff = new Date(currentTime - input.abandonedAfterMs).toISOString();
-      const abandoned = await dependencies.metadata.listAbandoned(cutoff);
+      const abandoned = await dependencies.metadata.listAbandoned(cutoff, input.ownerUserId, input.siteId);
       for (const asset of abandoned) {
         await dependencies.metadata.remove(asset.id);
         await dependencies.storage.delete(asset.original.objectKey);
       }
-      const keys = await dependencies.storage.listKeys('sites/');
-      const known = new Set((await dependencies.metadata.listAll()).flatMap((asset) => [asset.original.objectKey, asset.processed?.objectKey, asset.thumbnail?.objectKey].filter((key): key is string => Boolean(key))));
+      const keys = await dependencies.storage.listKeys(input.siteId ? `sites/${input.siteId}/` : 'sites/');
+      const known = new Set((await dependencies.metadata.listAll(input.ownerUserId, input.siteId)).flatMap((asset) => [asset.original.objectKey, asset.processed?.objectKey, asset.thumbnail?.objectKey].filter((key): key is string => Boolean(key))));
       const orphanedKeys = keys.filter((key) => !known.has(key));
       await Promise.all(orphanedKeys.map((key) => dependencies.storage.delete(key)));
       return { abandoned: abandoned.length, orphaned: orphanedKeys.length };

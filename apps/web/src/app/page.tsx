@@ -1,6 +1,18 @@
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { CreatorPage } from '@/components/public/CreatorPage';
+import { loadPublicSiteByHostname } from '@/server/public-sites';
+import { getRequestHost, isCustomPublicHost, publicOrigin } from '@/server/public-request';
 
-export default function WebHomePage() {
+export const dynamic = 'force-dynamic';
+
+export default async function WebHomePage() {
+  const host = await getRequestHost();
+  if (isCustomPublicHost(host)) {
+    const site = await loadPublicSiteByHostname(host);
+    if (!site) notFound();
+    return <CreatorPage site={site} origin={publicOrigin(host)} />;
+  }
   return (
     <div className="raloa-shell">
       <header className="raloa-header">

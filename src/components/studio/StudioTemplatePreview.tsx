@@ -35,7 +35,7 @@ export interface StudioTemplatePreviewProps {
  * (including stage background gradient, ambient lighting, and phone container styles)
  * without relying on hard-coded CSS background classes.
  */
-export const StudioTemplatePreview: React.FC<StudioTemplatePreviewProps> = ({
+export const StudioTemplatePreview = React.memo<StudioTemplatePreviewProps>(function StudioTemplatePreview({
   template,
   username,
   displayName,
@@ -57,7 +57,7 @@ export const StudioTemplatePreview: React.FC<StudioTemplatePreviewProps> = ({
   cardShadow,
   borderStyle,
   designTokens
-}) => {
+}) {
   // Dynamically compute the template's background container properties with accent color applied
   const resolvedDesignTokens = designTokens || designTokensFromSite({
     accentColor,
@@ -68,7 +68,7 @@ export const StudioTemplatePreview: React.FC<StudioTemplatePreviewProps> = ({
     themeMode,
     bgStyle,
     coverImage
-  });
+});
   const effectiveTemplate = { ...template, themeColor: resolvedDesignTokens.accentColor };
   const bgContainerProps = getTemplateBackgroundContainerProperties(
     effectiveTemplate,
@@ -163,4 +163,4 @@ export const StudioTemplatePreview: React.FC<StudioTemplatePreviewProps> = ({
       )}
     </div>
   );
-};
+});

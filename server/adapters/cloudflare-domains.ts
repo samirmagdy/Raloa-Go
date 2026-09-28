@@ -1,13 +1,13 @@
 import type { DomainProviderAdapter } from '../domains/domains/contracts';
 
-type CloudflareRequest = (path: string, options?: { method?: string; body?: unknown }) => Promise<any>;
+type CloudflareRequest = (path: string, options?: RequestInit) => Promise<any>;
 
 export function createCloudflareDomainAdapter(input: { request: CloudflareRequest; zoneId: string; origin: string }): DomainProviderAdapter {
   return {
     async provision({ hostname, siteId, idempotencyKey }) {
       const response = await input.request(`/zones/${input.zoneId}/custom_hostnames`, {
         method: 'POST',
-        body: { hostname, ssl: { method: 'txt', type: 'dv' }, custom_metadata: { siteId, idempotencyKey } }
+        body: JSON.stringify({ hostname, ssl: { method: 'txt', type: 'dv' }, custom_metadata: { siteId, idempotencyKey } })
       });
       return {
         providerHostnameId: String(response.id),
@@ -16,9 +16,9 @@ export function createCloudflareDomainAdapter(input: { request: CloudflareReques
       };
     },
     async verify(providerHostnameId) {
-      const response = await input.request(`/zones/${input.zoneId}/custom_hostnames/${providerHostnameId}`);
+      const response = await input.request(`/zones/${input.zoneId}/custom_hostnames/${encodeURIComponent(providerHostnameId)}`);
       return { verified: response.status === 'active', certificateStatus: response.ssl?.status === 'active' ? 'active' : 'pending' };
     },
-    remove: (providerHostnameId) => input.request(`/zones/${input.zoneId}/custom_hostnames/${providerHostnameId}`, { method: 'DELETE' }).then(() => undefined)
+    remove: (providerHostnameId) => input.request(`/zones/${input.zoneId}/custom_hostnames/${encodeURIComponent(providerHostnameId)}`, { method: 'DELETE' }).then(() => undefined)
   };
 }

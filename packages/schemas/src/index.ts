@@ -32,8 +32,33 @@ export const jobEnvelopeSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
 });
 
+const publicAssetSchema = z.string().max(2_000).default('');
+
+/** The only shape consumed by the public renderer. It is deliberately detached from Studio models. */
+export const publicSiteSnapshotSchema = z.object({
+  siteId: z.string().min(1),
+  handle: z.string().regex(/^[a-z0-9][a-z0-9-._-]{0,63}$/i),
+  displayName: z.string().trim().min(1).max(160),
+  role: z.string().max(160).default(''),
+  bio: z.string().max(4_000).default(''),
+  bioAr: z.string().max(4_000).default(''),
+  avatar: publicAssetSchema,
+  coverImage: publicAssetSchema,
+  metaTitle: z.string().max(160).optional(),
+  metaDescription: z.string().max(320).optional(),
+  locale: z.enum(['en', 'ar']).default('en'),
+  publicationVersion: z.number().int().positive(),
+  isPublished: z.literal(true),
+  designTokens: z.record(z.string(), z.unknown()).default({}),
+  links: z.array(z.record(z.string(), z.unknown())).default([]),
+  socials: z.array(z.record(z.string(), z.unknown())).default([]),
+  blocks: z.array(z.record(z.string(), z.unknown())).default([]),
+}).passthrough();
+
 export type TenantScope = z.infer<typeof tenantScopeSchema>;
 export type DomainEvent = z.infer<typeof domainEventSchema>;
 export type BookingCreate = z.infer<typeof bookingCreateSchema>;
 export type JobEnvelope = z.infer<typeof jobEnvelopeSchema>;
+export type PublicSiteSnapshot = z.infer<typeof publicSiteSnapshotSchema>;
 
+export * from './api-contract';

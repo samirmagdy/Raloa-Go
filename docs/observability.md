@@ -27,7 +27,17 @@ export the same names and labels to Cloud Monitoring/OpenTelemetry, Prometheus, 
 backend. Metrics must use bounded route/provider/status labels and never raw IDs as unbounded label
 cardinality.
 
-Set `SENTRY_DSN` for backend exception tracking and `VITE_SENTRY_DSN` for authenticated Studio
-frontend tracking. Sentry initialization is optional, release/environment-aware, and does not alter
-local behavior when DSNs are absent. Public-page loading keeps the Sentry module out of its initial
-entry path to preserve the public performance boundary.
+Set `SENTRY_DSN` for Express/API and Cloud Task worker exception tracking and
+`NEXT_PUBLIC_SENTRY_DSN` for the Next.js browser. `RELEASE_ID`/`NEXT_PUBLIC_RELEASE_ID` and
+`APP_ENV`/`NEXT_PUBLIC_APP_ENV` identify deployments. Sentry initialization is optional and does
+not alter local behavior when DSNs are absent.
+
+Next production builds upload source maps only when `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and
+`SENTRY_PROJECT` are available. Client source maps are hidden from public responses; the release
+bundle never contains the auth token. If the auth token is absent, upload is disabled rather than
+falling back to an unauthenticated upload.
+
+The browser, server, API, and worker integrations remove request bodies, cookies, users, tokens,
+payment/card fields, and provider payloads before sending events. API and worker events carry
+request IDs, trace IDs, job IDs, correlation IDs, provider labels, route latency, release, and
+environment where available.

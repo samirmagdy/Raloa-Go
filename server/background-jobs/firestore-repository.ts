@@ -78,6 +78,10 @@ export function createFirestoreBackgroundJobRepository(db: Firestore): Backgroun
         changed = true;
       });
       return changed;
+    },
+    async countPending(now) {
+      const snapshot = await collection.where('status', 'in', ['pending', 'retry', 'processing']).where('availableAt', '<=', now).limit(10000).get();
+      return snapshot.size;
     }
   };
 }

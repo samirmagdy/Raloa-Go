@@ -1,6 +1,6 @@
 export const AUDIT_ACTIONS = [
   'site.created', 'site.updated', 'site.published', 'site.unpublished', 'site.deleted',
-  'domain.provisioned', 'domain.verified', 'domain.deleted',
+  'domain.provisioned', 'domain.verified', 'domain.deleted', 'domain.removal_queued',
   'billing.checkout_created', 'billing.portal_opened', 'billing.subscription_changed', 'billing.webhook_processed',
   'integration.connected', 'integration.disconnected',
   'order.transitioned', 'order.fulfillment_changed',
@@ -57,4 +57,3 @@ export function safeAuditMetadata(input: Record<string, unknown> | undefined): R
   }
   return output;
 }
-

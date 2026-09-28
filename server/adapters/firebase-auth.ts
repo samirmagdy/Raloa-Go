@@ -9,7 +9,8 @@ export function createFirebaseAuthAdapter(auth: Pick<Auth, 'verifyIdToken'>): Fi
   return {
     async verifyBearerToken(token) {
       try {
-        const decoded = await auth.verifyIdToken(token);
+        if (!/^\S{20,4096}$/.test(token)) return null;
+        const decoded = await auth.verifyIdToken(token, true);
         return { uid: decoded.uid, email: decoded.email };
       } catch {
         return null;
@@ -17,4 +18,3 @@ export function createFirebaseAuthAdapter(auth: Pick<Auth, 'verifyIdToken'>): Fi
     }
   };
 }
-

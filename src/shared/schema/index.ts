@@ -155,8 +155,8 @@ export function validateDomainEventPayloadV1(name: DomainEventNameV1, payload: u
   return domainEventPayloadSchemasV1[name].parse(payload);
 }
 export const outboxEventSchemaV1 = z.object({
-  id: z.string().min(1), eventType: z.string().regex(/^[A-Za-z][A-Za-z0-9]*\.v1$/), aggregateType: z.string().min(1), aggregateId: z.string().min(1), idempotencyKey: z.string().min(1), payload: z.record(z.string(), z.unknown()),
-  status: z.enum(['pending', 'publishing', 'published', 'retry', 'dead_letter']), attempts: z.number().int().nonnegative(), maxAttempts: z.number().int().positive(), availableAt: z.string().datetime(), leaseUntil: z.string().datetime().optional(), lastError: z.string().optional(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(), publishedAt: z.string().datetime().optional()
+  id: z.string().min(1), eventType: z.string().regex(/^[A-Za-z][A-Za-z0-9]*\.v1$/), eventVersion: z.number().int().positive().default(1), aggregateType: z.string().min(1), aggregateId: z.string().min(1), idempotencyKey: z.string().min(1), correlationId: z.string().min(1).max(200).optional(), payload: z.record(z.string(), z.unknown()),
+  status: z.enum(['pending', 'publishing', 'published', 'retry', 'dead_letter']), attempts: z.number().int().nonnegative(), maxAttempts: z.number().int().positive(), availableAt: z.string().datetime(), leaseUntil: z.string().datetime().optional(), lastError: z.string().optional(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(), publishedAt: z.string().datetime().optional(), processedAt: z.string().datetime().optional(), deadLetteredAt: z.string().datetime().optional()
 }).passthrough();
 export const providerEventSchemaV1 = z.object({
   provider: z.enum(['stripe', 'cloudflare', 'google_calendar', 'microsoft_graph', 'firebase_auth', 'email', 'storage']),
@@ -194,7 +194,20 @@ export const normalizedEntitlementSchema = z.object({
   studioControls: z.boolean(),
   allowedBackgroundStyles: z.array(z.string()),
   allowedBlockTypes: z.array(z.string()),
-  allowedDesignOptions: z.object({ cardRadius: z.array(z.string()), cardShadow: z.array(z.string()), borderStyle: z.array(z.string()) })
+  allowedDesignOptions: z.object({ cardRadius: z.array(z.string()), cardShadow: z.array(z.string()), borderStyle: z.array(z.string()) }),
+  integrationAvailability: z.object({
+    googleCalendar: z.boolean(),
+    microsoftCalendar: z.boolean(),
+    socialIntegrations: z.boolean(),
+    emailDelivery: z.boolean()
+  }),
+  studioFeatures: z.object({
+    advancedControls: z.boolean(),
+    analyticsDashboard: z.boolean(),
+    customDomains: z.boolean(),
+    premiumTemplates: z.boolean(),
+    removeBranding: z.boolean()
+  })
 });
 
 export const publicApiPayloadSchemas = {
@@ -213,14 +226,16 @@ export const workerPayloadSchemas = {
   domain_verification: z.object({ domainId: z.string().optional(), eventId: z.string().optional(), domain: z.string().optional() }).passthrough(),
   media_processing: z.object({ mediaId: z.string().optional(), eventId: z.string().optional(), assetId: z.string().optional() }).passthrough(),
   stripe_reconciliation: z.object({ eventId: z.string().optional(), customerId: z.string().optional(), subscriptionId: z.string().optional() }).passthrough(),
-  cleanup: z.object({ eventId: z.string().optional(), olderThan: z.string().datetime().optional() }).passthrough()
+  cleanup: z.object({ eventId: z.string().optional(), olderThan: z.string().datetime().optional() }).passthrough(),
+  outbox_publish: z.object({ eventId: z.string().optional(), correlationId: z.string().optional() }).passthrough()
 } as const;
 
 export const backgroundJobSchemaV1 = z.object({
   id: z.string().min(1).max(200),
-  kind: z.enum(['calendar_sync', 'email_delivery', 'domain_verification', 'oauth_refresh', 'analytics_rollup', 'media_processing', 'stripe_reconciliation', 'order_processing', 'cleanup']),
+  kind: z.enum(['calendar_sync', 'email_delivery', 'domain_verification', 'oauth_refresh', 'analytics_rollup', 'media_processing', 'stripe_reconciliation', 'order_processing', 'cleanup', 'outbox_publish']),
   payload: z.record(z.string(), z.unknown()),
   idempotencyKey: z.string().min(1).max(300),
+  correlationId: z.string().min(1).max(200).optional(),
   status: z.enum(['pending', 'processing', 'retry', 'completed', 'dead_letter']),
   attempts: z.number().int().nonnegative(),
   maxAttempts: z.number().int().positive(),

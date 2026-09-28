@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { loadProductionSecrets, MANAGED_SECRET_ENV_NAMES } from './server/infrastructure/secrets/provider';
 
-const env = { SECRET_MANAGER_ENABLED: 'true', SECRET_MANAGER_PROJECT_ID: 'test-project' } as NodeJS.ProcessEnv;
+const env = { SECRET_MANAGER_ENABLED: 'true', SECRET_MANAGER_PROJECT_ID: 'test-project', POSTGRES_ENABLED: 'true', MEDIA_R2_AUTHORITATIVE: 'true' } as NodeJS.ProcessEnv;
 const calls: string[] = [];
 const client = {
   accessSecretVersion: async ({ name }: { name: string }) => {

@@ -11,7 +11,7 @@ export function getFirebaseServerVerifier(): FirebaseServerVerifier {
   verifier = {
     async verifyIdToken(token) {
       try {
-        const decoded = await auth.verifyIdToken(token);
+        const decoded = await auth.verifyIdToken(token, true);
         return { firebaseUid: decoded.uid, email: decoded.email, emailVerified: decoded.email_verified, expiresAt: decoded.exp };
       } catch { return null; }
     },

@@ -20,6 +20,7 @@ import { Locale } from '../../types';
 import { SortableBlockList, StudioBlockItem } from './SortableBlockList';
 import { optimizedMediaUrl } from '../MediaGallery';
 import { isSupportedBlockType, isSupportedEmbedUrl } from '../../lib/blockTypes';
+import { isSelectableBlockType, normalizeBlock } from '@raloa/blocks';
 import { normalizeSiteSlug, validateSiteSlug } from '../../lib/siteSlug';
 import { uploadMedia } from '../../lib/mediaUpload';
 
@@ -133,7 +134,12 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
       onEntitlementError?.('This block type is not included in your current plan.');
       return;
     }
-    onLinksChange([...links, block]);
+    const normalized = normalizeBlock(block);
+    if (!normalized.block) {
+      onEntitlementError?.(normalized.issues[0]?.message || 'This block is not valid.');
+      return;
+    }
+    onLinksChange([...links, { ...block, ...normalized.block.props, type: normalized.block.type } as StudioBlockItem]);
     setNewTitle('');
     setNewUrl('');
     setNewSubtitle('');
@@ -422,7 +428,7 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
 
             {/* Block Type Selection Grid */}
             <div className="my-4 grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
-              {blockTypes.map((b) => {
+              {blockTypes.filter((b) => isSelectableBlockType(b.type)).map((b) => {
                 const Icon = b.icon;
                 const isSelected = newBlockType === b.type;
                 const isAllowed = !allowedBlockTypes || allowedBlockTypes.includes(b.type);

@@ -25,6 +25,7 @@ export interface CalendarProviderAdapter {
   exchangeCode(code: string): Promise<CalendarTokenBundle>;
   refresh(bundle: CalendarTokenBundle): Promise<CalendarTokenBundle>;
   createEvent(bundle: CalendarTokenBundle, event: CalendarBookingEvent): Promise<{ externalEventId: string }>;
+  updateEvent?(bundle: CalendarTokenBundle, externalEventId: string, event: CalendarBookingEvent): Promise<void>;
   cancelEvent(bundle: CalendarTokenBundle, externalEventId: string): Promise<void>;
 }
 
@@ -104,6 +105,14 @@ export function calendarAdapter(provider: CalendarProvider): CalendarProviderAda
       }
       const payload = await jsonRequest('https://graph.microsoft.com/v1.0/me/events', { method: 'POST', headers: { Authorization: `Bearer ${token.accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ subject: event.title, body: { contentType: 'text', content: event.description || '' }, start: { dateTime: event.start, timeZone: event.timezone }, end: { dateTime: event.end, timeZone: event.timezone }, attendees: [{ emailAddress: { address: event.attendeeEmail }, type: 'required' }] }) });
       return { externalEventId: String(payload.id) };
+    },
+    async updateEvent(bundle, externalEventId, event) {
+      const token = await refreshToken(provider, bundle);
+      const url = google ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(externalEventId)}` : `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(externalEventId)}`;
+      const body = google
+        ? { summary: event.title, description: event.description, start: { dateTime: event.start, timeZone: event.timezone }, end: { dateTime: event.end, timeZone: event.timezone }, attendees: [{ email: event.attendeeEmail }] }
+        : { subject: event.title, body: { contentType: 'text', content: event.description || '' }, start: { dateTime: event.start, timeZone: event.timezone }, end: { dateTime: event.end, timeZone: event.timezone }, attendees: [{ emailAddress: { address: event.attendeeEmail }, type: 'required' }] };
+      await jsonRequest(url, { method: 'PATCH', headers: { Authorization: `Bearer ${token.accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     },
     async cancelEvent(bundle, externalEventId) {
       const token = await refreshToken(provider, bundle);

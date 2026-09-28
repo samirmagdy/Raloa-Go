@@ -147,8 +147,8 @@ export function createPostgresBookingsRepository(pool: Pool): PostgresBookingsRe
         );
       }
       await client.query(
-        `INSERT INTO outbox_events (event_type, aggregate_type, aggregate_id, idempotency_key, payload)
-         VALUES ('BookingCreated.v1', 'booking', $1, $2, $3::jsonb)
+        `INSERT INTO outbox_events (event_type, event_version, aggregate_type, aggregate_id, idempotency_key, correlation_id, payload)
+         VALUES ('BookingCreated.v1', 1, 'booking', $1, $2, $2, $3::jsonb)
          ON CONFLICT (idempotency_key) DO NOTHING`,
         [bookingId, `booking:${legacyId}:created`, JSON.stringify({ bookingId: legacyId, hostUserId, siteId })]
       );
@@ -186,7 +186,7 @@ export function createPostgresBookingsRepository(pool: Pool): PostgresBookingsRe
         await client.query(`UPDATE bookings SET status = COALESCE($2::booking_status, status), notes = COALESCE($3, notes), updated_at = now(), legacy_payload = legacy_payload || $4::jsonb WHERE id = $1`, [found.bookingId, status, changes.notes ? String(changes.notes) : null, JSON.stringify(changes)]);
         if (becomesCancelled && current.rows[0].slot_id) {
           await client.query(`UPDATE booking_slots SET booked_count = GREATEST(booked_count - 1, 0), status = CASE WHEN status = 'booked' THEN 'available'::booking_slot_status ELSE status END, updated_at = now() WHERE id = $1`, [current.rows[0].slot_id]);
-          await client.query(`INSERT INTO outbox_events (event_type, aggregate_type, aggregate_id, idempotency_key, payload) VALUES ('BookingCancelled.v1', 'booking', $1, $2, $3::jsonb) ON CONFLICT (idempotency_key) DO NOTHING`, [found.bookingId, `booking:${found.legacyId}:cancelled`, JSON.stringify({ bookingId: found.legacyId, siteId: current.rows[0].site_id })]);
+          await client.query(`INSERT INTO outbox_events (event_type, event_version, aggregate_type, aggregate_id, idempotency_key, correlation_id, payload) VALUES ('BookingCancelled.v1', 1, 'booking', $1, $2, $2, $3::jsonb) ON CONFLICT (idempotency_key) DO NOTHING`, [found.bookingId, `booking:${found.legacyId}:cancelled`, JSON.stringify({ bookingId: found.legacyId, siteId: current.rows[0].site_id })]);
         }
       });
     },

@@ -2,6 +2,8 @@
 
 The production topology separates delivery, authenticated application traffic, asynchronous work, and data ownership. The current Express/Vite image is retained as a compatibility image while the services are split operationally; the public deployment applies a route allowlist so private Studio/API and webhook endpoints are not exposed through the public origin.
 
+Staging renders the same topology into a dedicated GCP project with service names prefixed by `STAGING_RESOURCE_PREFIX` (for example `raloa-staging-ci-public-web`, `raloa-staging-ci-studio-api`, and `raloa-staging-ci-background-worker`). It uses a separate Firebase project, PostgreSQL database, R2 bucket, Cloud Tasks queue, Cloudflare zone/hostname, Stripe test-mode endpoint, Sentry environment, calendar OAuth applications, and email sender domain. Production service names and credentials are never used by the staging deployment.
+
 ```text
 Internet/CDN
     |
@@ -50,4 +52,3 @@ API and worker service accounts receive only the Secret Manager accessor and KMS
 5. If a provider integration fails, stop traffic shifting, disable the affected job kind or route, reconcile provider events, and preserve queued work for retry. Never roll back a committed transactional migration destructively.
 
 Topology validation is available through `npm run check:deployment-topology`.
-

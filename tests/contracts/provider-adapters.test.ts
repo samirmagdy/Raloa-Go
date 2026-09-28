@@ -89,8 +89,8 @@ describe('Email and Firebase Auth adapter contracts', () => {
   it('maps Firebase Auth verification success and failure to the application identity contract', async () => {
     const verifyIdToken = vi.fn().mockResolvedValueOnce({ uid: 'user-1', email: 'creator@example.test' }).mockRejectedValueOnce(new Error('provider failure'));
     const adapter = createFirebaseAuthAdapter({ verifyIdToken });
-    await expect(adapter.verifyBearerToken('valid-token')).resolves.toEqual({ uid: 'user-1', email: 'creator@example.test' });
-    await expect(adapter.verifyBearerToken('invalid-token')).resolves.toBeNull();
+    await expect(adapter.verifyBearerToken('v'.repeat(32))).resolves.toEqual({ uid: 'user-1', email: 'creator@example.test' });
+    await expect(adapter.verifyBearerToken('i'.repeat(32))).resolves.toBeNull();
   });
 });
 

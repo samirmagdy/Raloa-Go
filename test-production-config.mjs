@@ -21,7 +21,11 @@ const valid = {
   STRIPE_PRICE_STUDIO_YEARLY: 'price_studio_yearly',
   CLOUDFLARE_API_TOKEN: 'a'.repeat(40),
   CLOUDFLARE_ZONE_ID: 'a'.repeat(32),
-  TRUSTED_PROXY_HOPS: '1'
+  TRUSTED_PROXY_HOPS: '1',
+  CLOUD_TASKS_PROJECT_ID: 'raloa-production',
+  CLOUD_TASKS_LOCATION: 'europe-west1',
+  CLOUD_TASKS_QUEUE: 'raloa-background',
+  CLOUD_TASKS_WORKER_URL: 'https://worker.raloa.app/tasks/background-jobs'
 };
 
 const validResult = inspectProductionEnvironment(valid);

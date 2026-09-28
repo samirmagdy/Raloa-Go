@@ -23,12 +23,19 @@ only inside the trusted integration service and provider adapter call; it is
 never returned by a repository, controller, event, log, or client bundle.
 
 The Firestore implementation stores encrypted credentials in
-`oauth_connections`. PostgreSQL uses the `integrations` table with encrypted
-token columns, provider/site ownership, scope allowlists, connection state,
-refresh locks, token versions, and revocation timestamps.
+`oauth_connections`. PostgreSQL uses the `oauth_connections` table with
+encrypted token columns, provider/site ownership, scope allowlists, connection
+state, refresh locks, token versions, and revocation timestamps.
 
 Provider adapters contain OAuth-provider details only. They are injected at the
 composition root and are called by the service through `withAccessToken`, which
 handles expiry checks, refresh locking, token rotation, reauthorization state,
 and revocation. New providers must define the smallest required scope list and
 must not expose raw credentials through an HTTP route.
+
+Calendar connections can be switched to PostgreSQL with
+`CALENDAR_OAUTH_POSTGRES_AUTHORITATIVE=true`. Google Calendar and Microsoft
+Graph implement the provider-neutral calendar port. OAuth callbacks persist
+encrypted metadata, while booking event creation, update, cancellation, and
+token refresh run through durable Cloud Tasks jobs. Provider outages therefore
+change job retry state rather than blocking booking requests.

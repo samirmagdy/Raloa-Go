@@ -2,7 +2,7 @@
 
 Production secret values are loaded during server bootstrap from Google Secret Manager when `SECRET_MANAGER_ENABLED=true`. Secret names default to the server-only environment variable name; deployments may override a name with `SECRET_MANAGER_SECRET_<ENV_NAME>`.
 
-Managed secrets include `AUTH_SESSION_SECRET`, Stripe credentials, the Cloudflare API token, Google/Microsoft/GitHub OAuth client secrets, and `RESEND_API_KEY`. Production uses the non-secret `INTEGRATION_KMS_KEY_NAME` to select the Cloud KMS key. Production startup fails if any managed secret or KMS configuration cannot be read. Local development and tests may use `.env` values with `SECRET_MANAGER_ENABLED=false`, but those values must never be used for production.
+Managed secrets include `AUTH_SESSION_SECRET`, Stripe credentials, the Cloudflare API token, Google/Microsoft/GitHub OAuth client secrets, `RESEND_API_KEY`, PostgreSQL connection URLs, and Cloudflare R2 access keys. Production and staging use the non-secret `INTEGRATION_KMS_KEY_NAME` to select the Cloud KMS key. Runtime startup fails if any enabled managed secret or KMS configuration cannot be read. Local development and tests may use `.env` values with `SECRET_MANAGER_ENABLED=false`, but those values must never be used for staging or production.
 
 ## Provisioning and rotation
 

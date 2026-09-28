@@ -1,6 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import type { BackgroundJob } from '../../background-jobs/types';
-import { calendarAdapter, type CalendarBookingEvent, type CalendarProvider } from '../../../server-calendar';
+import { calendarAdapter, type CalendarBookingEvent, type CalendarProvider, type CalendarProviderAdapter } from '../../../server-calendar';
 import { decryptCalendarTokens, encryptCalendarTokens } from '../../../server-calendar';
 
 const MAX_ATTEMPTS = 8;
@@ -9,7 +9,7 @@ function retryDelay(attempts: number): number {
   return Math.min(6 * 60 * 60 * 1000, 30_000 * (2 ** Math.min(attempts - 1, 8)));
 }
 
-export function createCalendarSyncWorker(dependencies: { db: Firestore; clock?: () => string }) {
+export function createCalendarSyncWorker(dependencies: { db: Firestore; providers?: Partial<Record<CalendarProvider, CalendarProviderAdapter>>; clock?: () => string }) {
   const clock = dependencies.clock || (() => new Date().toISOString());
   return {
     async run(job: BackgroundJob): Promise<void> {
@@ -47,7 +47,7 @@ export function createCalendarSyncWorker(dependencies: { db: Firestore; clock?: 
           const integrationSnapshot = await integrationRef.get();
           if (!integrationSnapshot.exists) throw new Error('CALENDAR_REAUTH_REQUIRED');
           const integration = integrationSnapshot.data() || {};
-          const adapter = calendarAdapter(provider);
+          const adapter = dependencies.providers?.[provider] || calendarAdapter(provider);
           let tokens = await decryptCalendarTokens(String(integration.encryptedTokens || ''));
           const refreshed = await adapter.refresh(tokens);
           if (JSON.stringify(refreshed) !== JSON.stringify(tokens)) {
@@ -56,6 +56,11 @@ export function createCalendarSyncWorker(dependencies: { db: Firestore; clock?: 
           }
           if (raw.operation === 'cancel') {
             if (typeof raw.externalEventId === 'string' && raw.externalEventId) await adapter.cancelEvent(tokens, raw.externalEventId);
+            await document.ref.update({ status: 'completed', completedAt: clock(), updatedAt: clock(), lastError: null });
+          } else if (raw.operation === 'update') {
+            if (!adapter.updateEvent || typeof raw.externalEventId !== 'string' || !raw.externalEventId) throw new Error('CALENDAR_UPDATE_NOT_SUPPORTED');
+            const event: CalendarBookingEvent = { id: String(booking.id), title: `${String(booking.serviceName || 'Appointment')} with ${String(booking.customerName || 'Guest')}`, description: String(booking.notes || ''), start: String(booking.slotStart), end: String(booking.slotEnd), timezone: String(booking.timezone || 'UTC'), attendeeEmail: String(booking.customerEmail) };
+            await adapter.updateEvent(tokens, raw.externalEventId, event);
             await document.ref.update({ status: 'completed', completedAt: clock(), updatedAt: clock(), lastError: null });
           } else {
             if (typeof raw.externalEventId === 'string' && raw.externalEventId) {

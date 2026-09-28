@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { webConfig } from '../env';
 import './globals.css';
+import '../../../../src/index.css';
 
 export const metadata = {
   title: { default: 'Raloa', template: '%s · Raloa' },

@@ -1,6 +1,6 @@
 export const JOB_KINDS = [
   'calendar_sync', 'email_delivery', 'domain_verification', 'oauth_refresh',
-  'analytics_rollup', 'media_processing', 'stripe_reconciliation', 'order_processing', 'cleanup'
+  'analytics_rollup', 'media_processing', 'stripe_reconciliation', 'order_processing', 'cleanup', 'outbox_publish'
 ] as const;
 
 export type JobKind = typeof JOB_KINDS[number];
@@ -11,6 +11,7 @@ export interface BackgroundJob {
   kind: JobKind;
   payload: Record<string, unknown>;
   idempotencyKey: string;
+  correlationId?: string;
   status: JobStatus;
   attempts: number;
   maxAttempts: number;
@@ -32,6 +33,7 @@ export interface BackgroundJobRepository {
   listRecoverable(now: string, limit: number): Promise<BackgroundJob[]>;
   requeue(id: string, availableAt: string, reason: string): Promise<boolean>;
   deadLetter?(id: string, reason: string, at: string): Promise<boolean>;
+  countPending?(now: string): Promise<number>;
 }
 
 export interface JobDispatcher {
@@ -45,6 +47,7 @@ export interface JobRequest {
   idempotencyKey: string;
   payload: Record<string, unknown>;
   maxAttempts?: number;
+  correlationId?: string;
 }
 
 /** Provider-neutral application port. Cloud Tasks, Pub/Sub, or another broker implement it outside domain code. */
@@ -57,3 +60,6 @@ export interface BackgroundJobQueue {
   run(id: string): Promise<void>;
   reconcile(limit?: number): Promise<{ requeued: number; inspected: number }>;
 }
+
+/** Public application port; transports must not leak into domain services. */
+export type JobQueue = BackgroundJobQueue;

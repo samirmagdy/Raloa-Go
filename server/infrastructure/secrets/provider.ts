@@ -13,7 +13,10 @@ export const MANAGED_SECRET_ENV_NAMES = Object.freeze([
   'GOOGLE_CALENDAR_CLIENT_SECRET',
   'MICROSOFT_CALENDAR_CLIENT_SECRET',
   'GITHUB_CLIENT_SECRET',
-  'RESEND_API_KEY'
+  'RESEND_API_KEY',
+  'POSTGRES_DATABASE_URL',
+  'CLOUDFLARE_R2_ACCESS_KEY_ID',
+  'CLOUDFLARE_R2_SECRET_ACCESS_KEY'
 ] as const);
 
 type ManagedSecretName = (typeof MANAGED_SECRET_ENV_NAMES)[number];
@@ -38,7 +41,12 @@ export async function loadProductionSecrets(
   const projectId = env.SECRET_MANAGER_PROJECT_ID || env.GOOGLE_CLOUD_PROJECT || env.FIREBASE_PROJECT_ID;
   if (!projectId) throw new Error('SECRET_MANAGER_PROJECT_ID_NOT_CONFIGURED');
 
-  for (const key of MANAGED_SECRET_ENV_NAMES) {
+  const secretNames = MANAGED_SECRET_ENV_NAMES.filter((key) => {
+    if (key === 'POSTGRES_DATABASE_URL') return env.POSTGRES_ENABLED === 'true';
+    if (key === 'CLOUDFLARE_R2_ACCESS_KEY_ID' || key === 'CLOUDFLARE_R2_SECRET_ACCESS_KEY') return env.MEDIA_R2_AUTHORITATIVE === 'true';
+    return true;
+  });
+  for (const key of secretNames) {
     try {
       const response = await client.accessSecretVersion({ name: `projects/${projectId}/secrets/${secretName(env, key)}/versions/latest` });
       const version = (response as [{ payload?: { data?: string | Uint8Array | null } }])[0];

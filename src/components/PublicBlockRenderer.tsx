@@ -4,6 +4,7 @@ import type { MediaGalleryItem, TemplateItem, TemplateThemeConfig, DesignTokens 
 import { designCardStyle, designTypographyStyle } from '../shared/rendering';
 import { MediaGallery } from './MediaGallery';
 import { SafeImage } from './SafeImage';
+import { normalizeBlock } from '@raloa/blocks';
 
 type PublicBlock = TemplateItem['sampleLinks'][number];
 
@@ -58,7 +59,7 @@ const MissingBlock: React.FC<{ label: string; isRtl: boolean }> = ({ label, isRt
 );
 
 export const PublicBlockRenderer: React.FC<PublicBlockRendererProps> = ({
-  block,
+  block: rawBlock,
   isRtl,
   themeConfig,
   designTokens,
@@ -66,6 +67,9 @@ export const PublicBlockRenderer: React.FC<PublicBlockRendererProps> = ({
   onAudience
 }) => {
   const [mediaError, setMediaError] = useState(false);
+  const normalized = normalizeBlock(rawBlock);
+  if (!normalized.block) return <MissingBlock label={isRtl ? 'نوع كتلة غير مدعوم' : 'Unsupported block type'} isRtl={isRtl} />;
+  const block = { ...rawBlock, ...normalized.block.props, type: normalized.block.type } as PublicBlock;
   const title = isRtl ? block.titleAr : block.title;
   const subtitle = isRtl ? block.subtitleAr : block.subtitle;
   const cardStyle = {

@@ -1,6 +1,7 @@
 import type { AuthenticatedUser } from '../../server-services';
 import { isRoleActionAllowed } from '@raloa/auth';
-import { getPlanCapabilities, type PlanCapabilities, type PlanTier } from '../../src/lib/planCapabilities';
+import { capabilitiesForPlan } from '../domains/entitlements/service';
+import type { PlanCapabilities, PlanTier } from '../../src/lib/planCapabilities';
 
 export type ApplicationRole = 'owner' | 'admin' | 'editor' | 'viewer';
 export type PolicyAction =
@@ -46,7 +47,7 @@ export async function resolveAuthorizationContext(identity: AuthenticatedUser, s
     ? 'owner'
     : await source.loadMembership(identity.uid, workspaceId, site.id);
   if (!role) throw new Error('RESOURCE_NOT_FOUND');
-  return { identity, account, workspaceId, site, role, entitlements: getPlanCapabilities({ plan: account.plan ?? 'free', referralProUntil: account.referralProUntil ?? undefined }) };
+  return { identity, account, workspaceId, site, role, entitlements: capabilitiesForPlan((account.plan ?? 'free') as PlanTier) as unknown as PlanCapabilities };
 }
 
 export function can(context: AuthorizationContext, action: PolicyAction): boolean {
