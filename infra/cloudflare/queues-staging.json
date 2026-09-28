@@ -1,0 +1,15 @@
+{
+  "environment": "staging",
+  "jobsQueue": "raloa-staging-jobs",
+  "deadLetterQueue": "raloa-staging-jobs-dlq",
+  "consumer": {
+    "batchSize": 10,
+    "batchTimeoutSeconds": 5,
+    "messageRetries": 5,
+    "retryDelaySeconds": 60,
+    "maxConcurrency": 10,
+    "deadLetterQueue": "raloa-staging-jobs-dlq"
+  },
+  "status": "provisioned-no-consumer",
+  "note": "Attach a reviewed Cloudflare Worker consumer only after the provider-independent JobQueue adapter and worker contract tests pass."
+}
