@@ -12,4 +12,4 @@ export const firebaseAuthBrowserConfig = parseFirebaseAuthBrowserConfig({
   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
   NEXT_PUBLIC_FIREBASE_PROJECT_ID: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   NEXT_PUBLIC_FIREBASE_APP_ID: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-}, process.env.NODE_ENV === 'production');
+}, process.env.NEXT_PUBLIC_FIREBASE_AUTH_REQUIRED === 'true');
