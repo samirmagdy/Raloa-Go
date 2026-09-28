@@ -39,6 +39,42 @@ Firebase Auth remains intentionally retained. Firestore is not yet Auth-only: it
 - **Test/staging-only:** staging fixture checks and migration verification scripts, although they still require Firestore credentials.
 - **Obsolete:** none can be safely classified obsolete until the production/source references are removed and reconciliation passes.
 
+## File-by-file removal plan
+
+| File | Classification | Removal condition |
+| --- | --- | --- |
+| `server-services.ts` | production read/write; authorization; feature flags | Replace all exported application loaders with PostgreSQL services; retain Firebase Auth only |
+| `server.ts` | production read/write; authorization; worker dependency | Move every handler to PostgreSQL services/controllers, then remove Firestore imports and direct calls |
+| `server/adapters/firebase.ts` | production compatibility adapter | Remove after no module imports it |
+| `server/audit/firestore.ts` | production write | Wire PostgreSQL audit repository and verify append-only audit parity |
+| `server/background-jobs/firestore-repository.ts` | background-job dependency | Wire PostgreSQL `operational_jobs` and Cloud Tasks only |
+| `server/core/ownership.ts` | authorization dependency | Resolve account/site membership from PostgreSQL |
+| `server/core/types.ts` | authorization/framework type dependency | Replace Firestore snapshot types with domain records |
+| `server/domains/analytics/index.ts` | production read/write | Use PostgreSQL rollups and analytical raw-event abstraction |
+| `server/domains/audience/index.ts` | production read/write | Use PostgreSQL audience repository with cursor pagination |
+| `server/domains/bookings/index.ts` | production read/write | Use PostgreSQL schedule/booking repositories and transaction boundaries |
+| `server/domains/bookings/migration.ts` | migration-only | Archive with migration tooling after reconciliation |
+| `server/domains/bookings/calendar-sync-worker.ts` | background-job dependency | Use PostgreSQL booking, OAuth, calendar state, and job repositories |
+| `server/domains/domains/index.ts` | production read/write | Use PostgreSQL domain service only |
+| `server/domains/domains/verification-worker.ts` | background-job dependency | Use PostgreSQL domain state and Cloudflare adapter |
+| `server/domains/integrations/index.ts` | production read/write | Use encrypted PostgreSQL OAuth/integration repositories |
+| `server/domains/inventory/index.ts` | production read/write | Use transactional PostgreSQL inventory service |
+| `server/domains/media/index.ts` | production read/write | Use PostgreSQL media metadata and R2 service |
+| `server/domains/notifications/email-worker.ts` | background-job dependency | Use PostgreSQL jobs/bookings and email adapter |
+| `server/domains/orders/index.ts` | production read/write | Use PostgreSQL order state machine and payment records |
+| `server/domains/products/index.ts` | production read/write | Use PostgreSQL product/variant repositories |
+| `server/domains/sites/index.ts` | production read/write | Use PostgreSQL sites/drafts/published snapshots |
+| `server/domains/subscriptions/index.ts` | production read/write | Use PostgreSQL subscriptions/billing state |
+| `server/infrastructure/feature-flags/firestore.ts` | feature-flag dependency | Implement and wire PostgreSQL feature flag repository |
+| `server/infrastructure/firestore-oauth-repository.ts` | production compatibility | Remove after OAuth repository cutover and token reconciliation |
+| `server/infrastructure/firestore-repository.ts` | production compatibility | Remove after generic repository consumers are migrated |
+| `server/infrastructure/migrations/firestore-checkpoint-store.ts` | migration-only | Move to archive/tooling package after migration completion |
+| `server/modules.ts` | production composition | Change module factory contracts from Firestore to repository interfaces |
+| `server/outbox/firestore.ts` | production write/background dependency | Wire PostgreSQL transactional outbox and Cloud Tasks |
+| `server/repositories/firestore.ts` | production fallback and migration source | Retain outside runtime until all domain reconciliation passes, then archive |
+| `server/repositories/site-persistence.ts` | production fallback | Remove Firestore site implementation after PostgreSQL site/profile parity |
+| `src/lib/firebase.ts` | Firebase Auth plus production Firestore client | Split Auth into an Auth-only module, remove Firestore imports, then preserve Auth module |
+
 ## Required PostgreSQL-only runtime wiring
 
 The production composition root must be changed from feature-flag selection to a required PostgreSQL graph:
@@ -69,5 +105,4 @@ FIRESTORE_AUTHORITY_CUTOVER_APPROVED=true \
 npm run check:firestore-authority
 ```
 
-The decommission gate remains separate and still requires an archive URI. Firebase Auth configuration is excluded from all Firestore cleanup checks.
-
+The decommission gate remains separate and still requires an archive URI. A boolean is not sufficient approval: the gate also verifies a signed, time-bounded approval artifact containing the change ticket, operator, archive URI, and reconciliation report reference. Firebase Auth configuration is excluded from all Firestore cleanup checks.

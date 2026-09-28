@@ -1,4 +1,4 @@
-import type { MediaMetadataRepository, MediaProcessor, MediaStorageAdapter } from './contracts';
+import { mediaObjectKey, type MediaMetadataRepository, type MediaProcessor, type MediaStorageAdapter } from './contracts';
 
 export type MediaProcessingResult = 'processed' | 'already_complete' | 'not_found' | 'failed';
 
@@ -17,8 +17,8 @@ export async function processMediaAsset(dependencies: {
   try {
     const bytes = await dependencies.loadOriginal(asset.original.objectKey);
     const result = await dependencies.processor.process({ asset, bytes });
-    const processedKey = `sites/${asset.siteId}/media/${asset.id}/processed`;
-    const thumbnailKey = `sites/${asset.siteId}/media/${asset.id}/thumbnail`;
+    const processedKey = mediaObjectKey({ siteId: asset.siteId, assetId: asset.id, variant: 'processed' });
+    const thumbnailKey = mediaObjectKey({ siteId: asset.siteId, assetId: asset.id, variant: 'thumbnail' });
     const [processed, thumbnail] = await Promise.all([
       dependencies.storage.put({ objectKey: processedKey, bytes: result.processed.bytes, contentType: result.processed.contentType, cacheControl: 'public,max-age=31536000,immutable' }),
       dependencies.storage.put({ objectKey: thumbnailKey, bytes: result.thumbnail.bytes, contentType: result.thumbnail.contentType, cacheControl: 'public,max-age=31536000,immutable' })

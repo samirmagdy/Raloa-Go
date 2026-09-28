@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { validateControlledApproval } from './cutover-approval.mjs';
 
 const roots = ['server.ts', 'server-services.ts', 'server', 'apps/web/src', 'src'];
 const ignored = new Set(['node_modules', 'dist', 'test-results', 'reports']);
@@ -35,6 +36,7 @@ if (hits.length) blockers.push(`Firestore production/source references remain in
 if (process.env.FIRESTORE_DECOMMISSION_APPROVED !== 'true') blockers.push('FIRESTORE_DECOMMISSION_APPROVED=true is required for the destructive cleanup phase.');
 if (process.env.FIRESTORE_RECONCILIATION_STATUS !== 'passed') blockers.push('FIRESTORE_RECONCILIATION_STATUS=passed is required.');
 if (!process.env.FIRESTORE_ARCHIVE_URI) blockers.push('FIRESTORE_ARCHIVE_URI is required before deletion.');
+blockers.push(...validateControlledApproval());
 
 if (blockers.length) {
   console.error('Firestore decommission gate blocked:');

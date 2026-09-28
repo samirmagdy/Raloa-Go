@@ -1,4 +1,4 @@
-import type { MediaAsset, MediaMetadataRepository, MediaProcessingQueue, MediaService, MediaStorageAdapter } from './contracts';
+import { mediaObjectKey, type MediaAsset, type MediaMetadataRepository, type MediaProcessingQueue, type MediaService, type MediaStorageAdapter } from './contracts';
 
 const allowedContentTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 export function validateMediaContentType(contentType: string): void { if (!allowedContentTypes.has(contentType)) throw new Error('UNSUPPORTED_MEDIA_TYPE'); }
@@ -20,7 +20,7 @@ export function createMediaDomainService(dependencies: {
     async beginUpload(input) {
       validateMediaContentType(input.contentType);
       const timestamp = clock();
-      const objectKey = `sites/${input.siteId}/media/${input.id}/original`;
+      const objectKey = mediaObjectKey({ siteId: input.siteId, assetId: input.id });
       const asset: MediaAsset = {
         id: input.id,
         ownerUserId: input.ownerUserId,

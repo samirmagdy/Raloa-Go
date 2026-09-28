@@ -2,6 +2,13 @@ export type MediaPurpose = 'gallery' | 'product' | 'background' | 'block' | 'ava
 export type MediaLifecycle = 'pending_upload' | 'uploaded' | 'processing' | 'ready' | 'failed' | 'deleted';
 export type MediaVariantKind = 'original' | 'processed' | 'thumbnail';
 
+export function mediaObjectKey(input: { siteId: string; assetId: string; variant?: MediaVariantKind }): string {
+  const siteId = input.siteId.trim();
+  const assetId = input.assetId.trim();
+  if (!siteId || !assetId || /[^a-zA-Z0-9_-]/.test(siteId) || /[^a-zA-Z0-9_-]/.test(assetId)) throw new Error('INVALID_MEDIA_OBJECT_ID');
+  return `sites/${siteId}/media/${assetId}/${input.variant || 'original'}`;
+}
+
 export type MediaObject = {
   provider: 'firebase_storage' | 'cloudflare_r2';
   objectKey: string;

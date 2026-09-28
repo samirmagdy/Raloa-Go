@@ -25,8 +25,9 @@ export function createCloudflareR2StorageAdapterFromEnv(env: NodeJS.ProcessEnv =
   const secretAccessKey = env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
   const bucket = env.CLOUDFLARE_R2_BUCKET;
   const publicBaseUrl = env.CLOUDFLARE_R2_PUBLIC_BASE_URL?.replace(/\/$/, '');
-  if (!accountId || !accessKeyId || !secretAccessKey || !bucket || !publicBaseUrl) return null;
-  const client = new S3Client({ region: 'auto', endpoint: `https://${accountId}.r2.cloudflarestorage.com`, credentials: { accessKeyId, secretAccessKey } });
+  const endpoint = env.CLOUDFLARE_R2_ENDPOINT || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : undefined);
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucket || !endpoint || !publicBaseUrl) return null;
+  const client = new S3Client({ region: 'auto', endpoint, credentials: { accessKeyId, secretAccessKey } });
   const adapter: MediaStorageAdapter = {
     provider: 'cloudflare_r2',
     async put(input) {
@@ -35,8 +36,14 @@ export function createCloudflareR2StorageAdapterFromEnv(env: NodeJS.ProcessEnv =
     },
     async delete(objectKey) { await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: objectKey })); },
     async listKeys(prefix) {
-      const result = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix }));
-      return (result.Contents || []).map((object) => object.Key).filter((key): key is string => Boolean(key));
+      const keys: string[] = [];
+      let continuationToken: string | undefined;
+      do {
+        const result = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: continuationToken }));
+        keys.push(...(result.Contents || []).map((object) => object.Key).filter((key): key is string => Boolean(key)));
+        continuationToken = result.IsTruncated ? result.NextContinuationToken : undefined;
+      } while (continuationToken);
+      return keys;
     },
     getCdnUrl: (objectKey) => `${publicBaseUrl}/${objectKey}`,
     async createUploadUrl(input) {

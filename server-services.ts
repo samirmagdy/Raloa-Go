@@ -5,7 +5,7 @@ import { getStorage } from 'firebase-admin/storage';
 import Stripe from 'stripe';
 import { canonicalSiteToLegacy, normalizeSiteContent } from './src/lib/contentSchema';
 import { normalizeSiteSlug, validateSiteSlug } from './src/lib/siteSlug';
-import { assertProductionEnvironment } from './server-config.mjs';
+import { assertProductionEnvironment, assertTargetProductionEnvironment } from './server-config.mjs';
 import { assertOrderTransition, legacyOrderState, type OrderState } from './server/domains/orders/state-machine';
 import { loadProductionSecrets } from './server/infrastructure/secrets/provider';
 import { createFirebaseAuthAdapter } from './server/adapters/firebase-auth';
@@ -14,6 +14,7 @@ import { createFeatureFlagService, createFirestoreFeatureFlagRepository, type Fe
 // Run before any Firebase, Stripe, or Cloudflare client is initialized.
 await loadProductionSecrets();
 assertProductionEnvironment();
+assertTargetProductionEnvironment(process.env, process.env.SERVICE_ROLE === 'background-worker' ? 'worker' : 'api');
 
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0319129908';
 const DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || 'ai-studio-raloadesignfirst-8ccbe7ea-5af1-4106-809a-71252bddde6f';

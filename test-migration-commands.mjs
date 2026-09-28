@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import crypto from 'node:crypto';
+
+const run = promisify(execFile);
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'raloa-migration-fixtures-'));
+const source = path.join(root, 'source.json');
+const target = path.join(root, 'target.json');
+const archive = path.join(root, 'archive.json');
+const objects = [{ id: 'media-1', ownerUserId: 'user-1', siteId: 'site-1', checksum: 'sha', contentType: 'image/png', bytes: 10, cdnUrl: 'https://cdn.example/media-1' }];
+fs.writeFileSync(source, JSON.stringify({ objects }));
+fs.writeFileSync(target, JSON.stringify({ objects }));
+const archiveManifest = { exportedAt: new Date().toISOString(), sourceProject: 'test', collections: ['users'], documentCount: 1, sha256: '' };
+archiveManifest.sha256 = crypto.createHash('sha256').update(JSON.stringify(archiveManifest)).digest('hex');
+fs.writeFileSync(archive, JSON.stringify(archiveManifest));
+
+const command = (file, args, env = {}) => run('node', [file, ...args], { cwd: process.cwd(), env: { ...process.env, ...env } });
+const dryRun = await command('scripts/migrate-firestore-postgres.mjs', ['--dry-run']);
+assert.match(dryRun.stdout, /"mode": "dry-run"/);
+const media = await command('scripts/reconcile-media-r2.mjs', ['--dry-run'], { MEDIA_SOURCE_MANIFEST: source, MEDIA_TARGET_MANIFEST: target });
+assert.match(media.stdout, /"status": "passed"/);
+fs.writeFileSync(target, JSON.stringify({ objects: [{ ...objects[0], ownerUserId: 'user-2' }] }));
+await assert.rejects(() => command('scripts/reconcile-media-r2.mjs', ['--dry-run'], { MEDIA_SOURCE_MANIFEST: source, MEDIA_TARGET_MANIFEST: target }));
+await assert.rejects(() => command('scripts/verify-firestore-archive.mjs', [], { FIRESTORE_ARCHIVE_URI: 'not-valid', FIRESTORE_ARCHIVE_MANIFEST: archive }));
+await assert.rejects(() => command('scripts/verify-firestore-archive.mjs', [], { FIRESTORE_ARCHIVE_URI: 'gs://archive/export.json' }));
+const archiveCheck = await command('scripts/verify-firestore-archive.mjs', [], { FIRESTORE_ARCHIVE_URI: 'gs://archive/export.json', FIRESTORE_ARCHIVE_MANIFEST: archive });
+assert.match(archiveCheck.stdout, /"status": "passed"/);
+console.log('Migration command dry-run and failure-path tests passed');

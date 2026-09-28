@@ -1,4 +1,16 @@
-import { inspectProductionEnvironment, REQUIRED_PRODUCTION_VARIABLES, OPTIONAL_PRODUCTION_VARIABLES } from '../server-config.mjs';
+import { inspectProductionEnvironment, inspectTargetEnvironment, REQUIRED_PRODUCTION_VARIABLES, OPTIONAL_PRODUCTION_VARIABLES } from '../server-config.mjs';
+
+if (process.env.POSTGRES_APPLICATION_DATASTORE_ONLY === 'true') {
+  const target = inspectTargetEnvironment(process.env, process.env.SERVICE_ROLE === 'background-worker' ? 'worker' : 'api');
+  if (target.missing.length || target.invalid.length) {
+    console.error('Target production configuration validation failed.');
+    if (target.missing.length) console.error(`Missing: ${target.missing.join(', ')}`);
+    for (const message of target.invalid) console.error(`Invalid: ${message}`);
+    process.exit(1);
+  }
+  console.log('Target production configuration is structurally valid.');
+  process.exit(0);
+}
 
 const result = inspectProductionEnvironment(process.env);
 const missing = result.missing.length ? `Missing required variables: ${result.missing.join(', ')}` : '';
