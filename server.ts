@@ -5428,7 +5428,19 @@ app.get('*', async (req: Request, res: Response) => {
         console.error('[Public SSR profile lookup]', error);
       }
     }
-    const fixtureCreator = publicDemoFixturesEnabled ? CREATORS_METADATA[handle] : undefined;
+    // The public route is rendered by the web server before Playwright can
+    // install its browser API mocks. Keep one deterministic creator fixture
+    // for the persisted-preview parity test; this seam is unavailable in
+    // production and does not affect real public-site resolution.
+    const e2eCreator = process.env.E2E_TEST_MODE === 'true' && handle === 'e2e_creator'
+      ? {
+          name: 'E2E Creator',
+          avatar: '',
+          bio: 'A persisted Studio profile',
+          role: 'Creator'
+        }
+      : undefined;
+    const fixtureCreator = publicDemoFixturesEnabled ? CREATORS_METADATA[handle] : e2eCreator;
     const creator = publishedSite
       ? {
           name: String(publishedSite.displayName || handle),
