@@ -13,7 +13,10 @@ for (const domain of requiredDomains) {
   for (const file of fs.readdirSync(directory).filter((entry) => entry.endsWith('.ts') && !entry.endsWith('.test.ts'))) {
     const filename = path.join(directory, file);
     const source = fs.readFileSync(filename, 'utf8');
-    if (!file.endsWith('controller.ts') && !file.endsWith('index.ts') && /from ['"]express['"]|from ['"]firebase-admin|from ['"](?:pg|drizzle-orm)/.test(source)) {
+    // Type-only imports describe an injected boundary and do not make the
+    // domain runtime depend on a transport, database, or provider SDK.
+    const runtimeProviderImport = /import\s+(?!type\b)[\s\S]*?from ['"]express['"]|import\s+(?!type\b)[\s\S]*?from ['"]firebase-admin|import\s+(?!type\b)[\s\S]*?from ['"](?:pg|drizzle-orm)/.test(source);
+    if (!file.endsWith('controller.ts') && !file.endsWith('index.ts') && runtimeProviderImport) {
       failures.push(`${domain}/${file}: transport/persistence provider import must stay at the composition or adapter boundary`);
     }
     const otherDomainImport = source.match(/server\/domains\/([^/'"]+)/g)?.find((entry) => !entry.endsWith(`server/domains/${domain}`));
