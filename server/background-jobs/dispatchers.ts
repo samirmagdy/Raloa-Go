@@ -56,7 +56,7 @@ export function createConfiguredDispatcher(): JobDispatcher {
   // Playwright's local server uses deterministic in-process fixtures. Do not
   // instantiate a cloud SDK in that mode: it would probe for ADC before any
   // browser test can start.
-  if (process.env.VITE_E2E_TEST_MODE === 'true' || process.env.E2E_TEST_MODE === 'true') {
+  if (process.env.NODE_ENV === 'test' || process.env.VITE_E2E_TEST_MODE === 'true' || process.env.E2E_TEST_MODE === 'true') {
     return { dispatch: async () => undefined };
   }
   // Cloudflare is opt-in until the Worker consumer has passed staging
