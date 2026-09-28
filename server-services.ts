@@ -19,6 +19,17 @@ assertTargetProductionEnvironment(process.env, process.env.SERVICE_ROLE === 'bac
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0319129908';
 const DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || 'ai-studio-raloadesignfirst-8ccbe7ea-5af1-4106-809a-71252bddde6f';
 const APP_URL = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+const offlineTestRuntime = process.env.NODE_ENV === 'test'
+  || process.env.E2E_TEST_MODE === 'true'
+  || process.env.VITE_E2E_TEST_MODE === 'true';
+
+// Firebase Admin's Firestore client can otherwise begin an Application
+// Default Credentials lookup during construction. Test and E2E paths use
+// local fixtures, so keep the SDK on the emulator boundary even when CI
+// injects production-looking Google environment variables.
+if (offlineTestRuntime && !process.env.FIRESTORE_EMULATOR_HOST) {
+  process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
+}
 
 const adminApp = getApps().length ? getApps()[0] : initializeApp({ projectId: PROJECT_ID });
 export const adminDb = getFirestore(adminApp, DATABASE_ID);
@@ -64,7 +75,7 @@ export interface DomainRecord {
 export function isAdminConfigured(): boolean {
   // Playwright E2E runs against deterministic local fixtures. Never let
   // inherited CI credentials switch that server into Firebase/Google mode.
-  if (process.env.E2E_TEST_MODE === 'true' || process.env.VITE_E2E_TEST_MODE === 'true') return false;
+  if (process.env.NODE_ENV === 'test' || process.env.E2E_TEST_MODE === 'true' || process.env.VITE_E2E_TEST_MODE === 'true') return false;
   return Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.K_SERVICE || process.env.FIREBASE_ADMIN_ENABLED === 'true');
 }
 
