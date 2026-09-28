@@ -908,6 +908,20 @@ if (localAuthEnabled) {
   }
 }
 
+// Keep the shared integration fixture deterministic. A developer's local
+// cache may contain a changed password for this account; tests must not depend
+// on that mutable state or on test execution order.
+if (process.env.NODE_ENV === 'test') {
+  USERS_DB['creator@example.com'] = {
+    id: 'usr_9bf7cf1a80c',
+    email: 'creator@example.com',
+    passwordHash: hashPassword('SecurePassword123!', DEFAULT_SALT),
+    salt: DEFAULT_SALT,
+    primary_handle: 'creator',
+    email_verified: true,
+  };
+}
+
 // Do not seed or recreate accounts when local auth is disabled.
 
 export function persistUsersCache() {

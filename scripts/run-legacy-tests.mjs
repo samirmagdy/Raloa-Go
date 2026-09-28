@@ -15,7 +15,8 @@ for (const entry of selected) {
   const args = entry.file.endsWith('.mjs') ? [entry.file] : ['tsx', entry.file];
   const startedAt = Date.now();
   const result = await new Promise((resolve) => {
-    const child = spawn(command, args, { env: { ...process.env, NODE_ENV: 'test' }, stdio: 'inherit' });
+    const childEnv = { ...process.env, NODE_ENV: 'test', ...(entry.env || {}) };
+    const child = spawn(command, args, { env: childEnv, stdio: 'inherit' });
     const timer = setTimeout(() => { child.kill('SIGTERM'); resolve({ code: 124, timedOut: true }); }, timeoutMs);
     child.on('exit', (code, signal) => { clearTimeout(timer); resolve({ code: code ?? 1, signal, timedOut: false }); });
   });
@@ -29,4 +30,3 @@ const testcases = results.map((result) => result.code === 0
 fs.writeFileSync('reports/legacy-tests.xml', `<?xml version="1.0"?><testsuite name="legacy-tests" tests="${results.length}" failures="${failures.length}">${testcases}</testsuite>\n`);
 console.log(`Legacy test harness: ${results.length - failures.length}/${results.length} passed; report written to reports/legacy-tests.xml`);
 if (failures.length) process.exit(1);
-
