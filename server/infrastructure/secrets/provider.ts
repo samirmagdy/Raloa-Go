@@ -35,9 +35,13 @@ function secretName(env: NodeJS.ProcessEnv, key: ManagedSecretName): string {
 
 export async function loadProductionSecrets(
   env: NodeJS.ProcessEnv = process.env,
-  client: SecretAccessClient = new SecretManagerServiceClient()
+  client?: SecretAccessClient
 ): Promise<void> {
   if (!enabled(env)) return;
+  // Do not construct the Google client until Secret Manager is explicitly
+  // enabled. The SDK constructor can start an asynchronous ADC lookup, which
+  // must never happen during local/test startup.
+  const secretClient = client || new SecretManagerServiceClient();
   const projectId = env.SECRET_MANAGER_PROJECT_ID || env.GOOGLE_CLOUD_PROJECT || env.FIREBASE_PROJECT_ID;
   if (!projectId) throw new Error('SECRET_MANAGER_PROJECT_ID_NOT_CONFIGURED');
 
@@ -48,7 +52,7 @@ export async function loadProductionSecrets(
   });
   for (const key of secretNames) {
     try {
-      const response = await client.accessSecretVersion({ name: `projects/${projectId}/secrets/${secretName(env, key)}/versions/latest` });
+      const response = await secretClient.accessSecretVersion({ name: `projects/${projectId}/secrets/${secretName(env, key)}/versions/latest` });
       const version = (response as [{ payload?: { data?: string | Uint8Array | null } }])[0];
       const value = version.payload?.data;
       if (!value) throw new Error('empty secret');
@@ -60,7 +64,7 @@ export async function loadProductionSecrets(
   const legacySecretName = env.SECRET_MANAGER_SECRET_INTEGRATION_LEGACY_ENCRYPTION_KEY;
   if (legacySecretName) {
     try {
-      const response = await client.accessSecretVersion({ name: `projects/${projectId}/secrets/${legacySecretName}/versions/latest` });
+      const response = await secretClient.accessSecretVersion({ name: `projects/${projectId}/secrets/${legacySecretName}/versions/latest` });
       const version = (response as [{ payload?: { data?: string | Uint8Array | null } }])[0];
       const value = version.payload?.data;
       if (!value) throw new Error('empty secret');
