@@ -16,6 +16,28 @@ for (const entry of selected) {
   const startedAt = Date.now();
   const result = await new Promise((resolve) => {
     const childEnv = { ...process.env, NODE_ENV: 'test', ...(entry.env || {}) };
+    // Legacy tests are fixture-backed and must never inherit a CI deployment's
+    // Google/Firebase credentials. Several provider SDKs begin ADC discovery
+    // during construction, before application-level guards can run.
+    for (const key of [
+      'GOOGLE_APPLICATION_CREDENTIALS',
+      'GOOGLE_CLOUD_PROJECT',
+      'GCP_PROJECT',
+      'GCLOUD_PROJECT',
+      'K_SERVICE',
+      'FIREBASE_ADMIN_ENABLED',
+      'SECRET_MANAGER_ENABLED',
+      'INTEGRATION_KMS_KEY_NAME',
+      'CLOUD_TASKS_PROJECT_ID',
+      'CLOUD_TASKS_LOCATION',
+      'CLOUD_TASKS_QUEUE',
+      'CLOUD_TASKS_WORKER_URL',
+      'CLOUD_TASKS_SERVICE_ACCOUNT',
+      'CLOUD_TASKS_DISPATCH_URL',
+      'PUBSUB_DISPATCH_URL'
+    ]) delete childEnv[key];
+    childEnv.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
+    childEnv.SECRET_MANAGER_ENABLED = 'false';
     const child = spawn(command, args, { env: childEnv, stdio: 'inherit' });
     const timer = setTimeout(() => { child.kill('SIGTERM'); resolve({ code: 124, timedOut: true }); }, timeoutMs);
     child.on('exit', (code, signal) => { clearTimeout(timer); resolve({ code: code ?? 1, signal, timedOut: false }); });

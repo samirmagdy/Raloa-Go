@@ -81,7 +81,7 @@ test('settings cover audience, scheduling, integrations, domains, billing and ke
   await page.getByRole('tab', { name: 'Integrations' }).click();
   await expect(page.getByText('GitHub', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'Billing' }).click();
-  await expect(page.getByText('Active')).toBeVisible();
+  await expect(page.getByText('Active', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'Domain & SEO' }).click();
   await expect(page.getByLabel('Custom Domain')).toBeVisible();
   await page.getByLabel('Custom Domain').fill('links.example.test');
