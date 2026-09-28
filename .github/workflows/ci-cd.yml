@@ -79,6 +79,11 @@ jobs:
           STRIPE_PRICE_STUDIO_MONTHLY: price_ci_studio_monthly
           STRIPE_PRICE_STUDIO_YEARLY: price_ci_studio_yearly
           CLOUDFLARE_ZONE_ID: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          JOB_TRANSPORT: cloudflare
+          CLOUDFLARE_QUEUE_ENABLED: "true"
+          CLOUDFLARE_ACCOUNT_ID: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          CLOUDFLARE_QUEUE_NAME: raloa-ci-background
+          CLOUDFLARE_QUEUE_DLQ_NAME: raloa-ci-background-dlq
           TRUSTED_PROXY_HOPS: "1"
 
   browser:

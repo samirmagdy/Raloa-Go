@@ -70,10 +70,9 @@ export function createConfiguredDispatcher(): JobDispatcher {
   if (isAutomatedTestRuntime()) {
     return { dispatch: async () => undefined };
   }
-  // Cloudflare is opt-in until the Worker consumer has passed staging
-  // idempotency, retry, and dead-letter validation. This prevents an
-  // incomplete queue deployment from silently replacing the current path.
-  const cloudflare = process.env.CLOUDFLARE_QUEUE_ENABLED === 'true'
+  // The explicit transport selection is authoritative in production. The
+  // enable flag remains supported for staged rollouts and local deployments.
+  const cloudflare = (process.env.JOB_TRANSPORT === 'cloudflare' || process.env.CLOUDFLARE_QUEUE_ENABLED === 'true')
     ? createCloudflareQueueDispatcherFromEnv()
     : null;
   const configured = cloudflare || createCloudTasksDispatcher() || createPubSubDispatcher();

@@ -9,6 +9,18 @@ export const REQUIRED_PRODUCTION_VARIABLES = Object.freeze([
   'CLOUD_TASKS_QUEUE', 'CLOUD_TASKS_WORKER_URL'
 ]);
 
+const PRODUCTION_BASE_VARIABLES = Object.freeze(REQUIRED_PRODUCTION_VARIABLES.filter((name) => ![
+  'CLOUD_TASKS_PROJECT_ID', 'CLOUD_TASKS_LOCATION', 'CLOUD_TASKS_QUEUE', 'CLOUD_TASKS_WORKER_URL'
+].includes(name)));
+
+const PRODUCTION_CLOUD_TASKS_VARIABLES = Object.freeze([
+  'CLOUD_TASKS_PROJECT_ID', 'CLOUD_TASKS_LOCATION', 'CLOUD_TASKS_QUEUE', 'CLOUD_TASKS_WORKER_URL'
+]);
+
+const PRODUCTION_CLOUDFLARE_QUEUE_VARIABLES = Object.freeze([
+  'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_QUEUE_NAME', 'CLOUDFLARE_QUEUE_DLQ_NAME'
+]);
+
 export const MANAGED_PRODUCTION_SECRETS = Object.freeze([
   'AUTH_SESSION_SECRET', 'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET', 'CLOUDFLARE_API_TOKEN', 'GOOGLE_CALENDAR_CLIENT_SECRET',
@@ -167,9 +179,16 @@ const isPlaceholder = (value) => /^(MY_|GENERATE_|CHANGE_ME|replace[-_]|your[-_]
 
 export function inspectProductionEnvironment(env = process.env) {
   const secretManagerEnabled = env.SECRET_MANAGER_ENABLED === 'true';
-  const missing = REQUIRED_PRODUCTION_VARIABLES.filter((name) => !(secretManagerEnabled && MANAGED_PRODUCTION_SECRETS.includes(name)) && !isPresent(env[name]));
+  const jobTransport = env.JOB_TRANSPORT || 'cloud_tasks';
+  const transportVariables = jobTransport === 'cloudflare'
+    ? PRODUCTION_CLOUDFLARE_QUEUE_VARIABLES
+    : PRODUCTION_CLOUD_TASKS_VARIABLES;
+  const requiredVariables = [...PRODUCTION_BASE_VARIABLES, ...transportVariables];
+  const missing = requiredVariables.filter((name) => !(secretManagerEnabled && MANAGED_PRODUCTION_SECRETS.includes(name)) && !isPresent(env[name]));
   const invalid = [];
   const optionalMissing = OPTIONAL_PRODUCTION_VARIABLES.filter((name) => !isPresent(env[name]));
+
+  if (!['cloud_tasks', 'cloudflare'].includes(jobTransport)) invalid.push('JOB_TRANSPORT must be cloud_tasks or cloudflare');
 
   if (env.NODE_ENV !== 'production') invalid.push('NODE_ENV must be exactly production for production validation');
   if (env.NODE_ENV === 'production' && !secretManagerEnabled) invalid.push('SECRET_MANAGER_ENABLED must be true in production; raw production secrets in generic environment variables are not supported');
@@ -200,6 +219,8 @@ export function inspectProductionEnvironment(env = process.env) {
   for (const name of ['STRIPE_PRICE_PRO_MONTHLY', 'STRIPE_PRICE_PRO_YEARLY', 'STRIPE_PRICE_STUDIO_MONTHLY', 'STRIPE_PRICE_STUDIO_YEARLY']) if (isPresent(env[name]) && (!/^price_[A-Za-z0-9]/.test(env[name]) || isPlaceholder(env[name]))) invalid.push(`${name} must be a real Stripe price ID`);
   if (isPresent(env.CLOUDFLARE_ZONE_ID) && !/^[a-f0-9]{32}$/i.test(env.CLOUDFLARE_ZONE_ID)) invalid.push('CLOUDFLARE_ZONE_ID must be a 32-character Cloudflare zone ID');
   if (isPresent(env.CLOUDFLARE_API_TOKEN) && (env.CLOUDFLARE_API_TOKEN.length < 20 || isPlaceholder(env.CLOUDFLARE_API_TOKEN))) invalid.push('CLOUDFLARE_API_TOKEN must be a real scoped API token');
+  if (isPresent(env.CLOUDFLARE_ACCOUNT_ID) && !/^[a-f0-9]{32}$/i.test(env.CLOUDFLARE_ACCOUNT_ID)) invalid.push('CLOUDFLARE_ACCOUNT_ID must be a 32-character Cloudflare account ID');
+  if (jobTransport === 'cloudflare' && env.CLOUDFLARE_QUEUE_ENABLED !== 'true') invalid.push('CLOUDFLARE_QUEUE_ENABLED must be true when JOB_TRANSPORT=cloudflare');
 
   const providerGroups = [
     ['Google Calendar', ['GOOGLE_CALENDAR_CLIENT_ID', 'GOOGLE_CALENDAR_CLIENT_SECRET', 'GOOGLE_CALENDAR_REDIRECT_URI']],
@@ -236,11 +257,22 @@ function stagingManagedOrPresent(env, name) {
 }
 
 export function inspectStagingEnvironment(env = process.env) {
-  const missing = REQUIRED_STAGING_VARIABLES.filter((name) => {
+  const jobTransport = env.JOB_TRANSPORT || 'cloud_tasks';
+  const stagingTransportVariables = jobTransport === 'cloudflare'
+    ? ['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_QUEUE_NAME', 'CLOUDFLARE_QUEUE_DLQ_NAME']
+    : ['CLOUD_TASKS_PROJECT_ID', 'CLOUD_TASKS_LOCATION', 'CLOUD_TASKS_QUEUE', 'CLOUD_TASKS_WORKER_URL'];
+  const requiredVariables = [
+    ...REQUIRED_STAGING_VARIABLES.filter((name) => ![
+      'CLOUD_TASKS_PROJECT_ID', 'CLOUD_TASKS_LOCATION', 'CLOUD_TASKS_QUEUE', 'CLOUD_TASKS_WORKER_URL'
+    ].includes(name)),
+    ...stagingTransportVariables
+  ];
+  const missing = requiredVariables.filter((name) => {
     if (['AUTH_SESSION_SECRET', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_R2_ACCESS_KEY_ID', 'CLOUDFLARE_R2_SECRET_ACCESS_KEY', 'GOOGLE_CALENDAR_CLIENT_SECRET', 'MICROSOFT_CALENDAR_CLIENT_SECRET', 'RESEND_API_KEY'].includes(name)) return !stagingManagedOrPresent(env, name);
     return !isPresent(env[name]);
   });
   const invalid = [];
+  if (!['cloud_tasks', 'cloudflare'].includes(jobTransport)) invalid.push('JOB_TRANSPORT must be cloud_tasks or cloudflare');
   if (env.NODE_ENV !== 'production') invalid.push('NODE_ENV must be production for the staging runtime');
   if (env.APP_ENV !== 'staging') invalid.push('APP_ENV must be staging');
   if (env.SECRET_MANAGER_ENABLED !== 'true') invalid.push('SECRET_MANAGER_ENABLED must be true for staging provider credentials');
@@ -259,9 +291,10 @@ export function inspectStagingEnvironment(env = process.env) {
   if (isPresent(env.STRIPE_SECRET_KEY) && !/^sk_test_[A-Za-z0-9]/.test(env.STRIPE_SECRET_KEY)) invalid.push('STRIPE_SECRET_KEY must be a Stripe test secret in staging');
   if (isPresent(env.CLOUDFLARE_ZONE_ID) && !/^[a-f0-9]{32}$/i.test(env.CLOUDFLARE_ZONE_ID)) invalid.push('CLOUDFLARE_ZONE_ID must be a 32-character Cloudflare zone ID');
   if (isPresent(env.STAGING_RESOURCE_PREFIX) && !/^raloa-staging-[a-z0-9-]+$/.test(env.STAGING_RESOURCE_PREFIX)) invalid.push('STAGING_RESOURCE_PREFIX must start with raloa-staging-');
-  for (const [name, value] of [['CLOUD_TASKS_QUEUE', env.CLOUD_TASKS_QUEUE], ['CLOUDFLARE_R2_BUCKET', env.CLOUDFLARE_R2_BUCKET]]) {
+  for (const [name, value] of [[jobTransport === 'cloudflare' ? 'CLOUDFLARE_QUEUE_NAME' : 'CLOUD_TASKS_QUEUE', jobTransport === 'cloudflare' ? env.CLOUDFLARE_QUEUE_NAME : env.CLOUD_TASKS_QUEUE], ['CLOUDFLARE_R2_BUCKET', env.CLOUDFLARE_R2_BUCKET]]) {
     if (isPresent(value) && !value.startsWith(env.STAGING_RESOURCE_PREFIX || 'raloa-staging-')) invalid.push(`${name} must use STAGING_RESOURCE_PREFIX`);
   }
+  if (jobTransport === 'cloudflare' && env.CLOUDFLARE_QUEUE_ENABLED !== 'true') invalid.push('CLOUDFLARE_QUEUE_ENABLED must be true when JOB_TRANSPORT=cloudflare');
   if (isPresent(env.CLOUDFLARE_R2_PUBLIC_BASE_URL)) {
     try { if (new URL(env.CLOUDFLARE_R2_PUBLIC_BASE_URL).protocol !== 'https:') invalid.push('CLOUDFLARE_R2_PUBLIC_BASE_URL must use https://'); } catch { invalid.push('CLOUDFLARE_R2_PUBLIC_BASE_URL must be a valid URL'); }
   }

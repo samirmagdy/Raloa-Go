@@ -32,6 +32,34 @@ const validResult = inspectProductionEnvironment(valid);
 assert.deepEqual(validResult.missing, []);
 assert.deepEqual(validResult.invalid, []);
 
+const cloudflareValidResult = inspectProductionEnvironment({
+  ...valid,
+  JOB_TRANSPORT: 'cloudflare',
+  CLOUDFLARE_QUEUE_ENABLED: 'true',
+  CLOUDFLARE_ACCOUNT_ID: 'b'.repeat(32),
+  CLOUDFLARE_QUEUE_NAME: 'raloa-background',
+  CLOUDFLARE_QUEUE_DLQ_NAME: 'raloa-background-dlq',
+  CLOUD_TASKS_PROJECT_ID: undefined,
+  CLOUD_TASKS_LOCATION: undefined,
+  CLOUD_TASKS_QUEUE: undefined,
+  CLOUD_TASKS_WORKER_URL: undefined
+});
+assert.deepEqual(cloudflareValidResult.missing, []);
+assert.deepEqual(cloudflareValidResult.invalid, []);
+
+const cloudflareMissingResult = inspectProductionEnvironment({
+  ...valid,
+  JOB_TRANSPORT: 'cloudflare',
+  CLOUDFLARE_QUEUE_ENABLED: 'true',
+  CLOUD_TASKS_PROJECT_ID: undefined,
+  CLOUD_TASKS_LOCATION: undefined,
+  CLOUD_TASKS_QUEUE: undefined,
+  CLOUD_TASKS_WORKER_URL: undefined
+});
+assert.ok(cloudflareMissingResult.missing.includes('CLOUDFLARE_ACCOUNT_ID'));
+assert.ok(cloudflareMissingResult.missing.includes('CLOUDFLARE_QUEUE_NAME'));
+assert.ok(cloudflareMissingResult.missing.includes('CLOUDFLARE_QUEUE_DLQ_NAME'));
+
 const missingResult = inspectProductionEnvironment({ NODE_ENV: 'production' });
 assert.ok(missingResult.missing.includes('APP_URL'));
 assert.ok(missingResult.invalid.some((message) => message.includes('SECRET_MANAGER_ENABLED')));
