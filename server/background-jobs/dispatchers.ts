@@ -4,6 +4,17 @@ import { createCloudflareQueueDispatcherFromEnv } from '../adapters/cloudflare-q
 
 type HttpDispatcherConfig = { url: string; token?: string };
 
+function isAutomatedTestRuntime(env: NodeJS.ProcessEnv = process.env): boolean {
+  // Vitest may execute modules before a test setup file can normalize
+  // NODE_ENV. Check its worker markers as well so a configured Cloud Tasks
+  // client never starts an asynchronous ADC lookup during tests.
+  return env.NODE_ENV === 'test'
+    || env.VITEST === 'true'
+    || Boolean(env.VITEST_WORKER_ID)
+    || env.E2E_TEST_MODE === 'true'
+    || env.VITE_E2E_TEST_MODE === 'true';
+}
+
 function createHttpDispatcher(config: HttpDispatcherConfig, provider: string): JobDispatcher {
   return {
     async dispatch(job, delayMs = 0) {
@@ -56,7 +67,7 @@ export function createConfiguredDispatcher(): JobDispatcher {
   // Playwright's local server uses deterministic in-process fixtures. Do not
   // instantiate a cloud SDK in that mode: it would probe for ADC before any
   // browser test can start.
-  if (process.env.NODE_ENV === 'test' || process.env.VITE_E2E_TEST_MODE === 'true' || process.env.E2E_TEST_MODE === 'true') {
+  if (isAutomatedTestRuntime()) {
     return { dispatch: async () => undefined };
   }
   // Cloudflare is opt-in until the Worker consumer has passed staging
